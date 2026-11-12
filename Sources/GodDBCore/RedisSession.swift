@@ -221,6 +221,23 @@ public actor RedisSession {
         return (keys, cur == "0" ? nil : cur)
     }
 
+    /// 여러 키의 타입과 남은 시간(밀리초)을 파이프라인으로 한 번에
+    public func keyMeta(_ keys: [String]) async throws -> [String: (type: String, ttlMillis: Int)] {
+        let conn = try c()
+        return try await withThrowingTaskGroup(of: (String, String, Int).self) { group in
+            for k in keys {
+                group.addTask {
+                    async let t = conn.send(["TYPE", k])
+                    async let p = conn.send(["PTTL", k])
+                    return (k, try await t.string ?? "none", try await p.int ?? -2)
+                }
+            }
+            var out: [String: (type: String, ttlMillis: Int)] = [:]
+            for try await (k, t, ttl) in group { out[k] = (t, ttl) }
+            return out
+        }
+    }
+
     public func keyInfo(_ key: String) async throws -> RedisKeyInfo {
         let conn = try c()
         let type = try await conn.send(["TYPE", key]).string ?? "none"

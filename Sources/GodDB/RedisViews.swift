@@ -8,7 +8,7 @@ struct KVRow: Identifiable, Hashable {
     let b: String
 }
 
-private func typeColor(_ t: String) -> Color {
+func redisTypeColor(_ t: String) -> Color {
     switch t {
     case "string": return .blue
     case "hash": return .purple
@@ -35,29 +35,17 @@ func ttlText(_ ms: Int) -> String {
 struct RedisSidebarSection: View {
     @Environment(AppState.self) private var app
     @Bindable var ws: RedisWorkspace
-    @State private var newKey = false
 
     var body: some View {
         Section {
             if ws.loadingKeys && ws.keys.isEmpty {
                 HStack { ProgressView().controlSize(.small); Text(tr("키 불러오는 중…")) }
             }
-            ForEach(ws.keys, id: \.self) { key in
-                HStack(spacing: 6) {
-                    Image(systemName: "key").font(.caption).foregroundStyle(.secondary)
-                    Text(key).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-                .padding(.vertical, 1)
-                .background(ws.selectedKey == key ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 4))
-                .onTapGesture { Task { await ws.open(key) } }
-                .contextMenu {
-                    Button(tr("열기")) { Task { await ws.open(key) } }
-                    Button(tr("이름 복사")) { Pasteboard.copy(key) }
-                    Divider()
-                    Button(tr("삭제"), role: .destructive) { Task { await ws.deleteKey(key) } }
-                        .disabled(ws.readOnly)
+            if ws.treeMode {
+                RedisTreeRows(nodes: ws.tree, ws: ws)
+            } else {
+                ForEach(ws.keys, id: \.self) { key in
+                    RedisKeyRow(ws: ws, key: key, label: key)
                 }
             }
             if ws.nextCursor != nil {
@@ -75,33 +63,192 @@ struct RedisSidebarSection: View {
                 Text(tr("맞는 키가 없어요.")).font(.caption).foregroundStyle(.secondary)
             }
         } header: {
-            HStack {
-                Text("DB").foregroundStyle(.secondary)
-                Picker("", selection: Binding(get: { ws.db }, set: { i in Task { await ws.selectDB(i) } })) {
-                    ForEach(ws.databases) { d in
-                        Text(d.keys > 0 ? "db\(d.index) (\(d.keys))" : "db\(d.index)").tag(d.index)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("DB").foregroundStyle(.secondary)
+                    Picker("", selection: Binding(get: { ws.db }, set: { i in Task { await ws.selectDB(i) } })) {
+                        ForEach(ws.databases) { d in
+                            Text(d.keys > 0 ? "db\(d.index) (\(d.keys))" : "db\(d.index)").tag(d.index)
+                        }
+                        if !ws.databases.contains(where: { $0.index == ws.db }) { Text("db\(ws.db)").tag(ws.db) }
                     }
-                    if !ws.databases.contains(where: { $0.index == ws.db }) { Text("db\(ws.db)").tag(ws.db) }
+                    .labelsHidden()
+                    .fixedSize()
+                    Spacer()
+                    Text("\(ws.keys.count)\(ws.nextCursor != nil ? "+" : "")").foregroundStyle(.secondary)
+                    Button { ws.showNewKey = true } label: { Image(systemName: "plus") }
+                        .help(tr("새 키"))
+                        .disabled(ws.readOnly)
                 }
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
-                Text("\(ws.keys.count)\(ws.nextCursor != nil ? "+" : "")").foregroundStyle(.secondary)
-                Button { newKey = true } label: { Image(systemName: "plus") }
-                    .buttonStyle(.borderless)
-                    .help(tr("새 키"))
-                    .disabled(ws.readOnly)
-                Button {
-                    Task {
-                        await ws.loadDatabases()
-                        await ws.reloadKeys()
+                HStack(spacing: 6) {
+                    // 트리 / 목록 전환
+                    Picker("", selection: $ws.treeMode) {
+                        Image(systemName: "list.bullet.indent").help(tr("트리")).tag(true)
+                        Image(systemName: "list.bullet").help(tr("목록")).tag(false)
                     }
-                } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless)
-                    .help(tr("키 목록 새로고침"))
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help(tr("트리 / 목록 보기"))
+                    if ws.treeMode {
+                        Menu {
+                            Picker(tr("구분자"), selection: $ws.delimiter) {
+                                ForEach([":", "/", ".", "_", "-", "|"], id: \.self) { Text("  \($0)  ").tag($0) }
+                            }
+                            .pickerStyle(.inline)
+                            Divider()
+                            Button(tr("모두 펼치기")) { ws.expanded = Set(Self.folderIDs(ws.tree)) }
+                            Button(tr("모두 접기")) { ws.expanded = [] }
+                        } label: {
+                            Text(ws.delimiter).font(.system(.body, design: .monospaced))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help(tr("폴더 구분자, 모두 펼치기/접기"))
+                    }
+                    Spacer()
+                    Button {
+                        Task { await ws.refreshAll() }
+                    } label: { Image(systemName: "arrow.clockwise") }
+                        .help(tr("새로고침 (키 목록, TTL, 열린 값)"))
+                    // 자동 새로고침
+                    Toggle(isOn: Binding(get: { ws.autoRefresh }, set: { ws.setAutoRefresh($0) })) {
+                        Image(systemName: ws.autoRefresh ? "timer.circle.fill" : "timer")
+                    }
+                    .toggleStyle(.button)
+                    .tint(ws.autoRefresh ? .green : nil)
+                    .help(tr("자동 새로고침 켜기/끄기"))
+                    TextField("", value: Binding(get: { ws.autoRefreshSeconds }, set: { ws.setAutoRefreshSeconds($0) }),
+                              format: .number.grouping(.never))
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 38)
+                        .help(tr("자동 새로고침 간격 (초, 1~3600)"))
+                    Text(tr("초")).foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.callout)
+            .textCase(nil)
+            // 오른쪽 스크롤바와 겹치지 않게
+            .padding(.trailing, 16)
+        }
+    }
+
+    static func folderIDs(_ nodes: [RedisKeyNode]) -> [String] {
+        nodes.flatMap { n in n.isFolder ? [n.id] + folderIDs(n.children ?? []) : [] }
+    }
+}
+
+/// 키 한 줄
+struct RedisKeyRow: View {
+    let ws: RedisWorkspace
+    let key: String
+    let label: String
+
+    var body: some View {
+        let m = ws.meta[key]
+        HStack(spacing: 6) {
+            if let m {
+                Text(Self.typeLetter(m.type))
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(redisTypeColor(m.type))
+                    .frame(width: 16, height: 14)
+                    .background(redisTypeColor(m.type).opacity(0.14), in: RoundedRectangle(cornerRadius: 3))
+                    .help(m.type)
+            } else {
+                Image(systemName: "key").font(.caption).foregroundStyle(.secondary).frame(width: 16)
+            }
+            Text(label.isEmpty ? "(empty)" : label).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(label.isEmpty || m?.type == "none" ? .secondary : .primary)
+                .strikethrough(m?.type == "none")
+            Spacer()
+            if let ttl = ws.remainingTTL(key) {
+                if ttl >= 0 {
+                    Label(Self.shortTTL(ttl), systemImage: "timer")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(ttl < 60_000 ? .orange : .secondary)
+                        .help(tr("남은 시간 %@", ttlText(ttl)))
+                } else if ttl == -2 {
+                    Text(tr("만료됨")).font(.caption2).foregroundStyle(.red)
+                }
             }
         }
-        .sheet(isPresented: $newKey) { RedisNewKeySheet(ws: ws) }
+        .onAppear { ws.wantMeta(key) }
+        .contentShape(Rectangle())
+        .padding(.vertical, 1)
+        .background(ws.selectedKey == key ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 4))
+        .onTapGesture { Task { await ws.open(key) } }
+        .help(key)
+        .contextMenu {
+            Button(tr("열기")) { Task { await ws.open(key) } }
+            Button(tr("이름 복사")) { Pasteboard.copy(key) }
+            Divider()
+            Button(tr("삭제"), role: .destructive) { Task { await ws.deleteKey(key) } }
+                .disabled(ws.readOnly)
+        }
+    }
+}
+
+extension RedisKeyRow {
+    static func typeLetter(_ t: String) -> String {
+        switch t {
+        case "string": return "S"
+        case "hash": return "H"
+        case "list": return "L"
+        case "set": return "St"
+        case "zset": return "Z"
+        case "stream": return "X"
+        case "none": return "–"
+        default: return "?"
+        }
+    }
+
+    /// 목록용 짧은 남은 시간: 45s, 12m, 3h, 2d
+    static func shortTTL(_ ms: Int) -> String {
+        let s = ms / 1000
+        if s < 60 { return "\(s)s" }
+        if s < 3600 { return "\(s / 60)m" }
+        if s < 86400 { return "\(s / 3600)h" }
+        return "\(s / 86400)d"
+    }
+}
+
+/// 키 트리 (폴더는 펼치기/접기, 하위 키 개수 표시)
+struct RedisTreeRows: View {
+    let nodes: [RedisKeyNode]
+    @Bindable var ws: RedisWorkspace
+
+    var body: some View {
+        ForEach(nodes) { node in
+            if let children = node.children {
+                DisclosureGroup(isExpanded: Binding(
+                    get: { ws.expanded.contains(node.id) },
+                    set: { if $0 { ws.expanded.insert(node.id) } else { ws.expanded.remove(node.id) } })) {
+                    RedisTreeRows(nodes: children, ws: ws)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: ws.expanded.contains(node.id) ? "folder.fill" : "folder")
+                            .font(.caption).foregroundStyle(Color.accentColor)
+                        Text(node.name.isEmpty ? "(empty)" : node.name).lineLimit(1)
+                        Spacer()
+                        Text("\(node.count)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .help(node.path + ws.delimiter + "*")
+                    .contextMenu {
+                        Button(tr("이 폴더만 검색 (%@)", RedisKeyTree.pattern(forFolder: node.path, delimiter: ws.delimiter))) {
+                            Task { await ws.searchFolder(node.path) }
+                        }
+                        Button(tr("접두어 복사")) { Pasteboard.copy(node.path + ws.delimiter) }
+                    }
+                }
+            } else if let key = node.key {
+                RedisKeyRow(ws: ws, key: key, label: node.name)
+            }
+        }
     }
 }
 
@@ -148,19 +295,45 @@ struct RedisNewKeySheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Label(tr("새 키"), systemImage: "key").font(.headline)
-            Form {
-                Picker(tr("타입"), selection: $type) {
-                    ForEach(["string", "hash", "list", "set", "zset", "stream"], id: \.self) { Text($0).tag($0) }
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
+                GridRow {
+                    Text(tr("타입")).gridColumnAlignment(.trailing)
+                    Picker("", selection: $type) {
+                        ForEach(["string", "hash", "list", "set", "zset", "stream"], id: \.self) { Text($0).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                TextField(tr("키"), text: $key)
-                if let fieldLabel { TextField(fieldLabel, text: $field) }
-                TextField(type == "zset" ? tr("멤버") : tr("값"), text: $value, axis: .vertical).lineLimit(1...6)
-                TextField(tr("만료 (초, 비우면 없음)"), text: $ttl)
+                GridRow {
+                    Text(tr("키"))
+                    TextField("", text: $key, prompt: Text("user:1001"))
+                }
+                if let fieldLabel {
+                    GridRow {
+                        Text(fieldLabel)
+                        TextField("", text: $field, prompt: Text(type == "zset" ? "0" : "name"))
+                    }
+                }
+                GridRow(alignment: .top) {
+                    Text(type == "zset" ? tr("멤버") : tr("값"))
+                    TextEditor(text: $value)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(height: 90)
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.3)))
+                }
+                GridRow {
+                    Text(tr("만료 (초)"))
+                    HStack {
+                        TextField("", text: $ttl, prompt: Text(tr("비우면 없음"))).frame(width: 120)
+                        Spacer()
+                    }
+                }
             }
-            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            .textFieldStyle(.roundedBorder)
+            if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
             HStack {
                 Spacer()
                 Button(tr("취소")) { dismiss() }.keyboardShortcut(.cancelAction)
@@ -171,11 +344,13 @@ struct RedisNewKeySheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
                 .disabled(key.isEmpty || (type == "hash" && field.isEmpty))
             }
         }
         .padding(20)
-        .frame(width: 480)
+        .frame(width: 600)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -213,6 +388,8 @@ struct RedisWorkspaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        // 새 키 창은 여기 한 곳에만 붙인다 (목록 섹션에 붙이면 행마다 복사돼 창이 반복해서 열린다)
+        .sheet(isPresented: $ws.showNewKey) { RedisNewKeySheet(ws: ws) }
     }
 }
 
@@ -277,9 +454,9 @@ struct RedisKeyView: View {
     private func header(_ key: String) -> some View {
         HStack(spacing: 8) {
             if let info = ws.keyInfo {
-                Text(info.type).font(.caption.weight(.semibold)).foregroundStyle(typeColor(info.type))
+                Text(info.type).font(.caption.weight(.semibold)).foregroundStyle(redisTypeColor(info.type))
                     .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(typeColor(info.type).opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+                    .background(redisTypeColor(info.type).opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
             }
             Text(key).font(.headline).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
             CopyButton(title: "") { key }
@@ -550,27 +727,47 @@ struct StreamEntriesTable: View {
 
 struct RedisConsoleView: View {
     @Bindable var ws: RedisWorkspace
-    @State private var input = ""
-    @State private var historyIndex: Int?
-    @FocusState private var focused: Bool
+    @State private var selection: TextSelection?
+    @State private var editorHeight: CGFloat = 160
 
-    private var suggestion: String? {
-        let first = input.split(separator: " ", maxSplits: 1).first.map(String.init) ?? ""
-        if input.contains(" ") {
-            return RedisCommands.hints[first.uppercased()].map { first.uppercased() + " " + $0 }
+    /// 선택 영역이 있으면 그 글, 없으면 전체
+    private var textToRun: String {
+        if let sel = selection, case .selection(let r) = sel.indices, !r.isEmpty,
+           r.lowerBound >= ws.workbench.startIndex, r.upperBound <= ws.workbench.endIndex {
+            return String(ws.workbench[r])
         }
+        return ws.workbench
+    }
+
+    private var hasSelection: Bool {
+        if let sel = selection, case .selection(let r) = sel.indices { return !r.isEmpty }
+        return false
+    }
+
+    /// 커서가 있는 줄의 명령 안내
+    private var hint: String? {
+        var line = ws.workbench.components(separatedBy: .newlines).last { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
+        if let sel = selection, case .selection(let r) = sel.indices, r.lowerBound <= ws.workbench.endIndex {
+            let before = ws.workbench[..<r.lowerBound]
+            let start = before.lastIndex(of: "\n").map { ws.workbench.index(after: $0) } ?? ws.workbench.startIndex
+            let end = ws.workbench[r.lowerBound...].firstIndex(of: "\n") ?? ws.workbench.endIndex
+            if start <= end { line = String(ws.workbench[start..<end]) }
+        }
+        let first = line.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1).first.map(String.init) ?? ""
+        guard !first.isEmpty, !first.hasPrefix("//"), !first.hasPrefix("#") else { return nil }
+        if let h = RedisCommands.hints[first.uppercased()] { return first.uppercased() + " " + h }
         let c = RedisCommands.complete(first)
-        if c.count == 1 { return c[0] + " " + (RedisCommands.hints[c[0]] ?? "") }
-        return c.prefix(8).joined(separator: "  ")
+        return c.isEmpty ? nil : c.prefix(8).joined(separator: "  ")
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            // 결과
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         if ws.console.isEmpty {
-                            Text(tr("redis-cli 처럼 명령을 입력하세요. 예: GET key, HGETALL user:1, XINFO STREAM orders\nTab 자동완성, ↑↓ 이전 명령. 구독은 Pub/Sub 탭에서 해요."))
+                            Text(tr("아래 편집기에 명령을 한 줄에 하나씩 쓰고 ⌘↩ 또는 실행을 누르세요. 선택 영역이 있으면 그 줄만 실행해요. 결과는 여기에 쌓여요. 구독은 Pub/Sub 탭에서 해요."))
                                 .foregroundStyle(.secondary).font(.callout)
                         }
                         ForEach(ws.console) { e in
@@ -579,6 +776,11 @@ struct RedisConsoleView: View {
                                     Text("db\(e.db)> ").foregroundStyle(.secondary) + Text(e.command).bold()
                                     Spacer()
                                     if e.millis > 0 { Text("\(e.millis)ms").font(.caption).foregroundStyle(.secondary) }
+                                    Button { ws.workbench += (ws.workbench.hasSuffix("\n") || ws.workbench.isEmpty ? "" : "\n") + e.command + "\n" } label: {
+                                        Image(systemName: "arrow.down.doc")
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .help(tr("편집기에 다시 넣기"))
                                 }
                                 Text(e.output)
                                     .foregroundStyle(e.isError ? .red : .primary)
@@ -596,64 +798,69 @@ struct RedisConsoleView: View {
                 }
             }
             .background(Color(nsColor: .textBackgroundColor))
-            Divider()
-            if let s = suggestion, !s.isEmpty {
-                Text(s).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.top, 4)
-            }
-            HStack(spacing: 6) {
-                Text("db\(ws.db)>").font(.system(.body, design: .monospaced)).foregroundStyle(.secondary)
-                TextField("", text: $input)
-                    .textFieldStyle(.plain)
+
+            ResizeHandle(axis: .horizontal, size: $editorHeight, range: 80...500)
+
+            // Workbench 편집기
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Button {
+                        let t = textToRun
+                        Task { await ws.runScript(t) }
+                    } label: {
+                        Label(hasSelection ? tr("선택 실행") : tr("실행"), systemImage: "play.fill")
+                    }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(ws.consoleRunning || RedisText.scriptLines(textToRun).isEmpty)
+                    .help(tr("⌘↩ · 선택 영역이 있으면 그 줄만, 없으면 전체를 위에서부터 차례로 실행"))
+                    if ws.consoleRunning { ProgressView().controlSize(.small) }
+                    Text("db\(ws.db)").foregroundStyle(.secondary)
+                    if let hint {
+                        Text(hint).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Menu {
+                        if ws.history.isEmpty { Text(tr("아직 실행한 명령이 없어요.")) }
+                        ForEach(ws.history.suffix(30).reversed(), id: \.self) { h in
+                            Button(h) { ws.workbench += (ws.workbench.hasSuffix("\n") || ws.workbench.isEmpty ? "" : "\n") + h + "\n" }
+                        }
+                    } label: { Image(systemName: "clock.arrow.circlepath") }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help(tr("이전 명령을 편집기에 넣기"))
+                    Button(tr("결과 지우기")) { ws.console = [] }
+                }
+                .buttonStyle(.hover)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                TextEditor(text: $ws.workbench, selection: $selection)
                     .font(.system(.body, design: .monospaced))
-                    .focused($focused)
-                    .onSubmit(submit)
-                    .onKeyPress(.tab) { complete(); return .handled }
-                    .onKeyPress(.upArrow) { moveHistory(-1); return .handled }
-                    .onKeyPress(.downArrow) { moveHistory(1); return .handled }
-                if ws.consoleRunning { ProgressView().controlSize(.small) }
-                Button(tr("지우기")) { ws.console = [] }.buttonStyle(.hover)
+                    .autocorrectionDisabled()
+                    .scrollContentBackground(.hidden)
+                    .background(Color(nsColor: .textBackgroundColor))
             }
-            .padding(10)
+            .frame(height: editorHeight)
         }
-        .onAppear { focused = true }
         .confirmationDialog(tr("위험할 수 있는 명령이에요"), isPresented: Binding(
-            get: { ws.pendingDangerous != nil }, set: { if !$0 { ws.pendingDangerous = nil } })) {
+            get: { ws.pendingDangerous != nil || ws.pendingScript != nil },
+            set: { if !$0 { ws.pendingDangerous = nil; ws.pendingScript = nil } })) {
             Button(tr("실행"), role: .destructive) {
-                if let args = ws.pendingDangerous {
+                if let lines = ws.pendingScript {
+                    ws.pendingScript = nil
+                    Task { await ws.runScript(lines.joined(separator: "\n"), confirmed: true) }
+                } else if let args = ws.pendingDangerous {
                     ws.pendingDangerous = nil
                     Task { await ws.runConsole(RedisWorkspace.display(args), confirmed: true) }
                 }
             }
         } message: {
+            let danger = (ws.pendingScript ?? []).filter { RedisText.splitArgs($0).map(RedisCommands.isDangerous) ?? false }
             Text(tr("%@\n\n전체 데이터를 지우거나 서버를 멈추거나(KEYS 는 운영 서버를 잠시 멈출 수 있어요) 설정을 바꾸는 명령이에요. 정말 실행할까요?",
-                    ws.pendingDangerous.map(RedisWorkspace.display) ?? ""))
+                    danger.isEmpty ? (ws.pendingDangerous.map(RedisWorkspace.display) ?? "") : danger.joined(separator: "\n")))
         }
-    }
-
-    private func submit() {
-        let line = input
-        input = ""
-        historyIndex = nil
-        Task { await ws.runConsole(line) }
-        focused = true
-    }
-
-    private func complete() {
-        let parts = input.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 1 else { return }
-        let c = RedisCommands.complete(String(parts[0]))
-        if c.count == 1 { input = c[0] + " " }
-        else if let common = c.reduce(c.first, { p, s in p.map { String(zip($0, s).prefix { $0 == $1 }.map(\.0)) } }),
-                common.count > parts[0].count { input = common }
-    }
-
-    private func moveHistory(_ d: Int) {
-        guard !ws.history.isEmpty else { return }
-        let i = (historyIndex ?? ws.history.count) + d
-        if i >= ws.history.count { historyIndex = nil; input = ""; return }
-        historyIndex = max(0, i)
-        input = ws.history[historyIndex!]
     }
 }
 

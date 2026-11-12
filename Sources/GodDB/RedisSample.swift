@@ -21,6 +21,11 @@ enum RedisSample {
                 try await s.command(["FLUSHDB"])
                 try await s.command(["HSET", "user:1001", "name", "홍길동", "email", "hong@example.com", "grade", "VIP", "point", "1200"])
                 try await s.command(["SET", "session:abc", #"{"userId":1001,"roles":["admin","user"],"exp":1767225600}"#, "EX", "3600"])
+                try await s.command(["SET", "session:def", "x", "EX", "45"])
+                try await s.command(["HSET", "user:1002", "name", "kim"])
+                try await s.command(["SET", "user:1001:token", "t", "EX", "86400"])
+                try await s.command(["SET", "cache:product:10", "p", "EX", "600"])
+                try await s.command(["SET", "cache:product:2", "p", "EX", "7200"])
                 try await s.command(["RPUSH", "queue:mail", "m1", "m2", "m3"])
                 try await s.command(["SADD", "tags:hot", "redis", "swift", "macos"])
                 try await s.command(["ZADD", "rank:weekly", "980", "kim", "1200", "lee", "750", "park"])
@@ -56,7 +61,10 @@ enum RedisSample {
             window.orderOut(nil)
         }
 
-        shot("sidebar", List { RedisSidebarSection(ws: ws) }.listStyle(.sidebar), size: NSSize(width: 280, height: 400))
+        ws.expanded = Set(RedisSidebarSection.folderIDs(ws.tree))
+        shot("sidebar", List { RedisSidebarSection(ws: ws) }.listStyle(.sidebar), size: NSSize(width: 300, height: 520))
+        spin(0.5)
+        shot("sidebar", List { RedisSidebarSection(ws: ws) }.listStyle(.sidebar), size: NSSize(width: 300, height: 520))
         ws.tab = .keys
         shot("keys-hash", RedisWorkspaceView(ws: ws))
         Task { await ws.open("session:abc") }
@@ -83,5 +91,8 @@ enum RedisSample {
         shot("pubsub", RedisWorkspaceView(ws: ws))
         ws.tab = .info
         shot("info", RedisWorkspaceView(ws: ws))
+        shot("newkey", RedisNewKeySheet(ws: ws), size: NSSize(width: 600, height: 400))
+        ws.tab = .console
+        shot("workbench", RedisWorkspaceView(ws: ws))
     }
 }

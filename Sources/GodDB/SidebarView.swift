@@ -104,6 +104,9 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            // 접속을 바꾸면 목록을 새로 그린다 (Redis 키와 DB 테이블 행이 섞여 보이지 않게)
+            .id(app.selectedProfileID.map { "\($0)-\(app.state == .connected)-\(app.selectedRedis != nil)" } ?? "none")
+            .transaction { $0.animation = nil }
             // DataGrip 에서 데이터 소스를 ⌘C 한 뒤 사이드바에서 ⌘V
             .onPasteCommand(of: [.plainText]) { _ in
                 if let t = NSPasteboard.general.string(forType: .string), DataGripImport.looksLikeDataGrip(t) {

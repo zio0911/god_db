@@ -56,7 +56,7 @@ struct CompareView: View {
             Text(title).foregroundStyle(.secondary)
             Picker(title, selection: id) {
                 Text(tr("선택")).tag(UUID?.none)
-                ForEach(app.profiles) { Text($0.name).tag(UUID?.some($0.id)) }
+                ForEach(app.profiles.filter { $0.kind.isSQL }) { Text($0.name).tag(UUID?.some($0.id)) }
             }
             .labelsHidden()
             .fixedSize()

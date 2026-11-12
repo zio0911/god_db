@@ -44,6 +44,11 @@ struct RedisProtocolTests {
         #expect(RedisText.splitArgs("") == [])
     }
 
+    @Test func scriptLines() {
+        let text = "// 큐에 넣기\nRPUSH queue a b\n\n  # 확인\n  LRANGE queue 0 -1  \nSET k \"a b\""
+        #expect(RedisText.scriptLines(text) == ["RPUSH queue a b", "LRANGE queue 0 -1", "SET k \"a b\""])
+    }
+
     @Test func classifiesCommands() {
         #expect(RedisCommands.isReadOnly(["get", "k"]))
         #expect(!RedisCommands.isReadOnly(["SET", "k", "v"]))
@@ -199,5 +204,32 @@ struct RedisIntegrationTests {
         #expect(msgs.contains { $0.kind == "pmessage" && $0.pattern == "evt:*" && $0.channel == "evt:login" })
         await sub.close()
         await s.close()
+    }
+}
+
+@Suite("Redis key tree")
+struct RedisKeyTreeTests {
+    @Test func groupsByDelimiter() {
+        let t = RedisKeyTree.build(["user:10:name", "user:2:name", "user:2:email", "user:2", "session:abc", "plain"])
+        #expect(t.map(\.name) == ["session", "user", "plain"])
+        #expect(t[1].count == 4)
+        let user = t[1].children!
+        // 숫자 순서, 폴더 먼저, 같은 이름의 키(user:2)는 폴더 뒤에
+        #expect(user.map(\.id) == ["f:user:2", "f:user:10", "k:user:2"])
+        #expect(user[0].children!.map(\.key) == ["user:2:email", "user:2:name"])
+        #expect(t[2].key == "plain" && t[2].children == nil)
+    }
+
+    @Test func otherDelimiterAndEdgeCases() {
+        let t = RedisKeyTree.build(["a/b/c", "a/d", "x::y"], delimiter: "/")
+        #expect(t.map(\.name) == ["a", "x::y"])
+        let colon = RedisKeyTree.build(["x::y"])
+        #expect(colon.first?.children?.first?.name == "")   // 빈 조각 폴더
+        #expect(RedisKeyTree.build(["k"], delimiter: "").first?.key == "k")
+    }
+
+    @Test func folderPattern() {
+        #expect(RedisKeyTree.pattern(forFolder: "user:1001") == "user:1001:*")
+        #expect(RedisKeyTree.pattern(forFolder: "a*b") == "a\\*b:*")
     }
 }

@@ -12,7 +12,7 @@ final class RedisWorkspace {
         var title: String {
             switch self {
             case .keys: return tr("키")
-            case .console: return tr("콘솔")
+            case .console: return "Workbench"
             case .pubsub: return "Pub/Sub"
             case .streams: return "Streams"
             case .info: return tr("서버 정보")
@@ -54,6 +54,8 @@ final class RedisWorkspace {
     let session: RedisSession
     weak var app: AppState?
     var tab: Tab = .keys
+    /// 새 키 창
+    var showNewKey = false
 
     // DB
     var databases: [DB] = []
@@ -62,8 +64,117 @@ final class RedisWorkspace {
     // 키 목록
     var pattern = "*"
     var typeFilter = ""
-    var keys: [String] = []
+    var keys: [String] = [] { didSet { rebuildTree() } }
     var nextCursor: String?
+
+    // 키 트리 (구분자로 폴더처럼)
+    static let treeModeKey = "GodDB.redis.treeMode"
+    static let delimiterKey = "GodDB.redis.delimiter"
+    var treeMode: Bool = UserDefaults.standard.object(forKey: RedisWorkspace.treeModeKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(treeMode, forKey: Self.treeModeKey) }
+    }
+    var delimiter: String = UserDefaults.standard.string(forKey: RedisWorkspace.delimiterKey) ?? ":" {
+        didSet { UserDefaults.standard.set(delimiter, forKey: Self.delimiterKey); rebuildTree() }
+    }
+    private(set) var tree: [RedisKeyNode] = []
+    /// 펼친 폴더 id
+    var expanded: Set<String> = []
+
+    /// 목록에 보일 키의 타입·TTL (보일 때 묶어서 가져온다)
+    struct KeyMeta { let type: String; let ttlMillis: Int; let fetched: Date }
+    var meta: [String: KeyMeta] = [:]
+    private var metaWanted: Set<String> = []
+    private var metaTask: Task<Void, Never>?
+
+    /// 행이 화면에 나타날 때 호출. 잠깐 모았다가 한 번에 조회한다.
+    func wantMeta(_ key: String) {
+        guard meta[key] == nil else { return }
+        metaWanted.insert(key)
+        guard metaTask == nil else { return }
+        metaTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(60))
+            guard let self else { return }
+            while !self.metaWanted.isEmpty {
+                let batch = Array(self.metaWanted.prefix(300))
+                self.metaWanted.subtract(batch)
+                guard let r = try? await self.session.keyMeta(batch) else { break }
+                let now = Date()
+                for (k, v) in r { self.meta[k] = KeyMeta(type: v.type, ttlMillis: v.ttlMillis, fetched: now) }
+            }
+            self.metaTask = nil
+        }
+    }
+
+    /// 지금 시점의 남은 TTL (밀리초, -1 만료 없음, -2 없음)
+    func remainingTTL(_ key: String) -> Int? {
+        guard let m = meta[key] else { return nil }
+        guard m.ttlMillis >= 0 else { return m.ttlMillis }
+        return max(0, m.ttlMillis - Int(Date().timeIntervalSince(m.fetched) * 1000))
+    }
+
+    // 자동 새로고침
+    static let autoRefreshSecondsKey = "GodDB.redis.autoRefreshSeconds"
+    private(set) var autoRefresh = false
+    private(set) var autoRefreshSeconds: Int = max(1, UserDefaults.standard.object(forKey: RedisWorkspace.autoRefreshSecondsKey) as? Int ?? 5)
+    private var autoTask: Task<Void, Never>?
+    private var refreshing = false
+
+    func setAutoRefresh(_ on: Bool) {
+        autoRefresh = on
+        autoTask?.cancel()
+        autoTask = nil
+        guard on else { return }
+        autoTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let seconds = self?.autoRefreshSeconds ?? 5
+                try? await Task.sleep(for: .seconds(seconds))
+                guard !Task.isCancelled, let self else { return }
+                await self.refreshAll(quiet: true)
+            }
+        }
+    }
+
+    func setAutoRefreshSeconds(_ s: Int) {
+        autoRefreshSeconds = min(3600, max(1, s))
+        UserDefaults.standard.set(autoRefreshSeconds, forKey: Self.autoRefreshSecondsKey)
+        if autoRefresh { setAutoRefresh(true) }   // 새 간격으로 다시 시작
+    }
+
+    /// 키 목록·TTL·열린 값을 다시 읽는다 (펼친 폴더와 선택은 유지)
+    func refreshAll(quiet: Bool = false) async {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
+        if !quiet { await loadDatabases() }
+        let loaded = max(keys.count, 1000)
+        do {
+            let r = try await session.scanKeys(pattern: pattern, type: typeFilter.isEmpty ? nil : typeFilter, limit: loaded)
+            meta = [:]
+            keys = r.keys.sorted()
+            nextCursor = r.next
+        } catch {
+            if !quiet { app?.logError(error, .schema, context: tr("[%@] 키 조회 실패", name)) }
+            if quiet { setAutoRefresh(false) }   // 연결이 끊겼으면 자동 새로고침을 멈춘다
+            return
+        }
+        if selectedKey != nil, tab == .keys { await reloadValue() }
+    }
+
+    private func rebuildTree() {
+        tree = RedisKeyTree.build(keys, delimiter: delimiter)
+    }
+
+    /// 폴더 아래 키만 다시 검색
+    func searchFolder(_ path: String) async {
+        pattern = RedisKeyTree.pattern(forFolder: path, delimiter: delimiter)
+        await reloadKeys()
+        // 검색한 폴더까지 펼쳐 둔다
+        var prefix = ""
+        for part in path.components(separatedBy: delimiter) {
+            prefix = prefix.isEmpty ? part : prefix + delimiter + part
+            expanded.insert("f:" + prefix)
+        }
+    }
     var loadingKeys = false
 
     // 선택한 키
@@ -80,6 +191,12 @@ final class RedisWorkspace {
     var consoleRunning = false
     /// 위험한 명령 확인 대기
     var pendingDangerous: [String]?
+    /// Workbench 편집기 글 (접속마다 기억)
+    var workbench: String = "" {
+        didSet { UserDefaults.standard.set(workbench, forKey: "GodDB.redis.workbench." + profileID.uuidString) }
+    }
+    /// 위험한 명령이 섞인 실행 확인 대기
+    var pendingScript: [String]?
 
     // Pub/Sub
     var subscriber: RedisSubscriber?
@@ -111,12 +228,28 @@ final class RedisWorkspace {
         self.profileID = profileID
         self.session = session
         self.app = app
+        workbench = UserDefaults.standard.string(forKey: "GodDB.redis.workbench." + profileID.uuidString)
+            ?? "// 한 줄에 명령 하나. ⌘↩ 실행 (선택 영역이 있으면 그 줄만)\n// 예: RPUSH queue:mail m1 m2\nPING\n"
+    }
+
+    /// Workbench: 여러 줄을 차례로 실행. 위험한 명령이 있으면 먼저 확인한다.
+    func runScript(_ text: String, confirmed: Bool = false) async {
+        let lines = RedisText.scriptLines(text)
+        guard !lines.isEmpty else { return }
+        if !confirmed, lines.contains(where: { RedisText.splitArgs($0).map(RedisCommands.isDangerous) ?? false }) {
+            pendingScript = lines
+            return
+        }
+        for line in lines {
+            await runConsole(line, confirmed: true)
+        }
     }
 
     var name: String { session.profile.name }
     var readOnly: Bool { session.profile.readOnly }
 
     func close() async {
+        autoTask?.cancel()
         tailTask?.cancel()
         subscriberTask?.cancel()
         await subscriber?.close()
@@ -180,6 +313,7 @@ final class RedisWorkspace {
     // MARK: - 키 목록
 
     func reloadKeys() async {
+        meta = [:]
         keys = []
         nextCursor = nil
         await loadMoreKeys(from: "0")
@@ -219,6 +353,7 @@ final class RedisWorkspace {
         do {
             let info = try await session.keyInfo(key)
             keyInfo = info
+            meta[key] = KeyMeta(type: info.type, ttlMillis: info.ttlMillis, fetched: Date())
             switch info.type {
             case "string": value = .string(try await session.string(key) ?? "")
             case "hash": value = .hash(try await session.hash(key).sorted { $0.0 < $1.0 })

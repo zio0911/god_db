@@ -44,13 +44,22 @@ struct ContentView: View {
                 ConnectionBadge()
             }
             ToolbarItem(placement: .principal) {
-                Picker(tr("모드"), selection: $app.mode) {
+                // Redis 는 스키마가 없어서 스키마 비교를 쓸 수 없다
+                let isRedis = app.selectedProfile?.kind == .redis
+                Picker(tr("모드"), selection: Binding(get: { app.mode },
+                                                     set: { if !(isRedis && $0 == .compare) { app.mode = $0 } })) {
                     Label(tr("쿼리"), systemImage: "terminal").tag(MainMode.query)
-                    Label(tr("스키마 비교"), systemImage: "arrow.left.arrow.right").tag(MainMode.compare)
+                    Label(tr("스키마 비교"), systemImage: "arrow.left.arrow.right")
+                        .foregroundStyle(isRedis ? .tertiary : .primary)
+                        .tag(MainMode.compare)
                 }
+                .help(isRedis ? tr("Redis 는 스키마 비교를 지원하지 않아요.") : tr("쿼리 / 스키마 비교"))
                 .pickerStyle(.segmented)
                 .labelStyle(.titleAndIcon)
             }
+        }
+        .onChange(of: app.selectedProfileID) {
+            if app.selectedProfile?.kind == .redis, app.mode == .compare { app.mode = .query }
         }
         .sheet(item: $app.editingProfile) { profile in
             ConnectionEditorView(profile: profile, isNew: app.editingIsNew)

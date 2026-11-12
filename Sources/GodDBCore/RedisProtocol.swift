@@ -85,6 +85,13 @@ public enum RedisText {
         return out
     }
 
+    /// Workbench 편집기 글을 실행할 명령 줄들로 (빈 줄, // 와 # 주석 줄은 건너뜀)
+    public static func scriptLines(_ text: String) -> [String] {
+        text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("//") && !$0.hasPrefix("#") }
+    }
+
     /// 콘솔 한 줄을 인자로 나눈다. "…" '…' 따옴표와 \n \t \xNN 이스케이프 지원 (redis-cli 와 같은 규칙)
     public static func splitArgs(_ line: String) -> [String]? {
         var args: [String] = []
