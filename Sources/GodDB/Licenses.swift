@@ -11,7 +11,7 @@ struct ThirdPartyLicense: Identifiable {
     let url: String
     /// 전체 텍스트 (없으면 링크만)
     let text: String?
-    /// 갓디비에서 쓰는 곳 / 비고 (한국어 키, 화면에서 tr 로 번역)
+    /// GodDB에서 쓰는 곳 / 비고 (한국어 키, 화면에서 tr 로 번역)
     let note: String
 }
 
@@ -21,7 +21,7 @@ enum Licenses {
 
     static let thirdParty: [ThirdPartyLicense] = [
         ThirdPartyLicense(name: "mysql-nio", version: "1.9.3", license: "MIT", copyright: "Copyright (c) Qutheory, LLC", url: "https://github.com/vapor/mysql-nio", text: mitMySQL, note: "MySQL 드라이버"),
-        ThirdPartyLicense(name: "postgres-nio", version: "1.33.3 (갓디비 패치)", license: "MIT", copyright: "Copyright (c) Tanner Nelson", url: "https://github.com/vapor/postgres-nio", text: mitPostgres, note: "PostgreSQL 드라이버 — 결과를 텍스트 형식으로 받도록 1줄 수정 (Vendor/postgres-nio/GODDB_PATCH.md)"),
+        ThirdPartyLicense(name: "postgres-nio", version: "1.33.3 (GodDB 패치)", license: "MIT", copyright: "Copyright (c) Tanner Nelson", url: "https://github.com/vapor/postgres-nio", text: mitPostgres, note: "PostgreSQL 드라이버 — 결과를 텍스트 형식으로 받도록 1줄 수정 (Vendor/postgres-nio/GODDB_PATCH.md)"),
         ThirdPartyLicense(name: "SwiftNIO", version: "2.105.0", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-nio", text: apache, note: ""),
         ThirdPartyLicense(name: "SwiftNIO SSL", version: "2.37.6", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-nio-ssl", text: apache, note: "NIOSSL 에는 BoringSSL(OpenSSL/ISC 계열 라이선스)이 포함돼요."),
         ThirdPartyLicense(name: "SwiftNIO Transport Services", version: "1.28.0", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-nio-transport-services", text: apache, note: ""),
@@ -36,7 +36,7 @@ enum Licenses {
         ThirdPartyLicense(name: "Swift System", version: "1.8.1", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-system", text: apache, note: ""),
         ThirdPartyLicense(name: "Swift ASN.1", version: "1.7.4", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-asn1", text: apache, note: ""),
         ThirdPartyLicense(name: "Swift Service Lifecycle", version: "2.13.0", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/swift-server/swift-service-lifecycle", text: apache, note: ""),
-        ThirdPartyLicense(name: "FreeTDS", version: "1.5 (Homebrew, 별도 설치)", license: "LGPL-2.0", copyright: "Copyright (c) FreeTDS contributors", url: "https://www.freetds.org", text: nil, note: "SQL Server 드라이버. 갓디비에 포함되지 않고 brew install freetds 로 설치한 라이브러리를 실행 시 동적으로 연결해요."),
+        ThirdPartyLicense(name: "FreeTDS", version: "1.5 (Homebrew, 별도 설치)", license: "LGPL-2.0", copyright: "Copyright (c) FreeTDS contributors", url: "https://www.freetds.org", text: nil, note: "SQL Server 드라이버. GodDB에 포함되지 않고 brew install freetds 로 설치한 라이브러리를 실행 시 동적으로 연결해요."),
     ]
 
     static let goddb: String = #"""

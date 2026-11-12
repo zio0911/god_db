@@ -26,7 +26,7 @@ public enum Keychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: id.uuidString,
-            kSecAttrLabel as String: tr("갓디비 DB 비밀번호"),
+            kSecAttrLabel as String: tr("GodDB DB 비밀번호"),
             kSecValueData as String: Data(password.utf8),
         ]
         SecItemAdd(attrs as CFDictionary, nil)

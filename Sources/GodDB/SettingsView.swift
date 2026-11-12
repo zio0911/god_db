@@ -84,7 +84,7 @@ struct LicenseSettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             List(selection: $selection) {
-                Section(tr("갓디비")) {
+                Section(tr("GodDB")) {
                     Text("GodDB").tag("GodDB")
                 }
                 Section(tr("오픈소스 %@개", "\(Licenses.thirdParty.count)")) {
@@ -118,9 +118,9 @@ struct LicenseSettingsView: View {
 
     private var goddb: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(tr("갓디비")).font(.title2.weight(.semibold))
+            Text(tr("GodDB")).font(.title2.weight(.semibold))
             Text("MIT License · \(Licenses.goddbCopyright)").foregroundStyle(.secondary)
-            Text(tr("갓디비는 오픈소스예요. MIT 라이선스에 따라 자유롭게 쓰고, 고치고, 배포할 수 있어요. 저작권 표시와 라이선스 문구만 함께 남겨 주세요."))
+            Text(tr("GodDB는 오픈소스예요. MIT 라이선스에 따라 자유롭게 쓰고, 고치고, 배포할 수 있어요. 저작권 표시와 라이선스 문구만 함께 남겨 주세요."))
             Link(Licenses.goddbURL, destination: URL(string: Licenses.goddbURL)!)
             licenseText(Licenses.goddb)
         }

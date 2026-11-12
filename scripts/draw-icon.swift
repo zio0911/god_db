@@ -1,4 +1,4 @@
-// 갓디비 앱 아이콘 (채택: 2번 "후광 DB · 어두운 배경")
+// GodDB 앱 아이콘 (채택: 2번 "후광 DB · 어두운 배경")
 //   swift scripts/draw-icon.swift iconset Resources/AppIcon.iconset   → 모든 크기 PNG (iconutil 로 .icns 변환)
 //   swift scripts/draw-icon.swift <1|2|3|4|sheet> <출력.png>            → 시안 다시 보기
 import AppKit

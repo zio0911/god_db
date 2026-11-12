@@ -174,10 +174,10 @@ public enum ErrorText {
                          hint: tr("VPN 연결 여부와, 보안 그룹/방화벽에서 이 PC가 허용돼 있는지 확인해 주세요."), raw: raw)
         case EHOSTUNREACH, ENETUNREACH:
             return .init(message: tr("서버까지 네트워크 경로가 없어요."),
-                         hint: tr("VPN 연결을 확인해 주세요. 사내망 IP라면 시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크에서 갓디비를 허용해야 할 수 있어요."), raw: raw)
+                         hint: tr("VPN 연결을 확인해 주세요. 사내망 IP라면 시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크에서 GodDB를 허용해야 할 수 있어요."), raw: raw)
         case EPERM, EACCES:
             return .init(message: tr("운영체제가 네트워크 연결을 막았어요."),
-                         hint: tr("시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크에서 갓디비를 허용하거나, 회사 보안 프로그램(방화벽)을 확인해 주세요."), raw: raw)
+                         hint: tr("시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크에서 GodDB를 허용하거나, 회사 보안 프로그램(방화벽)을 확인해 주세요."), raw: raw)
         default:
             return .init(message: tr("네트워크 오류 (errno %@: %@)", "\(code)", "\(String(cString: strerror(code)))"), hint: nil, raw: raw)
         }

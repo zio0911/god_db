@@ -1,4 +1,4 @@
-# 갓디비 (GodDB)
+# GodDB (갓디비)
 
 무료 macOS DB 클라이언트 — **MySQL / PostgreSQL / SQL Server**.
 SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https://github.com/vapor/postgres-nio)(텍스트 결과 패치본, `Vendor/`) + [FreeTDS](https://www.freetds.org).
@@ -32,7 +32,7 @@ brew install freetds      # SQL Server 드라이버 (DB-Library)
 
 ```bash
 swift run                 # 개발 실행
-./scripts/build-app.sh    # build/갓디비.app 생성 (응용 프로그램 폴더로 복사해서 사용)
+./scripts/build-app.sh    # build/GodDB.app 생성 (응용 프로그램 폴더로 복사해서 사용)
 ./scripts/test.sh         # 단위 테스트
 ```
 
@@ -50,7 +50,7 @@ iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns && rm -rf R
 ## DMG 만들기 (배포용)
 
 ```bash
-./scripts/make-dmg.sh     # → build/GodDB-<버전>.dmg (갓디비.app + Applications 바로가기 + 읽어주세요.txt)
+./scripts/make-dmg.sh     # → build/GodDB-<버전>.dmg (GodDB.app + Applications 바로가기 + 읽어주세요.txt)
 ```
 
 - 버전은 `scripts/build-app.sh` 의 `CFBundleShortVersionString` 에서 정한다.

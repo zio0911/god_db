@@ -30,7 +30,7 @@ struct GodDBApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(tr("갓디비")) {
+        WindowGroup(tr("GodDB")) {
             ContentView()
                 .environment(app)
                 .environment(settings)

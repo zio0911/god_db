@@ -1,13 +1,13 @@
 #!/bin/zsh
-# 갓디비.app 을 빌드해서 배포용 DMG 로 만든다.
+# GodDB.app 을 빌드해서 배포용 DMG 로 만든다.
 #   ./scripts/make-dmg.sh        → build/GodDB-<버전>.dmg
-# DMG 를 열면 갓디비.app 과 Applications 바로가기가 보이고, 끌어다 놓으면 설치된다.
+# DMG 를 열면 GodDB.app 과 Applications 바로가기가 보이고, 끌어다 놓으면 설치된다.
 set -e
 cd "$(dirname "$0")/.."
 
 ./scripts/build-app.sh
 
-APP="build/갓디비.app"
+APP="build/GodDB.app"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
 STAGE="build/dmg"
 DMG="build/GodDB-$VERSION.dmg"
@@ -19,13 +19,13 @@ ln -s /Applications "$STAGE/Applications"
 # DMG 를 마운트했을 때 디스크 아이콘도 앱 아이콘으로
 cp Resources/AppIcon.icns "$STAGE/.VolumeIcon.icns"
 cat > "$STAGE/읽어주세요.txt" <<TXT
-갓디비 $VERSION
+GodDB $VERSION
 
-설치: 갓디비.app 을 Applications 폴더로 끌어다 놓으세요.
+설치: GodDB.app 을 Applications 폴더로 끌어다 놓으세요.
 
 처음 실행할 때 "확인되지 않은 개발자" 경고가 나오면:
-  Finder > 응용 프로그램 > 갓디비 를 우클릭 > 열기 > 열기
-  (또는 터미널: xattr -dr com.apple.quarantine /Applications/갓디비.app)
+  Finder > 응용 프로그램 > GodDB 를 우클릭 > 열기 > 열기
+  (또는 터미널: xattr -dr com.apple.quarantine /Applications/GodDB.app)
 
 SQL Server 를 쓰려면 FreeTDS 가 필요해요:
   brew install freetds
