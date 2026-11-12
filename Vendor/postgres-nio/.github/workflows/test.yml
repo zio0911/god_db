@@ -1,0 +1,203 @@
+name: CI
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+on: 
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "*" ]
+
+jobs:
+  linux-unit:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        swift-image:
+          - swift:6.2-noble
+          - swift:6.3-noble
+          - swift:6.4-resolute
+          - swiftlang/swift:nightly-main-noble
+    container: ${{ matrix.swift-image }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install curl for Codecov
+        run: apt-get update -yq && apt-get install -y curl
+      - name: Check out package
+        uses: actions/checkout@v7
+      - name: Run unit tests with Thread Sanitizer
+        run: |
+          swift test --filter '^(PostgresNIOTests|ConnectionPoolModuleTests)' --sanitize=thread --enable-code-coverage
+      - name: Submit code coverage
+        uses: vapor/swift-codecov-action@c93caea6600dbe3af0266a8ef6ee195c00181f04 # v0.3.7
+        with:
+          codecov_token: ${{ secrets.CODECOV_TOKEN }}
+
+  linux-integration-and-dependencies:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres-image:
+          - postgres:18
+          - postgres:16
+          - postgres:14
+        include:
+          - postgres-image: postgres:18
+            postgres-auth: scram-sha-256
+          - postgres-image: postgres:16
+            postgres-auth: md5
+          - postgres-image: postgres:14
+            postgres-auth: trust
+    container:
+      image: swift:6.4-resolute
+      volumes: [ 'pgrunshare:/var/run/postgresql' ]
+    runs-on: ubuntu-24.04
+    env: &psql_shared_env
+      # Unfortunately, fluent-postgres-driver details leak through here
+      POSTGRES_DB: 'test_database'
+      POSTGRES_USER: 'test_username'
+      POSTGRES_PASSWORD: 'test_password'
+      POSTGRES_HOSTNAME: 'psql-a'
+      POSTGRES_HOSTNAME_B: 'psql-b'
+      POSTGRES_SOCKET: '/var/run/postgresql/.s.PGSQL.5432'
+      POSTGRES_HOST_AUTH_METHOD: ${{ matrix.postgres-auth }}
+      POSTGRES_INITDB_ARGS: --auth-host=${{ matrix.postgres-auth }}
+    services:
+      psql-a: &psql_service_spec
+        image: ${{ matrix.postgres-image }}
+        volumes: [ 'pgrunshare:/var/run/postgresql' ]
+        env: *psql_shared_env
+      psql-b: *psql_service_spec
+    steps:
+      - name: Check out package
+        uses: actions/checkout@v7
+        with: { path: 'postgres-nio' }
+      - name: Run integration tests
+        run: swift test --package-path postgres-nio --filter ^IntegrationTests
+      - name: Check out postgres-kit dependent
+        uses: actions/checkout@v7
+        with: { repository: 'vapor/postgres-kit', path: 'postgres-kit' }
+      - name: Check out fluent-postgres-driver dependent
+        uses: actions/checkout@v7
+        with: { repository: 'vapor/fluent-postgres-driver', path: 'fluent-postgres-driver' }
+      - name: Use local package in dependents
+        run: |
+          swift package --package-path postgres-kit edit postgres-nio --path postgres-nio
+          swift package --package-path fluent-postgres-driver edit postgres-nio --path postgres-nio
+      - name: Run postgres-kit tests
+        run: swift test --package-path postgres-kit
+      - name: Run fluent-postgres-driver tests
+        run: swift test --package-path fluent-postgres-driver
+
+  macos-all:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres-formula:
+          # Only test one version on macOS, let Linux do the rest
+          - postgresql@17
+        postgres-auth:
+          # Only test one auth method on macOS, Linux tests will cover the others
+          - scram-sha-256
+        macos-version:
+          - macos-26
+          - xcode-27
+        include:
+          - macos-version: macos-26
+            xcode-version: 26.6
+          - macos-version: xcode-27
+            xcode-version: latest-stable
+    runs-on: ${{ matrix.macos-version }}
+    env:
+      POSTGRES_HOSTNAME: 127.0.0.1
+      POSTGRES_USER: 'test_username'
+      POSTGRES_PASSWORD: 'test_password'
+      POSTGRES_DB: 'postgres'
+      POSTGRES_AUTH_METHOD: ${{ matrix.postgres-auth }}
+      POSTGRES_FORMULA: ${{ matrix.postgres-formula }}
+    steps:
+      - name: Select latest available Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: ${{ matrix.xcode-version }}
+      - name: Install Postgres, setup DB and auth, and wait for server start
+        run: |
+          export PGDATA=/tmp/vapor-postgres-test
+          brew install --overwrite "${POSTGRES_FORMULA}" && brew link --overwrite --force "${POSTGRES_FORMULA}"
+          initdb --locale=C --auth-host "${POSTGRES_AUTH_METHOD}" -U "${POSTGRES_USER}" --pwfile=<(echo "${POSTGRES_PASSWORD}")
+          pg_ctl start --wait
+        timeout-minutes: 15
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Run all tests
+        run: swift test --enable-code-coverage
+      - name: Submit code coverage
+        uses: vapor/swift-codecov-action@c93caea6600dbe3af0266a8ef6ee195c00181f04 # v0.3.7
+        with:
+          codecov_token: ${{ secrets.CODECOV_TOKEN }}
+          
+  api-breakage:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    container: swift:resolute
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Restore API baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6
+        with:
+          path: .api-breakage
+          key: api-breakage-${{ github.event.pull_request.base.sha }}
+      - name: API breaking changes
+        run: |
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          swift package diagnose-api-breaking-changes --baseline-dir=./.api-breakage origin/main
+      - name: Cache API baseline
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: actions/cache/save@v6
+        with:
+          path: .api-breakage
+          key: api-breakage-${{ github.sha }}
+
+  musl:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    container: swift:resolute
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+      - name: Install linux dependencies
+        run: apt-get update && apt-get install -y curl jq
+      - name: Install SDK
+        shell: bash
+        run: |
+          version_num="$(swiftc --version | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
+          if [[ -z "${version_num/???/}" ]]; then
+            version_num="${version_num}.0"
+          fi
+          tag="swift-${version_num}-RELEASE"
+          sdk_info="$(curl -s https://www.swift.org/api/v1/install/releases.json | jq -r --arg tag "$tag" '.[] | select(.tag == $tag).platforms[] | select(.platform == "static-sdk") | [.version, .checksum] | @tsv')"
+          version="$(echo "$sdk_info" | cut -f1)"
+          checksum="$(echo "$sdk_info" | cut -f2)"
+          swift sdk install "https://download.swift.org/$(echo $tag | tr [A-Z] [a-z])/static-sdk/$tag/${tag}_static-linux-${version}.artifactbundle.tar.gz" --checksum "$checksum"
+      - name: Build
+        run: swift build --swift-sdk x86_64-swift-linux-musl
+
+  submit-dependencies:
+    permissions:
+      contents: write
+    if: github.event_name == 'push'
+    uses: vapor/ci/.github/workflows/submit-deps.yml@main
+    secrets: inherit

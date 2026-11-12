@@ -1,0 +1,262 @@
+import GodDBCore
+import SwiftUI
+
+struct SidebarView: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        @Bindable var app = app
+        VStack(spacing: 0) {
+            List {
+                Section("접속") {
+                    ForEach(app.profiles) { profile in
+                        ProfileRow(profile: profile)
+                    }
+                    Button {
+                        app.newProfile()
+                    } label: {
+                        Label("새 접속", systemImage: "plus")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                }
+
+                if case .failed(let message) = app.state {
+                    Section {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                    }
+                }
+
+                if app.state == .connected {
+                    Section {
+                        if app.schemaLoading {
+                            HStack { ProgressView().controlSize(.small); Text("스키마 불러오는 중…") }
+                        }
+                        ForEach(app.filteredTables) { table in
+                            TableNode(table: table)
+                        }
+                    } header: {
+                        HStack {
+                            Text(app.selectedProfile?.kind.containerTitle ?? "DB").foregroundStyle(.secondary)
+                            Picker("", selection: Binding(
+                                get: { app.currentDatabase },
+                                set: { db in Task { await app.selectDatabase(db) } }
+                            )) {
+                                ForEach(app.databases, id: \.self) { Text($0).tag($0) }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                            Spacer()
+                            Text("\(app.tables.count)").foregroundStyle(.secondary)
+                            Button {
+                                Task { await app.refreshSchema() }
+                            } label: { Image(systemName: "arrow.clockwise") }
+                            .buttonStyle(.borderless)
+                            .help("스키마 새로고침 (⇧⌘R)")
+                        }
+                    }
+
+                    ForEach(RoutineMeta.Kind.allCases, id: \.self) { kind in
+                        let items = app.filteredRoutines(kind)
+                        if !items.isEmpty {
+                            Section("\(kind.title) \(items.count)") {
+                                ForEach(items) { RoutineRow(routine: $0) }
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+
+            if app.state == .connected {
+                Divider()
+                HStack {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("테이블 검색", text: $app.tableFilter)
+                        .textFieldStyle(.plain)
+                }
+                .padding(8)
+            }
+        }
+    }
+}
+
+struct ProfileRow: View {
+    @Environment(AppState.self) private var app
+    let profile: ConnectionProfile
+
+    var body: some View {
+        let selected = app.selectedProfileID == profile.id
+        let state = app.connectionState(profile.id)
+        let tabCount = app.tabs.filter { $0.profileID == profile.id }.count
+        HStack(spacing: 6) {
+            // 연결 상태: 초록 = 연결됨, 빨강 = 실패, 회색 = 안 됨
+            Circle()
+                .fill(state == .connected ? Color.green : (state == .disconnected ? Color.secondary.opacity(0.4) : Color.red))
+                .frame(width: 7, height: 7)
+                .opacity(state == .connecting ? 0 : 1)
+                .overlay { if state == .connecting { ProgressView().controlSize(.mini) } }
+            Image(systemName: "cylinder.split.1x2")
+                .foregroundStyle(selected ? Color.accentColor : .secondary)
+            Text(profile.name).lineLimit(1)
+            KindBadge(kind: profile.kind)
+            if profile.readOnly {
+                Text("읽기전용").font(.caption2).foregroundStyle(.red)
+            }
+            Spacer()
+            if tabCount > 0 {
+                Text("\(tabCount)").font(.caption2).foregroundStyle(.secondary)
+                    .help("이 접속의 쿼리 탭 \(tabCount)개")
+            }
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background(selected ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 5))
+        .contentShape(Rectangle())
+        .onTapGesture(count: 1) {
+            // 다른 접속은 끊지 않고 이 접속을 열거나 보기로 바꾼다.
+            Task { await app.open(profile.id) }
+        }
+        .contextMenu {
+            if state == .connected {
+                Button("새 쿼리 탭") {
+                    app.selectedProfileID = profile.id
+                    app.addTab(for: profile.id)
+                }
+                Button("다시 연결") {
+                    Task {
+                        await app.disconnect(profile.id)
+                        await app.connect(profile.id)
+                    }
+                }
+                Button("연결 끊기") { Task { await app.disconnect(profile.id) } }
+            } else {
+                Button("연결") { Task { await app.connect(profile.id) } }
+            }
+            Divider()
+            Button("편집…") { app.edit(profile) }
+            Button("복제") { app.duplicate(profile) }
+            Divider()
+            Button("삭제", role: .destructive) { app.deleteProfile(profile) }
+        }
+    }
+}
+
+/// DB 종류 작은 표시 (MY / PG / MSSQL)
+struct KindBadge: View {
+    let kind: DatabaseKind
+
+    var body: some View {
+        Text(kind == .mssql ? "MSSQL" : kind == .postgres ? "PG" : "MY")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 3)
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+            .help(kind.title)
+    }
+
+    private var color: Color {
+        switch kind {
+        case .mysql: return .orange
+        case .postgres: return .blue
+        case .mssql: return .purple
+        }
+    }
+}
+
+struct TableNode: View {
+    @Environment(AppState.self) private var app
+    let table: TableMeta
+    @State private var expanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            ForEach(table.columns) { col in
+                HStack(spacing: 4) {
+                    Image(systemName: col.isPrimaryKey ? "key.fill" : "circle.fill")
+                        .font(.system(size: col.isPrimaryKey ? 9 : 4))
+                        .foregroundStyle(col.isPrimaryKey ? .yellow : .secondary)
+                        .frame(width: 12)
+                    Text(col.name).lineLimit(1)
+                    Text(col.columnType).foregroundStyle(.secondary).lineLimit(1)
+                    if !col.nullable { Text("NN").font(.caption2).foregroundStyle(.tertiary) }
+                }
+                .font(.callout)
+                .help(col.comment)
+            }
+            if !table.indexes.isEmpty {
+                DisclosureGroup {
+                    ForEach(table.indexes) { idx in
+                        HStack(spacing: 4) {
+                            Image(systemName: idx.isPrimary ? "key" : "list.bullet.indent")
+                                .font(.caption).foregroundStyle(.purple).frame(width: 12)
+                            Text(idx.name).lineLimit(1)
+                            Text("(\(idx.columns.joined(separator: ", ")))").foregroundStyle(.secondary).lineLimit(1)
+                            if idx.unique && !idx.isPrimary { Text("UQ").font(.caption2).foregroundStyle(.tertiary) }
+                        }
+                        .font(.callout)
+                        .help("\(idx.unique ? "UNIQUE " : "")\(idx.name) (\(idx.columns.joined(separator: ", ")))")
+                    }
+                } label: {
+                    Label("인덱스 \(table.indexes.count)", systemImage: "list.bullet.indent")
+                        .font(.callout)
+                        .contextMenu {
+                            Button("인덱스 상세 보기") { app.openIndexes(table.name) }
+                        }
+                }
+            }
+        } label: {
+            Label(table.name, systemImage: "tablecells")
+                .lineLimit(1)
+                .help(table.comment.isEmpty ? table.name : table.comment)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { app.openTableQuery(table.name) }
+                .contextMenu {
+                    Button("데이터 보기 (SELECT)") { app.openTableQuery(table.name) }
+                    Button("테이블 수정 (ALTER)…") { app.alteringTable = table }
+                    Button("CREATE 문 보기") { Task { await app.openTableDDL(table) } }
+                    Button("인덱스 상세 보기") { app.openIndexes(table.name) }
+                    Divider()
+                    Button("이름 복사") { Pasteboard.copy(table.name) }
+                }
+        }
+    }
+}
+
+struct RoutineRow: View {
+    @Environment(AppState.self) private var app
+    let routine: RoutineMeta
+
+    private var icon: String {
+        switch routine.kind {
+        case .view: return "eye"
+        case .procedure: return "gearshape"
+        case .function: return "function"
+        case .trigger: return "bolt"
+        }
+    }
+
+    var body: some View {
+        Label(routine.name, systemImage: icon)
+            .lineLimit(1)
+            .help(routine.comment.isEmpty ? "더블클릭하면 정의를 열어요" : routine.comment)
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { Task { await app.openRoutine(routine) } }
+            .contextMenu {
+                Button("정의 보기") { Task { await app.openRoutine(routine) } }
+                if routine.kind == .view {
+                    Button("데이터 보기 (SELECT)") { app.openTableQuery(routine.name) }
+                }
+                if routine.kind == .procedure {
+                    Button("CALL 문 만들기") {
+                        app.addTab(text: app.dialect.callSQL(routine.name), title: "호출 · \(routine.name)")
+                    }
+                }
+                Divider()
+                Button("이름 복사") { Pasteboard.copy(routine.name) }
+            }
+    }
+}
