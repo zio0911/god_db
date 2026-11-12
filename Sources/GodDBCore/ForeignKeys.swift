@@ -104,6 +104,15 @@ public enum DiagramLayout {
         return names.compactMap { n in tables.first { $0.name == n } }
     }
 
+    /// 고른 테이블(관계 없어도 모두) + 관계로 이어진 테이블. 고른 순서(스키마 순서)가 먼저.
+    public static func withRelated(_ names: Set<String>, in tables: [TableMeta], extra: [ForeignKeyMeta] = []) -> [TableMeta] {
+        var ordered = tables.map(\.name).filter { names.contains($0) }
+        for name in ordered {
+            for t in related(to: name, in: tables, extra: extra) where !ordered.contains(t.name) { ordered.append(t.name) }
+        }
+        return ordered.compactMap { n in tables.first { $0.name == n } }
+    }
+
     /// 외래 키 제약이 없는 DB 를 위한 관계 추정 (DataGrip 의 가상 외래 키와 비슷)
     /// 규칙: 어떤 테이블의 컬럼 이름이 다른 테이블의 "단일 컬럼 기본 키" 이름과 같으면 그 테이블을 참조한다고 본다.
     ///  - 자기 자신의 기본 키 컬럼은 제외, 이미 진짜 외래 키가 있는 컬럼은 제외

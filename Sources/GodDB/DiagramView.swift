@@ -9,6 +9,8 @@ struct DiagramDoc: Identifiable {
     let tables: [TableMeta]
     /// 중심 테이블 (테이블에서 열었을 때)
     let focus: String?
+    /// 보라색으로 강조할 테이블 (사이드바에서 고른 테이블 / 중심 테이블)
+    var highlighted: Set<String> = []
     /// 컬럼 이름으로 추정한 관계 (외래 키 제약이 없는 DB 용)
     var inferred: [ForeignKeyMeta] = []
 }
@@ -35,13 +37,15 @@ func logicalName(_ comment: String) -> String? {
 }
 
 extension AppState {
-    /// 고른 테이블들로 다이어그램
+    /// 고른 테이블들로 다이어그램: 고른 테이블은 모두(관계가 없어도) 보이고,
+    /// 관계(외래 키·추정)가 있으면 이어진 테이블도 함께 그린다. 고른 테이블은 보라색으로 구분.
     func makeDiagram(names: Set<String>) -> UUID? {
-        makeDiagram(focus: nil, only: tables.filter { names.contains($0.name) })
+        let list = DiagramLayout.withRelated(names, in: tables, extra: DiagramLayout.inferredRelations(tables))
+        return makeDiagram(focus: nil, only: list, highlighted: names)
     }
 
     /// 다이어그램 문서를 만들고 창 id 를 돌려준다. focus 가 있으면 그 테이블과 바로 이어진 테이블만.
-    func makeDiagram(focus: String?, only: [TableMeta]? = nil) -> UUID? {
+    func makeDiagram(focus: String?, only: [TableMeta]? = nil, highlighted: Set<String> = []) -> UUID? {
         guard let profile = selectedProfile, !tables.isEmpty else {
             log(.warning, .schema, tr("먼저 접속을 연결하고 스키마를 불러오세요."))
             return nil
@@ -52,7 +56,7 @@ extension AppState {
         let title: String
         if let only {
             list = only
-            title = "\(profile.name) / \(currentDatabase) / " + tr("선택 %@개", "\(only.count)")
+            title = "\(profile.name) / \(currentDatabase) / " + tr("선택 %@개", "\(highlighted.isEmpty ? only.count : highlighted.count)")
         } else if let focus {
             list = DiagramLayout.related(to: focus, in: tables, extra: inferredAll)
             title = "\(profile.name) / \(currentDatabase) / \(focus)"
@@ -67,6 +71,7 @@ extension AppState {
         }
         let names = Set(list.map(\.name))
         let doc = DiagramDoc(title: title, tables: list, focus: focus,
+                             highlighted: focus.map { [$0] } ?? highlighted.intersection(names),
                              inferred: inferredAll.filter { names.contains($0.table) && names.contains($0.referencedTable) })
         diagrams[doc.id] = doc
         let fkCount = list.reduce(0) { $0 + $1.foreignKeys.filter { names.contains($0.referencedTable) }.count }
@@ -205,7 +210,7 @@ struct DiagramView: View {
 
             ForEach(doc.tables) { table in
                 if let f = frame(table.name) {
-                    TableCard(table: table, focus: table.name == doc.focus,
+                    TableCard(table: table, focus: doc.highlighted.contains(table.name),
                               highlighted: hovered.map { isRelated(table.name, $0) } ?? false,
                               nameMode: nameMode,
                               inferredColumns: Set(doc.inferred.filter { $0.table == table.name && showInferred }
@@ -382,7 +387,7 @@ struct TableCard: View {
 enum DiagramSample {
     @MainActor
     static func render(to path: String, mode: String = "physical") {
-        UserDefaults.standard.set(mode, forKey: "GodDB.diagram.nameMode")
+        UserDefaults.standard.set(mode == "selection" ? "both" : mode, forKey: "GodDB.diagram.nameMode")
         func col(_ n: String, _ t: String, _ c: String, pk: Bool = false) -> ColumnMeta {
             ColumnMeta(name: n, columnType: t, nullable: !pk, columnKey: pk ? "PRI" : "", comment: c)
         }
@@ -402,7 +407,16 @@ enum DiagramSample {
             table("tb_point_hist", "", [col("hist_id", "bigint", "", pk: true), col("member_id", "bigint", "회원 ID"), col("point", "int", "포인트")]),
         ]
         let inferred = DiagramLayout.inferredRelations(tables)
-        let view = DiagramView(doc: DiagramDoc(title: "sample / shop", tables: tables, focus: nil, inferred: inferred)).canvas
+        // "selection" 모드: tb_order_item 과 tb_notice 를 고른 것처럼 (관계 있는 테이블은 함께, 없는 건 따로)
+        let picked: Set<String> = ["tb_order_item", "tb_notice"]
+        let all = tables + [table("tb_notice", "공지", [col("notice_id", "int", "공지 ID", pk: true), col("title", "varchar(200)", "제목")])]
+        let docTables = mode == "selection" ? DiagramLayout.withRelated(picked, in: all, extra: DiagramLayout.inferredRelations(all)) : tables
+        let names = Set(docTables.map(\.name))
+        let doc = DiagramDoc(title: "sample / shop", tables: docTables, focus: nil,
+                             highlighted: mode == "selection" ? picked : [],
+                             inferred: (mode == "selection" ? DiagramLayout.inferredRelations(all) : inferred)
+                                .filter { names.contains($0.table) && names.contains($0.referencedTable) })
+        let view = DiagramView(doc: doc).canvas
             .background(Color(nsColor: .windowBackgroundColor))
         let renderer = ImageRenderer(content: view)
         renderer.scale = 1

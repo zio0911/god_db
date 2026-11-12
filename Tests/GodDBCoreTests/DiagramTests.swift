@@ -91,3 +91,17 @@ struct InferredRelationTests {
         #expect(DiagramLayout.inferredRelations([x1, x2, c]).isEmpty)
     }
 }
+
+@Suite("Selected tables with related")
+struct SelectedWithRelatedTests {
+    @Test func keepsUnrelatedAndAddsNeighbors() {
+        func t(_ n: String, _ pk: String, _ cols: [String] = []) -> TableMeta {
+            TableMeta(name: n, columns: ([pk] + cols).map { ColumnMeta(name: $0, columnType: "int", nullable: true, columnKey: $0 == pk ? "PRI" : "") },
+                      indexes: [IndexMeta(name: "PRIMARY", unique: true, columns: [pk])])
+        }
+        let tables = [t("member", "member_id"), t("orders", "order_id", ["member_id"]), t("item", "item_id", ["order_id"]), t("notice", "notice_id")]
+        let inferred = DiagramLayout.inferredRelations(tables)
+        let list = DiagramLayout.withRelated(["item", "notice"], in: tables, extra: inferred).map(\.name)
+        #expect(list == ["item", "notice", "orders"])
+    }
+}
