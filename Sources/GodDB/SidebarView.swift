@@ -233,18 +233,16 @@ struct TableNode: View {
                 // 한 번 클릭은 목록 선택(⌘/⇧ 다중 선택)에 맡기고, 두 번 클릭만 가로챈다
                 .simultaneousGesture(TapGesture(count: 2).onEnded { app.openTableQuery(table.name) })
                 .contextMenu {
-                    if app.selectedTables.count > 1 && app.selectedTables.contains(table.name) {
-                        Button(tr("선택한 테이블 %@개 다이어그램", "\(app.selectedTables.count)")) {
-                            if let id = app.makeDiagram(names: app.selectedTables) { openWindow(id: "diagram", value: id) }
-                        }
-                        Divider()
-                    }
                     Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(table.name) }
                     Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }
                     Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }
                     Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
-                    Button(tr("다이어그램 보기")) {
-                        if let id = app.makeDiagram(focus: table.name) { openWindow(id: "diagram", value: id) }
+                    // 여러 개를 골랐고 그중 하나를 우클릭했으면 → 고른 테이블 전부 (관계 없는 테이블도 따로)
+                    // 아니면 → 이 테이블 + 바로 이어진 테이블
+                    let useSelection = app.selectedTables.count > 1 && app.selectedTables.contains(table.name)
+                    Button(useSelection ? tr("다이어그램 보기 (선택한 %@개)", "\(app.selectedTables.count)") : tr("다이어그램 보기")) {
+                        let id = useSelection ? app.makeDiagram(names: app.selectedTables) : app.makeDiagram(focus: table.name)
+                        if let id { openWindow(id: "diagram", value: id) }
                     }
                     Divider()
                     Button(tr("이름 복사")) { Pasteboard.copy(table.name) }

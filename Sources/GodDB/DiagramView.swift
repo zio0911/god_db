@@ -103,6 +103,8 @@ struct DiagramView: View {
     @State private var dragStart: [String: CGPoint] = [:]
     @State private var hovered: String?
     @State private var showInferred: Bool
+    @State private var viewport: CGSize = .zero
+    @State private var didFit = false
     @AppStorage("GodDB.diagram.nameMode") private var nameModeRaw = DiagramNameMode.physical.rawValue
 
     private let margin: CGFloat = 40
@@ -126,12 +128,20 @@ struct DiagramView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            ScrollView([.horizontal, .vertical]) {
-                canvas
-                    .scaleEffect(zoom, anchor: .topLeading)
-                    .frame(width: contentSize.width * zoom, height: contentSize.height * zoom, alignment: .topLeading)
+            GeometryReader { geo in
+                ScrollView([.horizontal, .vertical]) {
+                    canvas
+                        .scaleEffect(zoom, anchor: .topLeading)
+                        .frame(width: contentSize.width * zoom, height: contentSize.height * zoom, alignment: .topLeading)
+                }
+                .background(Color(nsColor: .underPageBackgroundColor))
+                .onAppear {
+                    viewport = geo.size
+                    // 처음 열 때 전체가 한 화면에 보이게 (관계 없는 테이블이 아래로 밀려 안 보이는 일 방지)
+                    if !didFit { fit(); didFit = true }
+                }
+                .onChange(of: geo.size) { viewport = geo.size }
             }
-            .background(Color(nsColor: .underPageBackgroundColor))
         }
         .frame(minWidth: 700, minHeight: 480)
 
@@ -163,6 +173,10 @@ struct DiagramView: View {
             Button { zoom = min(2, zoom + 0.1) } label: { Image(systemName: "plus.magnifyingglass") }
                 .help(tr("확대"))
             Button { zoom = 1 } label: { Text("100%") }
+            Button { withAnimation(.easeInOut(duration: 0.2)) { fit() } } label: {
+                Label(tr("화면에 맞추기"), systemImage: "arrow.up.left.and.arrow.down.right")
+            }
+            .help(tr("모든 테이블이 한 화면에 보이게 확대/축소"))
             Divider().frame(height: 16)
             Button { relayoutAnimated() } label: { Label(tr("자동 정렬"), systemImage: "rectangle.3.group") }
             Button { exportPNG() } label: { Label(tr("PNG 저장"), systemImage: "square.and.arrow.down") }
@@ -170,6 +184,13 @@ struct DiagramView: View {
         .buttonStyle(.hover)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// 모든 테이블이 창 안에 들어오게 배율 조정 (최대 100%, 최소 30%)
+    private func fit() {
+        guard viewport.width > 0, viewport.height > 0 else { return }
+        let z = min(viewport.width / contentSize.width, viewport.height / contentSize.height)
+        zoom = max(0.3, min(1, (z * 100).rounded(.down) / 100))
     }
 
     private func relayoutAnimated() {
@@ -387,7 +408,7 @@ struct TableCard: View {
 enum DiagramSample {
     @MainActor
     static func render(to path: String, mode: String = "physical") {
-        UserDefaults.standard.set(mode == "selection" ? "both" : mode, forKey: "GodDB.diagram.nameMode")
+        UserDefaults.standard.set(mode.hasPrefix("selection") ? "physical" : mode, forKey: "GodDB.diagram.nameMode")
         func col(_ n: String, _ t: String, _ c: String, pk: Bool = false) -> ColumnMeta {
             ColumnMeta(name: n, columnType: t, nullable: !pk, columnKey: pk ? "PRI" : "", comment: c)
         }
@@ -408,13 +429,20 @@ enum DiagramSample {
         ]
         let inferred = DiagramLayout.inferredRelations(tables)
         // "selection" 모드: tb_order_item 과 tb_notice 를 고른 것처럼 (관계 있는 테이블은 함께, 없는 건 따로)
-        let picked: Set<String> = ["tb_order_item", "tb_notice"]
-        let all = tables + [table("tb_notice", "공지", [col("notice_id", "int", "공지 ID", pk: true), col("title", "varchar(200)", "제목")])]
-        let docTables = mode == "selection" ? DiagramLayout.withRelated(picked, in: all, extra: DiagramLayout.inferredRelations(all)) : tables
+        // "selection10" 모드: 관계 있는 3개 + 단독 7개, 10개를 고른 것처럼
+        let loners = ["tb_notice", "tb_banner", "tb_faq", "tb_code", "tb_config", "tb_popup", "tb_access_log"].map { n in
+            table(n, "", [col(n.replacingOccurrences(of: "tb_", with: "") + "_no", "int", "", pk: true), col("title", "varchar(200)", "제목")])
+        }
+        let all = tables + loners
+        let picked: Set<String> = mode == "selection10"
+            ? Set(["tb_member", "tb_order", "tb_order_item"] + loners.map(\.name))
+            : ["tb_order_item", "tb_notice"]
+        let selecting = mode.hasPrefix("selection")
+        let docTables = selecting ? DiagramLayout.withRelated(picked, in: all, extra: DiagramLayout.inferredRelations(all)) : tables
         let names = Set(docTables.map(\.name))
         let doc = DiagramDoc(title: "sample / shop", tables: docTables, focus: nil,
-                             highlighted: mode == "selection" ? picked : [],
-                             inferred: (mode == "selection" ? DiagramLayout.inferredRelations(all) : inferred)
+                             highlighted: selecting ? picked : [],
+                             inferred: (selecting ? DiagramLayout.inferredRelations(all) : inferred)
                                 .filter { names.contains($0.table) && names.contains($0.referencedTable) })
         let view = DiagramView(doc: doc).canvas
             .background(Color(nsColor: .windowBackgroundColor))
