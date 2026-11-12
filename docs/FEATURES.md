@@ -1,6 +1,6 @@
 # GodDB 기능 명세
 
-> 버전 0.7.2 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+
+> 버전 0.7.3 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+
 > 이 문서는 기능이 추가·변경될 때마다 함께 갱신한다.
 
 ## 목차
@@ -36,7 +36,7 @@
 
 | 항목 | MySQL | PostgreSQL | SQL Server |
 |---|---|---|---|
-| 드라이버 | mysql-nio (Swift) | postgres-nio (Swift, 결과 텍스트 형식 패치본) | FreeTDS DB-Library (`brew install freetds`) |
+| 드라이버 | mysql-nio (Swift) | postgres-nio (Swift, 결과 텍스트 형식 패치본) | FreeTDS DB-Library (앱에 포함, 빌드 시 `brew install freetds`) |
 | 기본 포트 | 3306 | 5432 | 1433 |
 | 사이드바 드롭다운 | DB | **스키마** (접속 DB 는 접속 설정에서 지정) | DB |
 | 테이블 이름 | `table` | `table` (선택한 스키마 안) | dbo 는 `table`, 그 외 `schema.table` |
@@ -343,7 +343,8 @@
 | mysql-nio | MIT | |
 | postgres-nio | MIT | 결과 텍스트 형식 1줄 패치 (`Vendor/postgres-nio`) |
 | SwiftNIO 계열 (NIO, SSL, Transport Services, Crypto, Log, Metrics, Collections, Algorithms, Atomics, Numerics, System, ASN.1, Service Lifecycle) | Apache-2.0 | NIOSSL 은 BoringSSL 포함 |
-| FreeTDS | LGPL | 포함하지 않음 — Homebrew 로 설치한 라이브러리를 실행 시 연결 |
+| FreeTDS | LGPL | 고치지 않은 동적 라이브러리를 앱 안에 넣어 실행 시 연결 |
+| OpenSSL | Apache-2.0 | FreeTDS 가 쓰는 libssl·libcrypto 를 앱 안에 넣음 |
 
 ### 다국어 구조 (개발자용)
 - 소스에는 한국어 문장을 `tr("…")` 로 감싸 쓴다. 값이 들어가면 `tr("%@행", "\(count)")`.
@@ -430,7 +431,7 @@
 ## 17. 알려진 제약
 
 - SQL Server: 세션 단위 읽기전용이 없어 앱 검사만 한다. 기본값 변경 시 기존 기본값 제약조건 삭제는 안내 주석으로만 만든다. Windows 통합 인증 미지원 (SQL 인증만).
-- SQL Server 드라이버는 Homebrew FreeTDS 에 의존한다 (`/opt/homebrew/opt/freetds`). 다른 Mac 에서 쓰려면 `brew install freetds` 필요.
+- SQL Server 드라이버(FreeTDS)는 빌드할 때만 Homebrew 가 필요하다. 배포 앱에는 라이브러리가 들어 있다.
 - 서로 다른 종류의 DB 끼리 스키마 비교는 가능하지만 타입 이름 차이로 "다름"이 많이 나온다.
 - 결과 표에서 데이터 직접 편집 불가.
 - 쿼리 히스토리 없음.
@@ -439,6 +440,10 @@
 - 화면 동작은 수동 확인 필요 (자동 테스트는 Core 로직과 실제 MySQL 연동만 검증).
 
 ## 18. 변경 이력
+
+### 0.7.3
+- 다른 Mac 에서 실행하자마자 "예기치 않게 종료"되던 문제 수정: FreeTDS·OpenSSL 라이브러리를 앱 안에 포함 (Homebrew 없어도 실행)
+- 앱 서명이 깨져 있던 문제 수정: iCloud 폴더의 확장 속성 때문에 임시 서명이 실패하던 것을, iCloud 밖에서 조립·서명하도록 변경
 
 ### 0.7.2
 - 다이어그램: 여러 테이블을 고른 뒤 우클릭 "다이어그램 보기"도 고른 테이블 전부를 그림 (예전엔 우클릭한 테이블 하나 기준)

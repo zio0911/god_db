@@ -36,7 +36,8 @@ enum Licenses {
         ThirdPartyLicense(name: "Swift System", version: "1.8.1", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-system", text: apache, note: ""),
         ThirdPartyLicense(name: "Swift ASN.1", version: "1.7.4", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-asn1", text: apache, note: ""),
         ThirdPartyLicense(name: "Swift Service Lifecycle", version: "2.13.0", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/swift-server/swift-service-lifecycle", text: apache, note: ""),
-        ThirdPartyLicense(name: "FreeTDS", version: "1.5 (Homebrew, 별도 설치)", license: "LGPL-2.0", copyright: "Copyright (c) FreeTDS contributors", url: "https://www.freetds.org", text: nil, note: "SQL Server 드라이버. GodDB에 포함되지 않고 brew install freetds 로 설치한 라이브러리를 실행 시 동적으로 연결해요."),
+        ThirdPartyLicense(name: "OpenSSL", version: "4.x (앱에 포함)", license: "Apache-2.0", copyright: "Copyright (c) The OpenSSL Project Authors", url: "https://www.openssl.org", text: apache, note: "FreeTDS 가 SQL Server 암호화 연결에 써요. libssl·libcrypto 를 앱 안에 넣어 실행 시 연결해요."),
+        ThirdPartyLicense(name: "FreeTDS", version: "1.5 (앱에 포함)", license: "LGPL-2.0", copyright: "Copyright (c) FreeTDS contributors", url: "https://www.freetds.org", text: nil, note: "SQL Server 드라이버. 동적 라이브러리(libsybdb)를 고치지 않고 앱 안(Contents/Frameworks)에 넣어 실행 시 연결해요. 소스: https://www.freetds.org"),
     ]
 
     static let goddb: String = #"""

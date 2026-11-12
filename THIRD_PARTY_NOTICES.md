@@ -20,4 +20,5 @@ GodDB는 MIT 라이선스이며 아래 오픈소스를 사용합니다. 전체 �
 | [Swift System](https://github.com/apple/swift-system) | 1.8.1 | Apache-2.0 | Copyright (c) Apple Inc. and the Swift project authors |  |
 | [Swift ASN.1](https://github.com/apple/swift-asn1) | 1.7.4 | Apache-2.0 | Copyright (c) Apple Inc. and the Swift project authors |  |
 | [Swift Service Lifecycle](https://github.com/swift-server/swift-service-lifecycle) | 2.13.0 | Apache-2.0 | Copyright (c) Apple Inc. and the Swift project authors |  |
-| [FreeTDS](https://www.freetds.org) | 1.5 (Homebrew, 별도 설치) | LGPL-2.0 | Copyright (c) FreeTDS contributors | SQL Server 드라이버. GodDB에 포함되지 않고 brew install freetds 로 설치한 라이브러리를 실행 시 동적으로 연결해요. |
+| [OpenSSL](https://www.openssl.org) | 4.x (앱에 포함) | Apache-2.0 | Copyright (c) The OpenSSL Project Authors | FreeTDS 의 암호화 연결용. libssl·libcrypto 를 GodDB.app/Contents/Frameworks 에 넣어 동적으로 연결해요. |
+| [FreeTDS](https://www.freetds.org) | 1.5 (앱에 포함) | LGPL-2.0 | Copyright (c) FreeTDS contributors | SQL Server 드라이버. 고치지 않은 libsybdb 동적 라이브러리를 GodDB.app/Contents/Frameworks 에 넣어 실행 시 연결해요 (같은 이름의 라이브러리로 바꿔 끼울 수 있음). 소스: https://www.freetds.org |

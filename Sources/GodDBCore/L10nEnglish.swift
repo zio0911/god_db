@@ -8,7 +8,8 @@ enum L10nEnglish {
         "앱": "App",
         // 설정 화면
         "1.33.3 (GodDB 패치)": "1.33.3 (GodDB patch)",
-        "1.5 (Homebrew, 별도 설치)": "1.5 (Homebrew, installed separately)",
+        "1.5 (앱에 포함)": "1.5 (bundled in the app)",
+        "4.x (앱에 포함)": "4.x (bundled in the app)",
         "라이선스": "Licenses",
         "언어": "Language",
         "바꾸면 바로 적용돼요. 메뉴 막대는 앱을 다시 시작해야 바뀌어요.": "Applies right away. The menu bar may update after restarting the app.",
@@ -22,6 +23,7 @@ enum L10nEnglish {
         "MySQL 드라이버": "MySQL driver",
         "PostgreSQL 드라이버 — 결과를 텍스트 형식으로 받도록 1줄 수정 (Vendor/postgres-nio/GODDB_PATCH.md)": "PostgreSQL driver — one-line change to receive results in text format (Vendor/postgres-nio/GODDB_PATCH.md)",
         "NIOSSL 에는 BoringSSL(OpenSSL/ISC 계열 라이선스)이 포함돼요.": "NIOSSL includes BoringSSL (OpenSSL/ISC-style licenses).",
-        "SQL Server 드라이버. GodDB에 포함되지 않고 brew install freetds 로 설치한 라이브러리를 실행 시 동적으로 연결해요.": "SQL Server driver. Not bundled with GodDB — the library installed with brew install freetds is linked dynamically at runtime.",
+        "SQL Server 드라이버. 동적 라이브러리(libsybdb)를 고치지 않고 앱 안(Contents/Frameworks)에 넣어 실행 시 연결해요. 소스: https://www.freetds.org": "SQL Server driver. The unmodified dynamic library (libsybdb) is bundled in the app (Contents/Frameworks) and linked at runtime. Source: https://www.freetds.org",
+        "FreeTDS 가 SQL Server 암호화 연결에 써요. libssl·libcrypto 를 앱 안에 넣어 실행 시 연결해요.": "Used by FreeTDS for encrypted SQL Server connections. libssl and libcrypto are bundled in the app and linked at runtime.",
     ]
 }

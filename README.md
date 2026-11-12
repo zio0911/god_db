@@ -55,7 +55,8 @@ iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns && rm -rf R
 
 - 버전은 `scripts/build-app.sh` 의 `CFBundleShortVersionString` 에서 정한다.
 - 지금은 개발자 서명(Developer ID)·공증(notarization) 없이 임시 서명이라, 받은 사람이 처음 열 때 "확인되지 않은 개발자" 경고가 뜬다 → 우클릭 > 열기.
-- SQL Server 를 쓰려면 받는 Mac 에도 `brew install freetds` 가 필요하다.
+- FreeTDS·OpenSSL 라이브러리는 앱 안(`Contents/Frameworks`)에 넣어 배포하므로 받는 Mac 에 Homebrew 가 없어도 된다. (빌드하는 Mac 에만 `brew install freetds` 필요)
+- 서명·DMG 조립은 iCloud 밖 임시 폴더에서 한다. iCloud 폴더에서는 확장 속성 때문에 서명이 깨진다.
 
 ## 로컬 테스트 DB (세 DB 통합 테스트)
 

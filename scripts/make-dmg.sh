@@ -7,14 +7,16 @@ cd "$(dirname "$0")/.."
 
 ./scripts/build-app.sh
 
-APP="build/GodDB.app"
+# 서명은 iCloud 밖에서 했으므로, DMG 도 그 사본으로 iCloud 밖에서 만든다.
+WORK="${TMPDIR:-/tmp}/goddb-build"
+APP="$WORK/GodDB.app"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
-STAGE="build/dmg"
+STAGE="$WORK/dmg"
 DMG="build/GodDB-$VERSION.dmg"
 
 rm -rf "$STAGE" "$DMG"
 mkdir -p "$STAGE"
-cp -R "$APP" "$STAGE/"
+ditto "$APP" "$STAGE/GodDB.app"
 ln -s /Applications "$STAGE/Applications"
 # DMG 를 마운트했을 때 디스크 아이콘도 앱 아이콘으로
 cp Resources/AppIcon.icns "$STAGE/.VolumeIcon.icns"
@@ -27,15 +29,12 @@ GodDB $VERSION
   Finder > 응용 프로그램 > GodDB 를 우클릭 > 열기 > 열기
   (또는 터미널: xattr -dr com.apple.quarantine /Applications/GodDB.app)
 
-SQL Server 를 쓰려면 FreeTDS 가 필요해요:
-  brew install freetds
-
 로컬 AI 쿼리 튜닝은 Ollama 가 있으면 동작해요: https://ollama.com
 소스: https://github.com/zio0911/god_db (MIT)
 TXT
 
 # 읽기/쓰기 이미지로 만들어 볼륨 아이콘 표시를 켠 뒤 압축 이미지로 변환
-RW="build/GodDB-rw.dmg"
+RW="$WORK/GodDB-rw.dmg"
 rm -f "$RW"
 hdiutil create -volname "GodDB $VERSION" -srcfolder "$STAGE" -ov -format UDRW "$RW" >/dev/null 2>&1
 MNT=$(mktemp -d)
