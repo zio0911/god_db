@@ -23,7 +23,7 @@ extension SQLDialect {
     /// 통계상 예상 행 수 (정확한 COUNT 가 아님 — 빠름)
     public func rowEstimateSQL(_ table: String, schema: String) -> String {
         switch kind {
-        case .mysql:
+        case .mysql, .redis:
             return "SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = \(quoteString(schema)) AND TABLE_NAME = \(quoteString(table))"
         case .postgres:
             return """

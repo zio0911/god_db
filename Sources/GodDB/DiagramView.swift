@@ -15,6 +15,8 @@ struct DiagramDoc: Identifiable {
     var inferred: [ForeignKeyMeta] = []
     /// DB 종류 (AI 분석 SQL 문법용)
     var kind: DatabaseKind = .mysql
+    /// AI 대화 기록을 구분하는 값 (접속 · DB · 테이블)
+    var chatScope: String = ""
 }
 
 /// 다이어그램에 보일 이름
@@ -75,7 +77,8 @@ extension AppState {
         let doc = DiagramDoc(title: title, tables: list, focus: focus,
                              highlighted: focus.map { [$0] } ?? highlighted.intersection(names),
                              inferred: inferredAll.filter { names.contains($0.table) && names.contains($0.referencedTable) },
-                             kind: profile.kind)
+                             kind: profile.kind,
+                             chatScope: DiagramChatStore.scope(profileID: profile.id, database: currentDatabase, tables: list.map(\.name)))
         diagrams[doc.id] = doc
         let fkCount = list.reduce(0) { $0 + $1.foreignKeys.filter { names.contains($0.referencedTable) }.count }
         log(.info, .schema, tr("ER 다이어그램 · 테이블 %@개 · 관계 %@개 · 추정 %@개", "\(list.count)", "\(fkCount)", "\(doc.inferred.count)"))
@@ -109,7 +112,7 @@ struct DiagramView: View {
     @State private var viewport: CGSize = .zero
     @State private var didFit = false
     @State private var showAI = false
-    @State private var chat = DiagramChat()
+    @State private var chat: DiagramChat
     @State private var aiWidth: CGFloat = 380
     @AppStorage("GodDB.diagram.nameMode") private var nameModeRaw = DiagramNameMode.physical.rawValue
 
@@ -124,6 +127,10 @@ struct DiagramView: View {
         _frames = State(initialValue: DiagramLayout.frames(doc.tables, extra: doc.inferred,
                                                            cardWidth: mode == .both ? 320 : DiagramLayout.cardWidth))
         _showInferred = State(initialValue: true)
+        let chat = DiagramChat(scope: doc.chatScope.isEmpty ? doc.title : doc.chatScope)
+        _chat = State(initialValue: chat)
+        // 이전 대화가 있으면 AI 패널을 열어 둔다
+        _showAI = State(initialValue: !chat.messages.isEmpty)
     }
 
     private func relayout() {
@@ -428,6 +435,28 @@ struct TableCard: View {
 enum DiagramSample {
     @MainActor
     static func render(to path: String, mode: String = "physical") {
+        if mode == "insert-hints" {
+            // INSERT 컬럼 힌트 표시 확인용
+            let storage = NSTextStorage()
+            let lm = NSLayoutManager()
+            storage.addLayoutManager(lm)
+            let tc = NSTextContainer(size: NSSize(width: 760, height: 1000))
+            lm.addTextContainer(tc)
+            let tv = HintTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 150), textContainer: tc)
+            tv.textContainerInset = NSSize(width: 6, height: 8)
+            tv.tablesProvider = {
+                [TableMeta(name: "tb_member", columns: [ColumnMeta(name: "member_id", columnType: "bigint", nullable: false, position: 1),
+                                                        ColumnMeta(name: "name", columnType: "varchar", nullable: true, position: 2),
+                                                        ColumnMeta(name: "email", columnType: "varchar", nullable: true, position: 3)])]
+            }
+            tv.string = "insert into a (wow, id) values ('a', 'b');\nINSERT INTO tb_member VALUES (1, '홍길동', 'hong@x.com'),\n                             (2, 'kim', NULL);"
+            SQLHighlighter.apply(to: tv)
+            let rep = tv.bitmapImageRepForCachingDisplay(in: tv.bounds)!
+            tv.cacheDisplay(in: tv.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            print("TEXT_UNCHANGED:", tv.string.hasPrefix("insert into a (wow, id) values ('a', 'b');"))
+            return
+        }
         if mode == "ai-answer" {
             // AI 답변 마크다운 표시 확인용
             let sample = "### 1. 스키마 용도\n- **업무 도메인**: 회원 기반 주문 관리\n- 핵심 테이블: `member`, `orders`\n\n---\n\n### 2. 관계\n- `member` → `orders` (1:N)\n  - 정의된 FK\n\n### 5. 대표 JOIN\n```sql\nSELECT o.*, m.name\nFROM orders o\nJOIN member m ON o.member_id = m.member_id;\n```\n끝."

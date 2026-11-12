@@ -70,3 +70,50 @@ struct DiagramAILiveTests {
         #expect(second.uppercased().contains("JOIN") || second.uppercased().contains("GROUP BY"))
     }
 }
+
+@Suite("Diagram chat store")
+struct DiagramChatStoreTests {
+    func store() -> DiagramChatStore {
+        DiagramChatStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("goddb-chat-\(UUID())"))
+    }
+
+    @Test func savesLoadsAndDeletes() {
+        let s = store()
+        defer { try? FileManager.default.removeItem(at: s.directory) }
+        let scope = DiagramChatStore.scope(profileID: UUID(), database: "shop", tables: ["b", "A"])
+        #expect(scope.hasSuffix("|shop|a,b"))
+        var c1 = DiagramConversation(created: Date(timeIntervalSinceNow: -100))
+        c1.messages = [.init(role: "user", text: "관계 분석\n자세히"), .init(role: "assistant", text: "답")]
+        c1.updated = Date(timeIntervalSinceNow: -100)
+        var c2 = DiagramConversation()
+        c2.messages = [.init(role: "user", text: "두 번째")]
+        s.save(c1, scope: scope)
+        s.save(c2, scope: scope)
+        s.save(DiagramConversation(), scope: scope)   // 빈 대화는 저장 안 함
+        let list = s.load(scope)
+        #expect(list.map(\.id) == [c2.id, c1.id])
+        #expect(list[1].title == "관계 분석")
+        #expect(s.load("other").isEmpty)
+        s.delete(c2.id, scope: scope)
+        #expect(s.load(scope).map(\.id) == [c1.id])
+        s.deleteAll(scope: scope)
+        #expect(s.load(scope).isEmpty)
+    }
+
+    @Test func dropsConversationsOlderThan90Days() {
+        let s = store()
+        defer { try? FileManager.default.removeItem(at: s.directory) }
+        var old = DiagramConversation(created: Date(timeIntervalSinceNow: -91 * 86400))
+        old.messages = [.init(role: "user", text: "old")]
+        old.updated = Date(timeIntervalSinceNow: -91 * 86400)
+        var recent = DiagramConversation(created: Date(timeIntervalSinceNow: -89 * 86400))
+        recent.messages = [.init(role: "user", text: "recent")]
+        recent.updated = Date(timeIntervalSinceNow: -89 * 86400)
+        s.save(old, scope: "x")
+        s.save(recent, scope: "x")
+        s.save(old, scope: "y")
+        s.pruneAll()
+        #expect(s.load("x").map(\.title) == ["recent"])
+        #expect(s.load("y").isEmpty)
+    }
+}

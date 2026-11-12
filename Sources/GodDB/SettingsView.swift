@@ -46,6 +46,7 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
+    @AppStorage(HintTextView.showHintsKey) private var insertHints = true
 
     var body: some View {
         @Bindable var settings = settings
@@ -67,8 +68,16 @@ struct GeneralSettingsView: View {
                 Text(tr("언어"))
             }
             Section {
+                Toggle(tr("INSERT 값 앞에 컬럼 이름 표시"), isOn: $insertHints)
+                Text(tr("INSERT … VALUES (…) 의 각 값 앞에 어느 컬럼인지 회색으로 보여줘요. 화면 표시만 하고 실행하는 SQL 에는 들어가지 않아요."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text(tr("편집기"))
+            }
+            Section {
                 Toggle(tr("로그 파일 남기기"), isOn: $settings.logFileEnabled)
-                Text(tr("상태창에 나오는 기록(접속, 실행한 SQL, 데이터 변경, 오류)을 날짜별 파일로 남겨요. 조회 결과 행은 남기지 않아요. %@일 지난 파일은 지워요.", "\(LogFile.shared.keepDays)"))
+                Text(tr("상태창에 나오는 기록(접속, 실행한 SQL, 데이터 변경, 오류)을 날짜별 파일로 남겨요. 조회 결과 행은 남기지 않아요. 파일은 지우지 않고 영구 보관해요."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack {

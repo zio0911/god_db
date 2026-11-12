@@ -24,7 +24,7 @@ extension SQLDialect {
     public func foreignKeysSQL(_ schema: String) -> String {
         let s = quoteString(schema)
         switch kind {
-        case .mysql:
+        case .mysql, .redis:
             return """
             SELECT TABLE_NAME, CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, ORDINAL_POSITION
               FROM information_schema.KEY_COLUMN_USAGE

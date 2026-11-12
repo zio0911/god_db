@@ -16,7 +16,12 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     Group {
                         switch app.mode {
-                        case .query: QueryWorkspaceView()
+                        case .query:
+                            if let ws = app.selectedRedis {
+                                RedisWorkspaceView(ws: ws)
+                            } else {
+                                QueryWorkspaceView()
+                            }
                         case .compare: CompareView()
                         }
                     }

@@ -5,6 +5,7 @@ public enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable 
     case mysql
     case postgres
     case mssql
+    case redis
 
     public var id: String { rawValue }
 
@@ -13,6 +14,7 @@ public enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable 
         case .mysql: return "MySQL"
         case .postgres: return "PostgreSQL"
         case .mssql: return "SQL Server"
+        case .redis: return "Redis"
         }
     }
 
@@ -21,6 +23,7 @@ public enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable 
         case .mysql: return 3306
         case .postgres: return 5432
         case .mssql: return 1433
+        case .redis: return 6379
         }
     }
 
@@ -28,6 +31,9 @@ public enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable 
     public var containerTitle: String {
         self == .postgres ? tr("스키마") : "DB"
     }
+
+    /// SQL DB 인지 (Redis 는 아님)
+    public var isSQL: Bool { self != .redis }
 }
 
 /// 저장되는 접속 정보. 비밀번호는 여기 담지 않고 키체인에 따로 보관한다.

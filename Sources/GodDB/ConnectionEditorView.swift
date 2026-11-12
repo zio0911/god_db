@@ -42,7 +42,7 @@ struct ConnectionEditorView: View {
                     }
                     .pickerStyle(.segmented)
                     TextField(tr("이름"), text: $profile.name)
-                    Toggle(tr("읽기전용 (SELECT / SHOW / DESC / EXPLAIN 만 허용)"), isOn: $profile.readOnly)
+                    Toggle(profile.kind == .redis ? tr("읽기전용 (조회 명령만 허용)") : tr("읽기전용 (SELECT / SHOW / DESC / EXPLAIN 만 허용)"), isOn: $profile.readOnly)
                     if profile.readOnly && profile.kind == .mssql {
                         Text(tr("SQL Server 는 세션 단위 읽기전용 설정이 없어서 앱에서만 막아요. 운영 DB 는 읽기 전용 계정을 쓰는 걸 권장해요."))
                             .font(.caption).foregroundStyle(.secondary)
@@ -51,7 +51,8 @@ struct ConnectionEditorView: View {
                 Section(profile.kind.title) {
                     TextField(tr("호스트"), text: $profile.host, prompt: Text("xxx.rds.amazonaws.com"))
                     TextField(tr("포트"), value: $profile.port, format: .number.grouping(.never))
-                    TextField(tr("사용자"), text: $profile.username)
+                    TextField(profile.kind == .redis ? tr("ACL 사용자 (선택)") : tr("사용자"), text: $profile.username,
+                              prompt: profile.kind == .redis ? Text(tr("비우면 비밀번호만으로 AUTH")) : nil)
                     SecureField(tr("비밀번호"), text: $password)
                         .onChange(of: password) { passwordChanged = true }
                     Toggle(tr("비밀번호 저장 (macOS 키체인)"), isOn: $profile.savePassword)
@@ -84,6 +85,10 @@ struct ConnectionEditorView: View {
                         TextField(tr("기본 DB"), text: $profile.database, prompt: Text(tr("비우면 첫 번째 사용자 DB")))
                     case .mysql:
                         TextField(tr("기본 DB"), text: $profile.database, prompt: Text(tr("비우면 첫 번째 DB")))
+                    case .redis:
+                        TextField(tr("DB 번호"), text: $profile.database, prompt: Text("0"))
+                        Text(tr("0~15 (서버 설정에 따라 다름). 연결한 뒤 사이드바에서 바꿀 수 있어요. ElastiCache 전송 중 암호화를 쓰면 TLS 를 켜세요."))
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     Toggle(tr("TLS 사용"), isOn: $profile.useTLS)
                 }
@@ -153,6 +158,14 @@ struct ConnectionEditorView: View {
         testMessage = nil
         defer { testing = false }
         do {
+            if draft.kind == .redis {
+                let session = try await RedisSession.connect(profile: draft, password: password)
+                let version = (try? await session.info("server").first?.1.first { $0.0 == "redis_version" }?.1).map { "Redis \($0)" } ?? "Redis"
+                await session.close()
+                testMessage = (true, tr("연결 성공 · %@", "\(version)"))
+                app.log(.success, .connection, tr("%@ 연결 테스트 성공 · %@", "\(draft.name)", "\(version)"))
+                return
+            }
             let session = try await DBSession.connect(profile: draft, password: password)
             // 연결은 이미 성공. 버전 조회가 안 되더라도(권한 등) 실패로 보지 않는다.
             let version = (try? await session.serverVersion()) ?? draft.kind.title

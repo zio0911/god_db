@@ -176,7 +176,7 @@ extension SQLDialect {
     /// 16진수 → 바이너리 값 (0x 없이 넘긴다)
     public func binaryLiteral(hex: String) -> String {
         switch kind {
-        case .mysql: return "X'\(hex)'"
+        case .mysql, .redis: return "X'\(hex)'"
         case .postgres: return "decode('\(hex)', 'hex')"
         case .mssql: return hex.isEmpty ? "0x" : "0x\(hex)"
         }
@@ -184,7 +184,7 @@ extension SQLDialect {
 
     public var beginSQL: String {
         switch kind {
-        case .mysql: return "START TRANSACTION"
+        case .mysql, .redis: return "START TRANSACTION"
         case .postgres: return "BEGIN"
         case .mssql: return "BEGIN TRANSACTION"
         }

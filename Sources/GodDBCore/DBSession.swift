@@ -52,6 +52,7 @@ public actor DBSession {
             case .mysql: driver = try await MySQLDriver.connect(endpoint)
             case .postgres: driver = try await PostgresDriver.connect(endpoint)
             case .mssql: driver = try await MSSQLDriver.connect(endpoint)
+            case .redis: throw DBError.notConnected  // Redis 는 RedisSession 을 쓴다
             }
             if profile.readOnly, let sql = dialect.readOnlySessionSQL {
                 // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
@@ -165,7 +166,7 @@ public actor DBSession {
     private func currentContainer() async throws -> String? {
         let sql: String
         switch profile.kind {
-        case .mysql: sql = "SELECT DATABASE()"
+        case .mysql, .redis: sql = "SELECT DATABASE()"
         case .postgres: sql = "SELECT current_schema()"
         case .mssql: sql = "SELECT DB_NAME()"
         }

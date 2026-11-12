@@ -2,7 +2,7 @@ import Foundation
 
 /// 상태창 로그를 날짜별 파일로 남긴다. (나중에 무엇을 했는지 확인하는 용도)
 ///   ~/Library/Logs/GodDB/goddb-2026-11-12.log
-/// 파일 쓰기는 별도 큐에서 하므로 화면을 막지 않는다. 오래된 파일은 지운다.
+/// 파일 쓰기는 별도 큐에서 하므로 화면을 막지 않는다. 사내 감사 요구로 기본은 영구 보관 (지우지 않음).
 public final class LogFile: @unchecked Sendable {
     public static let shared = LogFile(directory: defaultDirectory)
 
@@ -12,12 +12,12 @@ public final class LogFile: @unchecked Sendable {
     }
 
     public let directory: URL
-    /// 보관 일수
-    public let keepDays: Int
+    /// 보관 일수. nil 이면 영구 보관 (기본)
+    public let keepDays: Int?
     private let queue = DispatchQueue(label: "goddb.logfile")
     private var cleaned = false
 
-    public init(directory: URL, keepDays: Int = 90) {
+    public init(directory: URL, keepDays: Int? = nil) {
         self.directory = directory
         self.keepDays = keepDays
     }
@@ -33,8 +33,11 @@ public final class LogFile: @unchecked Sendable {
         set { UserDefaults.standard.set(newValue, forKey: "GodDB.logFile.enabled") }
     }
 
+    /// 개발용 화면 그리기 실행에서는 로그 파일을 쓰지 않는다
+    public static let suspended = CommandLine.arguments.contains { $0.hasPrefix("--render-") }
+
     public func append(_ entry: LogEntry) {
-        guard Self.enabled else { return }
+        guard Self.enabled, !Self.suspended else { return }
         let text = Self.format(entry)
         queue.async { [self] in write(text, date: entry.date) }
     }
@@ -74,6 +77,7 @@ public final class LogFile: @unchecked Sendable {
     }
 
     private func removeOld() {
+        guard let keepDays else { return }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
         let cutoff = Calendar.current.date(byAdding: .day, value: -keepDays, to: Date()) ?? .distantPast

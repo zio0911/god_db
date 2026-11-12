@@ -26,6 +26,8 @@ struct SidebarView: View {
                             Button(tr("접속 정보 내보내기…")) { app.showExportConnections = true }
                                 .disabled(app.profiles.isEmpty)
                             Button(tr("접속 정보 가져오기…")) { app.chooseImportFile() }
+                            Divider()
+                            Button(tr("DataGrip 접속 정보 붙여넣기")) { app.pasteDataGrip() }
                         } label: {
                             Image(systemName: "arrow.up.arrow.down.circle")
                         }
@@ -45,7 +47,9 @@ struct SidebarView: View {
                     }
                 }
 
-                if app.state == .connected {
+                if app.state == .connected, let ws = app.selectedRedis {
+                    RedisSidebarSection(ws: ws)
+                } else if app.state == .connected {
                     Section {
                         if app.schemaLoading {
                             HStack { ProgressView().controlSize(.small); Text(tr("스키마 불러오는 중…")) }
@@ -100,8 +104,17 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            // DataGrip 에서 데이터 소스를 ⌘C 한 뒤 사이드바에서 ⌘V
+            .onPasteCommand(of: [.plainText]) { _ in
+                if let t = NSPasteboard.general.string(forType: .string), DataGripImport.looksLikeDataGrip(t) {
+                    app.pasteDataGrip(t)
+                }
+            }
 
-            if app.state == .connected {
+            if app.state == .connected, let ws = app.selectedRedis {
+                Divider()
+                RedisKeySearchBar(ws: ws)
+            } else if app.state == .connected {
                 Divider()
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -193,6 +206,7 @@ struct KindBadge: View {
         case .mysql: return .orange
         case .postgres: return .blue
         case .mssql: return .purple
+        case .redis: return .red
         }
     }
 }

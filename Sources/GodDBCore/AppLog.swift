@@ -98,6 +98,22 @@ public enum ErrorText {
             }
             return .init(message: d, hint: sshHint(d), raw: raw)
         }
+        if let r = error as? RedisServerError {
+            let hint: String?
+            switch r.code {
+            case "WRONGPASS": hint = tr("비밀번호(또는 ACL 사용자)가 맞는지 확인해 주세요.")
+            case "NOAUTH": hint = tr("이 서버는 비밀번호가 필요해요. 접속 편집에서 비밀번호를 넣어 주세요.")
+            case "NOPERM": hint = tr("이 ACL 사용자에게 권한이 없는 명령이나 키예요.")
+            case "WRONGTYPE": hint = tr("키의 타입과 맞지 않는 명령이에요. TYPE 으로 타입을 확인해 보세요.")
+            case "MOVED", "ASK": hint = tr("Redis Cluster 의 다른 노드에 있는 키예요. 지금은 Cluster 를 지원하지 않아 해당 노드에 직접 접속해야 해요.")
+            case "READONLY": hint = tr("복제본(읽기 전용) 노드라 쓰기를 할 수 없어요. 주 노드에 접속해 주세요.")
+            default: hint = nil
+            }
+            return .init(message: r.message, hint: hint, raw: raw)
+        }
+        if let e = error as? RedisCommandError {
+            return .init(message: e.errorDescription ?? raw, hint: nil, raw: raw)
+        }
         if let e = error as? DBError {
             return .init(message: e.errorDescription ?? raw, hint: nil, raw: raw)
         }
@@ -132,6 +148,7 @@ public enum ErrorText {
         if case .server(let packet) = error as? MySQLError { return packet.errorCode.rawValue == 1045 }
         if let pg = error as? PSQLError, pg.serverInfo?[.sqlState] == "28P01" { return true }
         if let ms = error as? MSSQLError, ms.number == 18456 { return true }
+        if let r = error as? RedisServerError, ["WRONGPASS", "NOAUTH"].contains(r.code) { return true }
         return false
     }
 

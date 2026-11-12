@@ -9,6 +9,8 @@ enum MultiDB {
 
     static func profile(_ kind: DatabaseKind, database: String) -> (ConnectionProfile, String)? {
         switch kind {
+        case .redis:
+            return nil
         case .postgres:
             guard let port = env["GODDB_PG_PORT"].flatMap(Int.init) else { return nil }
             return (ConnectionProfile(kind: .postgres, name: "pg", host: "localhost", port: port,
@@ -40,6 +42,8 @@ enum MultiDB {
         let s = try await DBSession.connect(profile: p, password: pw)
         let sql: [String]
         switch kind {
+        case .redis:
+            sql = []
         case .postgres:
             sql = [
                 "DROP SCHEMA IF EXISTS stg CASCADE", "CREATE SCHEMA stg",

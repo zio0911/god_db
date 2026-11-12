@@ -1,6 +1,6 @@
 # GodDB (갓디비)
 
-무료 macOS DB 클라이언트 — **MySQL / PostgreSQL / SQL Server**.
+무료 macOS DB 클라이언트 — **MySQL / PostgreSQL / SQL Server / Redis**.
 SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https://github.com/vapor/postgres-nio)(텍스트 결과 패치본, `Vendor/`) + [FreeTDS](https://www.freetds.org).
 
 상세 기능 명세: [docs/FEATURES.md](docs/FEATURES.md) · 한국어 / English (설정 `⌘,`)
@@ -18,6 +18,9 @@ SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https
 | 쿼리 | 탭, 하이라이트, ⌘↩ (선택 영역 또는 커서 위치 구문 실행), 기본 LIMIT 500, CSV 복사 |
 | 스키마 비교 | 기준 → 대상 차이 (누락/다름/대상에만 있음), 보정 `ALTER`/`CREATE` SQL 생성. **자동 실행 안 함, DROP 생성 안 함** |
 | 테이블 수정 | 컬럼/인덱스/코멘트 편집 → ALTER 미리보기 → 확인 후 실행 |
+| Redis | 키 브라우저(SCAN), 타입별 값 편집, 콘솔, Pub/Sub, Streams(소비자 그룹·PEL·실시간), INFO |
+| 접속 공유 | 접속 정보 내보내기/가져오기(비밀번호 암호화 선택), DataGrip ⌘C → ⌘V 붙여넣기 |
+| 감사 로그 | 상태창 기록을 `~/Library/Logs/GodDB` 에 날짜별 영구 보관 |
 | 실행 계획 | EXPLAIN + 풀스캔/filesort 등 주의사항, 트리 보기 |
 | 객체 보기 | 인덱스, 뷰, 프로시저, 함수, 트리거 정의 |
 | 상태창 | 모든 이벤트/오류 기록, 오류 해결 방법 안내 (⇧⌘L) |

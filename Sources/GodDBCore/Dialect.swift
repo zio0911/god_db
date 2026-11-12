@@ -76,7 +76,7 @@ extension SQLDialect {
 public enum Dialects {
     public static func of(_ kind: DatabaseKind) -> any SQLDialect {
         switch kind {
-        case .mysql: return MySQLDialect()
+        case .mysql, .redis: return MySQLDialect()
         case .postgres: return PostgresDialect()
         case .mssql: return MSSQLDialect()
         }
@@ -235,7 +235,7 @@ extension SQLDialect {
     /// 인덱스 상세 (카디널리티/정의 등)
     public func indexDetailSQL(_ table: String, schema: String) -> String {
         switch kind {
-        case .mysql:
+        case .mysql, .redis:
             return "SHOW INDEX FROM \(quoteIdent(table));"
         case .postgres:
             return """
@@ -255,7 +255,7 @@ extension SQLDialect {
     /// 서버 버전 한 줄
     public var versionSQL: String {
         switch kind {
-        case .mysql: return "SELECT VERSION()"
+        case .mysql, .redis: return "SELECT VERSION()"
         case .postgres: return "SHOW server_version"
         case .mssql:
             return "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(50)) + ' ' + CAST(SERVERPROPERTY('Edition') AS nvarchar(100))"
@@ -265,7 +265,7 @@ extension SQLDialect {
     /// 프로시저 호출 문 틀
     public func callSQL(_ name: String) -> String {
         switch kind {
-        case .mysql, .postgres: return "CALL \(quoteTable(name))();"
+        case .mysql, .redis, .postgres: return "CALL \(quoteTable(name))();"
         case .mssql: return "EXEC \(quoteTable(name));"
         }
     }
@@ -293,7 +293,7 @@ extension SQLDialect {
         let fetch = limit + 1
 
         switch kind {
-        case .mysql, .postgres:
+        case .mysql, .redis, .postgres:
             guard kw == "SELECT" || kw == "WITH" else { return nil }
             return PagedSQL(sql: "\(body)\nLIMIT \(fetch)" + (offset > 0 ? " OFFSET \(offset)" : ""), skip: 0)
         case .mssql:
@@ -366,7 +366,7 @@ extension SQLText {
 extension SQLDialect {
     public func renameTableSQL(_ table: String, to newName: String) -> String {
         switch kind {
-        case .mysql:
+        case .mysql, .redis:
             return "RENAME TABLE \(quoteTable(table)) TO \(quoteIdent(newName));"
         case .postgres:
             return "ALTER TABLE \(quoteTable(table)) RENAME TO \(quoteIdent(newName));"

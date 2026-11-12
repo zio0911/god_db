@@ -36,4 +36,16 @@ struct LogFileTests {
         #expect(!FileManager.default.fileExists(atPath: old.path))
         #expect(FileManager.default.fileExists(atPath: file.url(for: Date()).path))
     }
+
+    @Test func keepsOldFilesByDefault() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goddb-log-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let old = dir.appendingPathComponent("goddb-2000-01-01.log")
+        try Data("x".utf8).write(to: old)
+        let file = LogFile(directory: dir)
+        file.append(LogEntry(level: .info, source: .app, message: "시작"))
+        file.flush()
+        #expect(FileManager.default.fileExists(atPath: old.path))
+    }
 }

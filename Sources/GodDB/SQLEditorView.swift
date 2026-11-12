@@ -85,8 +85,30 @@ struct SQLEditorView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
-        let tv = scroll.documentView as! NSTextView
+        // TextKit 1 로 직접 만든다 (INSERT 컬럼 힌트를 글자 위치에 그리기 위해)
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.borderType = .noBorder
+        let storage = NSTextStorage()
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layout.addTextContainer(container)
+        let tv = HintTextView(frame: .zero, textContainer: container)
+        tv.minSize = .zero
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask = [.width]
+        tv.isEditable = true
+        tv.isSelectable = true
+        tv.usesFindBar = true
+        tv.isIncrementalSearchingEnabled = true
+        tv.tablesProvider = { [weak controller] in controller?.schemaProvider().0 ?? [] }
+        scroll.documentView = tv
         tv.delegate = context.coordinator
         tv.isRichText = false
         tv.allowsUndo = true
@@ -209,7 +231,67 @@ enum SQLHighlighter {
                 if let r = m?.range { storage.addAttribute(.foregroundColor, value: c, range: r) }
             }
         }
+        (tv as? HintTextView)?.applyHints(storage)
         storage.endEditing()
         tv.typingAttributes = [.font: font, .foregroundColor: NSColor.textColor]
     }
+}
+
+/// INSERT … VALUES 의 값 앞에 컬럼 이름을 회색으로 보여주는 편집기.
+/// 글자 사이 간격(kern)만 벌리고 그 자리에 그리므로, 편집기 글자(실행하는 SQL)는 바뀌지 않는다.
+final class HintTextView: NSTextView {
+    var tablesProvider: () -> [TableMeta] = { [] }
+    private(set) var hints: [InsertHints.Hint] = []
+    static let hintFont = NSFont.systemFont(ofSize: 10, weight: .medium)
+    static let showHintsKey = "GodDB.editor.insertHints"
+
+    static var enabled: Bool {
+        UserDefaults.standard.object(forKey: showHintsKey) as? Bool ?? true
+    }
+
+    static func width(_ text: String) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: hintFont]).width + 10
+    }
+
+    /// 하이라이트 직후 (beginEditing 안에서) 호출된다.
+    func applyHints(_ storage: NSTextStorage) {
+        let s = storage.string as NSString
+        hints = Self.enabled ? InsertHints.hints(in: storage.string, tables: tablesProvider()) : []
+        // 바로 앞 글자가 줄바꿈이면 그 줄 첫 글자라 간격을 벌릴 수 없어 표시하지 않는다.
+        hints = hints.filter { $0.location > 0 && s.character(at: $0.location - 1) != 0x0A }
+        for h in hints {
+            storage.addAttribute(.kern, value: Self.width(h.column), range: NSRange(location: h.location - 1, length: 1))
+        }
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard !hints.isEmpty, let lm = layoutManager, let tc = textContainer else { return }
+        let attrs: [NSAttributedString.Key: Any] = [.font: Self.hintFont, .foregroundColor: NSColor.secondaryLabelColor]
+        let length = (string as NSString).length
+        for h in hints where h.location < length {
+            let glyph = lm.glyphIndexForCharacter(at: h.location)
+            var rect = lm.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: tc)
+            rect.origin.x += textContainerOrigin.x
+            rect.origin.y += textContainerOrigin.y
+            guard rect.intersects(dirtyRect.insetBy(dx: -200, dy: -20)) else { continue }
+            let w = Self.width(h.column)
+            let size = (h.column as NSString).size(withAttributes: attrs)
+            let box = NSRect(x: rect.minX - w + 1, y: rect.midY - size.height / 2 - 1, width: w - 4, height: size.height + 2)
+            NSColor.secondaryLabelColor.withAlphaComponent(0.12).setFill()
+            NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3).fill()
+            (h.column as NSString).draw(at: NSPoint(x: box.minX + 3, y: box.minY + 1), withAttributes: attrs)
+        }
+    }
+
+    /// 복사할 때 간격(kern) 같은 서식이 따라가지 않도록 글자만 복사
+    override func writeSelection(to pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        let r = selectedRange()
+        guard r.length > 0 else { return false }
+        pboard.declareTypes([.string], owner: nil)
+        return pboard.setString((string as NSString).substring(with: r), forType: .string)
+    }
+
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] { [.string] }
 }

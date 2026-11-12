@@ -110,6 +110,8 @@ final class AppState {
     var editApply: EditApplyRequest?
     var showExportConnections = false
     var importRequest: ImportRequest?
+    /// 연결된 Redis 접속의 화면 상태
+    var redisWorkspaces: [UUID: RedisWorkspace] = [:]
     /// 사이드바에서 고른 테이블 (⌘/⇧ 클릭으로 여러 개)
     var selectedTables: Set<String> = []
     /// 열린 ER 다이어그램 창들
@@ -129,6 +131,8 @@ final class AppState {
         profiles = store.load()
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
         log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, NSUserName()))
+        // 90일 지난 다이어그램 AI 대화 정리
+        DispatchQueue.global(qos: .utility).async { DiagramChatStore.shared.pruneAll() }
     }
 
     // MARK: - 사이드바에서 보고 있는 접속 (기존 화면 코드 호환)
@@ -172,7 +176,7 @@ final class AppState {
         return routines.filter { $0.kind == kind && (f.isEmpty || $0.name.lowercased().contains(f)) }
     }
 
-    private func updateConnection(_ id: UUID, _ change: (inout ConnectionInfo) -> Void) {
+    func updateConnection(_ id: UUID, _ change: (inout ConnectionInfo) -> Void) {
         var info = connections[id] ?? ConnectionInfo()
         change(&info)
         connections[id] = info
@@ -329,6 +333,10 @@ final class AppState {
         updateConnection(id) { $0.state = .connecting }
         let target = profile.ssh.map { tr("%@:%@ (SSH %@ 경유)", "\(profile.host)", "\(profile.port)", "\($0.host)") } ?? "\(profile.host):\(profile.port)"
         log(.info, .connection, tr("%@ 연결 중… %@", "\(profile.name)", "\(target)"))
+        if profile.kind == .redis {
+            await connectRedis(profile, password: password)
+            return
+        }
         do {
             let s = try await DBSession.connect(profile: profile, password: password)
             updateConnection(id) {
@@ -364,6 +372,7 @@ final class AppState {
 
     /// 접속 하나를 끊는다. 그 접속의 탭은 남겨 두고, 다시 연결하면 이어서 쓸 수 있다.
     func disconnect(_ id: UUID) async {
+        if redisWorkspaces[id] != nil { await disconnectRedis(id) }
         if let session = connections[id]?.session {
             await session.close()
             log(.info, .connection, tr("%@ 연결 끊음", "\(session.profile.name)"))

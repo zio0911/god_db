@@ -8,6 +8,8 @@ struct ImportRequest: Identifiable {
     let id = UUID()
     let fileName: String
     let bundle: ConnectionBundle
+    /// 접속별 안내 (DataGrip 에서 가져올 때)
+    var notes: [UUID: [String]] = [:]
 }
 
 extension AppState {
@@ -25,6 +27,23 @@ extension AppState {
             logError(error, .app, context: tr("접속 정보 가져오기 실패"))
             let alert = NSAlert()
             alert.messageText = tr("접속 정보 가져오기 실패")
+            alert.informativeText = ErrorText.describe(error).message
+            alert.runModal()
+        }
+    }
+
+    /// 클립보드의 DataGrip 접속 정보를 읽어 가져오기 창을 연다.
+    func pasteDataGrip(_ text: String? = nil) {
+        let text = text ?? NSPasteboard.general.string(forType: .string) ?? ""
+        do {
+            let sources = try DataGripImport.parse(text)
+            let bundle = ConnectionBundle(exportedAt: Date(), app: "DataGrip", profiles: sources.map(\.profile), passwords: nil)
+            importRequest = ImportRequest(fileName: tr("DataGrip 클립보드"), bundle: bundle,
+                                          notes: Dictionary(sources.map { ($0.profile.id, $0.notes) }, uniquingKeysWith: { a, _ in a }))
+        } catch {
+            logError(error, .app, context: tr("DataGrip 접속 정보 붙여넣기 실패"))
+            let alert = NSAlert()
+            alert.messageText = tr("DataGrip 접속 정보 붙여넣기 실패")
             alert.informativeText = ErrorText.describe(error).message
             alert.runModal()
         }
@@ -184,9 +203,16 @@ struct ImportConnectionsSheet: View {
                 ForEach(bundle.profiles) { p in
                     Toggle(isOn: Binding(get: { selected.contains(p.id) },
                                          set: { if $0 { selected.insert(p.id) } else { selected.remove(p.id) } })) {
-                        HStack {
-                            Text(p.name)
-                            Text("\(p.kind.title) · \(p.host):\(String(p.port))").foregroundStyle(.secondary)
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(p.name)
+                                    Text("\(p.kind.title) · \(p.host):\(String(p.port))\(p.database.isEmpty ? "" : " / " + p.database)").foregroundStyle(.secondary)
+                                }
+                                ForEach(request.notes[p.id] ?? [], id: \.self) { n in
+                                    Text(n).font(.caption).foregroundStyle(n.contains("SSH") ? .orange : .secondary)
+                                }
+                            }
                             Spacer()
                             switch ConnectionTransfer.action(for: p, existing: app.profiles) {
                             case .add:

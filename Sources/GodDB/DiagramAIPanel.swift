@@ -18,15 +18,77 @@ final class DiagramChat {
     var thinkingChars = 0
     var task: Task<Void, Never>?
 
+    /// 대화 기록 (다이어그램마다, 90일 보관)
+    let scope: String
+    let store: DiagramChatStore
+    private(set) var conversationID = UUID()
+    private var created = Date()
+    var history: [DiagramConversation] = []
+
+    init(scope: String, store: DiagramChatStore = .shared) {
+        self.scope = scope
+        self.store = store
+        history = store.load(scope)
+        // 열 때 마지막 대화를 이어서 보여준다
+        if let last = history.first { show(last) }
+    }
+
     func cancel() {
         task?.cancel()
         task = nil
         running = false
     }
 
-    func clear() {
+    private func show(_ c: DiagramConversation) {
+        conversationID = c.id
+        created = c.created
+        messages = c.messages.map { Message(role: $0.role, text: $0.text, failed: $0.failed) }
+    }
+
+    /// 지금 대화를 저장 (답이 끝났을 때)
+    func persist() {
+        guard !messages.isEmpty else { return }
+        var c = DiagramConversation(id: conversationID, created: created,
+                                    messages: messages.map { .init(role: $0.role, text: $0.text, failed: $0.failed) })
+        c.updated = Date()
+        store.save(c, scope: scope)
+        history = store.load(scope)
+    }
+
+    /// 새 대화 시작 (이전 대화는 기록에 남는다)
+    func startNew() {
         cancel()
+        persist()
         messages = []
+        conversationID = UUID()
+        created = Date()
+    }
+
+    func open(_ c: DiagramConversation) {
+        guard c.id != conversationID else { return }
+        cancel()
+        persist()
+        show(c)
+    }
+
+    func delete(_ id: UUID) {
+        if id == conversationID { cancel() }
+        store.delete(id, scope: scope)
+        history = store.load(scope)
+        if id == conversationID {
+            messages = []
+            conversationID = UUID()
+            created = Date()
+        }
+    }
+
+    func deleteAll() {
+        cancel()
+        store.deleteAll(scope: scope)
+        history = []
+        messages = []
+        conversationID = UUID()
+        created = Date()
     }
 
     /// 질문을 보내고 답을 스트리밍으로 받는다.
@@ -72,6 +134,7 @@ final class DiagramChat {
             }
             running = false
             task = nil
+            persist()
         }
     }
 }
@@ -94,9 +157,36 @@ struct DiagramAIPanel: View {
                 Image(systemName: "sparkles").foregroundStyle(.purple)
                 Text(tr("AI 관계 분석")).font(.headline)
                 Spacer()
+                Button { chat.startNew() } label: { Image(systemName: "plus.bubble") }
+                    .help(tr("새 대화 (지금 대화는 기록에 남아요)"))
+                    .disabled(chat.messages.isEmpty)
+                Menu {
+                    if chat.history.isEmpty {
+                        Text(tr("저장된 대화가 없어요."))
+                    }
+                    ForEach(chat.history) { c in
+                        Menu {
+                            Button(tr("열기")) { chat.open(c) }
+                            Button(tr("삭제"), role: .destructive) { chat.delete(c.id) }
+                        } label: {
+                            Text((c.id == chat.conversationID ? "● " : "") + c.updated.formatted(date: .abbreviated, time: .shortened)
+                                 + " · " + (c.title.isEmpty ? tr("(제목 없음)") : c.title))
+                        }
+                    }
+                    if !chat.history.isEmpty {
+                        Divider()
+                        Button(tr("이 다이어그램의 대화 모두 삭제"), role: .destructive) { chat.deleteAll() }
+                    }
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(tr("이전 대화 (90일 보관)"))
                 if !chat.messages.isEmpty {
-                    Button { chat.clear() } label: { Image(systemName: "trash") }
-                        .help(tr("대화 지우기"))
+                    Button { chat.delete(chat.conversationID) } label: { Image(systemName: "trash") }
+                        .help(tr("지금 대화 삭제"))
                         .disabled(chat.running)
                 }
             }

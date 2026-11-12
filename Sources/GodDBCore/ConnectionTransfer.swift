@@ -24,6 +24,13 @@ public struct ConnectionBundle: Codable, Sendable {
     public var passwords: EncryptedPasswords?
 
     public var hasPasswords: Bool { passwords != nil }
+
+    public init(exportedAt: Date, app: String, profiles: [ConnectionProfile], passwords: EncryptedPasswords?) {
+        self.exportedAt = exportedAt
+        self.app = app
+        self.profiles = profiles
+        self.passwords = passwords
+    }
 }
 
 public enum ConnectionTransferError: LocalizedError, Equatable {
