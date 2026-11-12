@@ -94,26 +94,75 @@ public enum DiagramLayout {
         headerHeight + CGFloat(min(t.columns.count, maxRows) + (t.columns.count > maxRows ? 1 : 0)) * rowHeight + 10
     }
 
-    /// 테이블과, 외래 키로 바로 이어진 테이블 (참조하는 쪽 + 참조되는 쪽)
-    public static func related(to name: String, in tables: [TableMeta]) -> [TableMeta] {
-        guard let center = tables.first(where: { $0.name == name }) else { return [] }
-        var names: [String] = [center.name]
-        for fk in center.foreignKeys where !names.contains(fk.referencedTable) { names.append(fk.referencedTable) }
-        for t in tables where t.foreignKeys.contains(where: { $0.referencedTable == name }) && !names.contains(t.name) {
-            names.append(t.name)
-        }
+    /// 테이블과, 외래 키(+ 추정 관계)로 바로 이어진 테이블 (참조하는 쪽 + 참조되는 쪽)
+    public static func related(to name: String, in tables: [TableMeta], extra: [ForeignKeyMeta] = []) -> [TableMeta] {
+        guard tables.contains(where: { $0.name == name }) else { return [] }
+        let all = tables.flatMap(\.foreignKeys) + extra
+        var names: [String] = [name]
+        for fk in all where fk.table == name && !names.contains(fk.referencedTable) { names.append(fk.referencedTable) }
+        for fk in all where fk.referencedTable == name && !names.contains(fk.table) { names.append(fk.table) }
         return names.compactMap { n in tables.first { $0.name == n } }
     }
 
+    /// 외래 키 제약이 없는 DB 를 위한 관계 추정 (DataGrip 의 가상 외래 키와 비슷)
+    /// 규칙: 어떤 테이블의 컬럼 이름이 다른 테이블의 "단일 컬럼 기본 키" 이름과 같으면 그 테이블을 참조한다고 본다.
+    ///  - 자기 자신의 기본 키 컬럼은 제외, 이미 진짜 외래 키가 있는 컬럼은 제외
+    ///  - 같은 이름의 기본 키를 가진 테이블이 여러 개면, 이름이 컬럼과 가장 비슷한 하나만 (애매하면 건너뜀)
+    ///  - 흔한 이름(id, seq, no …)은 너무 많이 이어지므로 제외
+    public static func inferredRelations(_ tables: [TableMeta]) -> [ForeignKeyMeta] {
+        let generic: Set<String> = ["id", "seq", "no", "idx", "num", "code", "key", "uid", "sn"]
+        func pk(_ t: TableMeta) -> String? {
+            let pkIndex = t.indexes.first(where: \.isPrimary)?.columns
+            let cols = pkIndex ?? t.columns.filter(\.isPrimaryKey).map(\.name)
+            return cols.count == 1 ? cols[0] : nil
+        }
+        var byPK: [String: [TableMeta]] = [:]
+        for t in tables { if let k = pk(t)?.lowercased(), !generic.contains(k) { byPK[k, default: []].append(t) } }
+        func stem(_ s: String) -> String {
+            var x = s.lowercased()
+            for p in ["tb_", "tbl_", "t_", "tm_", "th_"] where x.hasPrefix(p) { x.removeFirst(p.count) }
+            for suf in ["_id", "_no", "_seq", "_cd", "_code", "id"] where x.hasSuffix(suf) && x.count > suf.count {
+                x.removeLast(suf.count); break
+            }
+            return x
+        }
+        var out: [ForeignKeyMeta] = []
+        for t in tables {
+            let own = pk(t)?.lowercased()
+            let real = Set(t.foreignKeys.flatMap(\.columns).map { $0.lowercased() })
+            for c in t.columns {
+                let name = c.name.lowercased()
+                guard name != own, !real.contains(name), let candidates = byPK[name] else { continue }
+                let others = candidates.filter { $0.name != t.name }
+                guard !others.isEmpty else { continue }
+                let target: TableMeta?
+                if others.count == 1 {
+                    target = others[0]
+                } else {
+                    let s = stem(c.name)
+                    let close = others.filter { stem($0.name) == s || stem($0.name).hasSuffix(s) }
+                    target = close.count == 1 ? close[0] : nil
+                }
+                guard let ref = target, let refPK = pk(ref) else { continue }
+                out.append(ForeignKeyMeta(name: "~\(t.name).\(c.name)", table: t.name, columns: [c.name],
+                                          referencedTable: ref.name, referencedColumns: [refPK]))
+            }
+        }
+        return out
+    }
+
     /// 참조되는 테이블(부모)을 왼쪽, 참조하는 테이블(자식)을 오른쪽 열에 놓는다. 관계 없는 테이블은 격자로 아래에.
-    public static func frames(_ tables: [TableMeta], gap: CGFloat = 70) -> [String: CGRect] {
+    public static func frames(_ tables: [TableMeta], extra: [ForeignKeyMeta] = [], gap: CGFloat = 70,
+                              cardWidth width: CGFloat = cardWidth) -> [String: CGRect] {
         let names = Set(tables.map(\.name))
+        let all = tables.flatMap(\.foreignKeys) + extra
         let parents: [String: [String]] = Dictionary(uniqueKeysWithValues: tables.map { t in
-            (t.name, t.foreignKeys.map(\.referencedTable).filter { names.contains($0) && $0 != t.name })
+            (t.name, all.filter { $0.table == t.name }.map(\.referencedTable).filter { names.contains($0) && $0 != t.name })
         })
         let connected = Set(tables.filter { t in
-            !(parents[t.name] ?? []).isEmpty || tables.contains { $0.foreignKeys.contains { $0.referencedTable == t.name && $0.table != t.name } }
+            !(parents[t.name] ?? []).isEmpty || all.contains { $0.referencedTable == t.name && $0.table != t.name && names.contains($0.table) }
         }.map(\.name))
+        let cardWidth = width
 
         // 단계 = 1 + 부모 단계의 최대값 (순환은 횟수 제한으로 끊음)
         var level: [String: Int] = [:]

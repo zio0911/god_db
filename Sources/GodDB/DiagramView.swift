@@ -9,19 +9,52 @@ struct DiagramDoc: Identifiable {
     let tables: [TableMeta]
     /// 중심 테이블 (테이블에서 열었을 때)
     let focus: String?
+    /// 컬럼 이름으로 추정한 관계 (외래 키 제약이 없는 DB 용)
+    var inferred: [ForeignKeyMeta] = []
+}
+
+/// 다이어그램에 보일 이름
+enum DiagramNameMode: String, CaseIterable, Identifiable {
+    case physical, logical, both
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .physical: return tr("물리명")
+        case .logical: return tr("논리명")
+        case .both: return tr("둘 다")
+        }
+    }
+}
+
+/// 코멘트에서 논리명 (첫 줄, 너무 길면 자름)
+func logicalName(_ comment: String) -> String? {
+    let first = comment.split(whereSeparator: \.isNewline).first.map(String.init)?
+        .trimmingCharacters(in: .whitespaces) ?? ""
+    guard !first.isEmpty else { return nil }
+    return first.count > 40 ? String(first.prefix(40)) + "…" : first
 }
 
 extension AppState {
+    /// 고른 테이블들로 다이어그램
+    func makeDiagram(names: Set<String>) -> UUID? {
+        makeDiagram(focus: nil, only: tables.filter { names.contains($0.name) })
+    }
+
     /// 다이어그램 문서를 만들고 창 id 를 돌려준다. focus 가 있으면 그 테이블과 바로 이어진 테이블만.
-    func makeDiagram(focus: String?) -> UUID? {
+    func makeDiagram(focus: String?, only: [TableMeta]? = nil) -> UUID? {
         guard let profile = selectedProfile, !tables.isEmpty else {
             log(.warning, .schema, tr("먼저 접속을 연결하고 스키마를 불러오세요."))
             return nil
         }
+        // 추정 관계는 스키마 전체 기준으로 찾는다 (고른 테이블 밖과의 관계는 그리지 않음)
+        let inferredAll = DiagramLayout.inferredRelations(tables)
         var list: [TableMeta]
         let title: String
-        if let focus {
-            list = DiagramLayout.related(to: focus, in: tables)
+        if let only {
+            list = only
+            title = "\(profile.name) / \(currentDatabase) / " + tr("선택 %@개", "\(only.count)")
+        } else if let focus {
+            list = DiagramLayout.related(to: focus, in: tables, extra: inferredAll)
             title = "\(profile.name) / \(currentDatabase) / \(focus)"
         } else {
             list = tables
@@ -32,10 +65,12 @@ extension AppState {
             log(.warning, .schema, tr("테이블이 %@개라 앞의 %@개만 그려요.", "\(list.count)", "\(limit)"))
             list = Array(list.prefix(limit))
         }
-        let doc = DiagramDoc(title: title, tables: list, focus: focus)
+        let names = Set(list.map(\.name))
+        let doc = DiagramDoc(title: title, tables: list, focus: focus,
+                             inferred: inferredAll.filter { names.contains($0.table) && names.contains($0.referencedTable) })
         diagrams[doc.id] = doc
-        let fkCount = list.reduce(0) { $0 + $1.foreignKeys.count }
-        log(.info, .schema, tr("ER 다이어그램 · 테이블 %@개 · 관계 %@개", "\(list.count)", "\(fkCount)"))
+        let fkCount = list.reduce(0) { $0 + $1.foreignKeys.filter { names.contains($0.referencedTable) }.count }
+        log(.info, .schema, tr("ER 다이어그램 · 테이블 %@개 · 관계 %@개 · 추정 %@개", "\(list.count)", "\(fkCount)", "\(doc.inferred.count)"))
         return doc.id
     }
 }
@@ -62,13 +97,24 @@ struct DiagramView: View {
     @State private var zoom: CGFloat = 1
     @State private var dragStart: [String: CGPoint] = [:]
     @State private var hovered: String?
+    @State private var showInferred: Bool
+    @AppStorage("GodDB.diagram.nameMode") private var nameModeRaw = DiagramNameMode.physical.rawValue
 
     private let margin: CGFloat = 40
+    private var nameMode: DiagramNameMode { DiagramNameMode(rawValue: nameModeRaw) ?? .physical }
+    private var cardWidth: CGFloat { nameMode == .both ? 320 : DiagramLayout.cardWidth }
 
     init(doc: DiagramDoc) {
         self.doc = doc
+        let mode = DiagramNameMode(rawValue: UserDefaults.standard.string(forKey: "GodDB.diagram.nameMode") ?? "") ?? .physical
         // 처음 그릴 때(그리고 PNG 저장 때)부터 위치가 있어야 한다
-        _frames = State(initialValue: DiagramLayout.frames(doc.tables))
+        _frames = State(initialValue: DiagramLayout.frames(doc.tables, extra: doc.inferred,
+                                                           cardWidth: mode == .both ? 320 : DiagramLayout.cardWidth))
+        _showInferred = State(initialValue: true)
+    }
+
+    private func relayout() {
+        frames = DiagramLayout.frames(doc.tables, extra: showInferred ? doc.inferred : [], cardWidth: cardWidth)
     }
 
     var body: some View {
@@ -90,9 +136,22 @@ struct DiagramView: View {
         HStack(spacing: 10) {
             Image(systemName: "point.3.connected.trianglepath.dotted").foregroundStyle(Color.accentColor)
             Text(doc.title).font(.headline).lineLimit(1)
-            Text(tr("테이블 %@개 · 관계 %@개", "\(doc.tables.count)", "\(relations.count)"))
+            Text(tr("테이블 %@개 · 관계 %@개", "\(doc.tables.count)", "\(realRelations.count)"))
                 .foregroundStyle(.secondary)
             Spacer()
+            Picker("", selection: Binding(get: { nameMode }, set: { nameModeRaw = $0.rawValue; relayoutAnimated() })) {
+                ForEach(DiagramNameMode.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .help(tr("물리명: 실제 테이블·컬럼 이름 / 논리명: 코멘트 (없으면 물리명)"))
+            Toggle(isOn: Binding(get: { showInferred }, set: { showInferred = $0; relayoutAnimated() })) {
+                Text(tr("관계 추정 %@개", "\(doc.inferred.count)"))
+            }
+            .toggleStyle(.checkbox)
+            .disabled(doc.inferred.isEmpty)
+            .help(tr("외래 키 제약이 없어도, 컬럼 이름이 다른 테이블의 기본 키 이름과 같으면 관계로 보고 점선으로 그려요"))
+            Divider().frame(height: 16)
             Button { zoom = max(0.3, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
                 .help(tr("축소"))
             Text("\(Int(zoom * 100))%").monospacedDigit().frame(width: 44)
@@ -100,14 +159,16 @@ struct DiagramView: View {
                 .help(tr("확대"))
             Button { zoom = 1 } label: { Text("100%") }
             Divider().frame(height: 16)
-            Button {
-                withAnimation(.easeInOut(duration: 0.25)) { frames = DiagramLayout.frames(doc.tables) }
-            } label: { Label(tr("자동 정렬"), systemImage: "rectangle.3.group") }
+            Button { relayoutAnimated() } label: { Label(tr("자동 정렬"), systemImage: "rectangle.3.group") }
             Button { exportPNG() } label: { Label(tr("PNG 저장"), systemImage: "square.and.arrow.down") }
         }
         .buttonStyle(.hover)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    private func relayoutAnimated() {
+        withAnimation(.easeInOut(duration: 0.25)) { relayout() }
     }
 
     // MARK: - 그림
@@ -123,9 +184,15 @@ struct DiagramView: View {
         frames[name].map { $0.offsetBy(dx: margin, dy: margin) }
     }
 
-    private var relations: [ForeignKeyMeta] {
+    /// 진짜 외래 키 (그림 안의 테이블끼리)
+    private var realRelations: [ForeignKeyMeta] {
         let names = Set(doc.tables.map(\.name))
         return doc.tables.flatMap(\.foreignKeys).filter { names.contains($0.referencedTable) }
+    }
+
+    /// 그릴 관계 (추정 포함 여부에 따라)
+    private var relations: [ForeignKeyMeta] {
+        realRelations + (showInferred ? doc.inferred : [])
     }
 
     @ViewBuilder
@@ -139,7 +206,10 @@ struct DiagramView: View {
             ForEach(doc.tables) { table in
                 if let f = frame(table.name) {
                     TableCard(table: table, focus: table.name == doc.focus,
-                              highlighted: hovered.map { isRelated(table.name, $0) } ?? false)
+                              highlighted: hovered.map { isRelated(table.name, $0) } ?? false,
+                              nameMode: nameMode,
+                              inferredColumns: Set(doc.inferred.filter { $0.table == table.name && showInferred }
+                                                    .flatMap(\.columns).map { $0.lowercased() }))
                         .frame(width: f.width)
                         .position(x: f.midX, y: f.minY + DiagramLayout.cardHeight(table) / 2)
                         .onHover { hovered = $0 ? table.name : (hovered == table.name ? nil : hovered) }
@@ -193,7 +263,10 @@ struct DiagramView: View {
                           control2: CGPoint(x: end.x + (childLeft ? bend : -bend), y: end.y))
             out = childLeft ? -1 : 1
         }
-        context.stroke(path, with: .color(color), lineWidth: active && hovered != nil ? 2.5 : 1.6)
+        let inferred = fk.name.hasPrefix("~")
+        let width: CGFloat = active && hovered != nil ? 2.5 : 1.6
+        context.stroke(path, with: .color(inferred ? color.opacity(0.85) : color),
+                       style: StrokeStyle(lineWidth: width, dash: inferred ? [7, 5] : []))
         // 자식 쪽: 까마귀발(여러 개), 부모 쪽: 막대(하나)
         var crow = Path()
         crow.move(to: CGPoint(x: start.x + out * 12, y: start.y)); crow.addLine(to: CGPoint(x: start.x, y: start.y - 7))
@@ -228,13 +301,31 @@ struct TableCard: View {
     let table: TableMeta
     var focus = false
     var highlighted = false
+    var nameMode: DiagramNameMode = .physical
+    var inferredColumns: Set<String> = []
+
+    /// 모드에 맞는 이름 (논리명이 없으면 물리명)
+    private func label(_ physical: String, _ comment: String) -> (main: String, sub: String?, missing: Bool) {
+        let logical = logicalName(comment)
+        switch nameMode {
+        case .physical: return (physical, nil, false)
+        case .logical: return (logical ?? physical, nil, logical == nil)
+        case .both: return (logical ?? physical, logical == nil ? nil : physical, logical == nil)
+        }
+    }
 
     var body: some View {
         let fkColumns = Set(table.foreignKeys.flatMap(\.columns).map { $0.lowercased() })
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "tablecells").font(.caption)
-                Text(table.name).font(.system(.callout, design: .monospaced).weight(.semibold)).lineLimit(1)
+                let t = label(table.name, table.comment)
+                Text(t.main).font(.system(.callout, design: nameMode == .physical ? .monospaced : .default).weight(.semibold))
+                    .lineLimit(1)
+                    .italic(t.missing && nameMode != .physical)
+                if let sub = t.sub {
+                    Text(sub).font(.system(.caption2, design: .monospaced)).opacity(0.8).lineLimit(1)
+                }
                 Spacer(minLength: 0)
             }
             .foregroundStyle(.white)
@@ -249,13 +340,21 @@ struct TableCard: View {
                                 Image(systemName: "key.fill").foregroundStyle(.yellow)
                             } else if fkColumns.contains(c.name.lowercased()) {
                                 Image(systemName: "link").foregroundStyle(Color.accentColor)
+                            } else if inferredColumns.contains(c.name.lowercased()) {
+                                Image(systemName: "link").foregroundStyle(Color.accentColor.opacity(0.5))
                             } else {
                                 Image(systemName: "circle.fill").font(.system(size: 4)).foregroundStyle(.tertiary)
                             }
                         }
                         .font(.caption2)
                         .frame(width: 14)
-                        Text(c.name).font(.system(.caption, design: .monospaced)).lineLimit(1)
+                        let n = label(c.name, c.comment)
+                        Text(n.main).font(.system(.caption, design: nameMode == .physical ? .monospaced : .default))
+                            .lineLimit(1)
+                            .foregroundStyle(n.missing && nameMode != .physical ? .secondary : .primary)
+                        if let sub = n.sub {
+                            Text(sub).font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1)
+                        }
                         Spacer(minLength: 4)
                         Text(c.columnType).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -279,29 +378,31 @@ struct TableCard: View {
     }
 }
 
-/// 개발용 샘플 다이어그램 (화면 확인)
+/// 개발용 샘플 다이어그램 (화면 확인). 외래 키 제약 없이 코멘트만 있는 테이블 → 관계 추정 + 논리명
 enum DiagramSample {
     @MainActor
-    static func render(to path: String) {
-        func col(_ n: String, _ t: String, pk: Bool = false) -> ColumnMeta {
-            ColumnMeta(name: n, columnType: t, nullable: !pk, columnKey: pk ? "PRI" : "")
+    static func render(to path: String, mode: String = "physical") {
+        UserDefaults.standard.set(mode, forKey: "GodDB.diagram.nameMode")
+        func col(_ n: String, _ t: String, _ c: String, pk: Bool = false) -> ColumnMeta {
+            ColumnMeta(name: n, columnType: t, nullable: !pk, columnKey: pk ? "PRI" : "", comment: c)
         }
-        func fk(_ table: String, _ c: String, _ ref: String, _ rc: String) -> ForeignKeyMeta {
-            ForeignKeyMeta(name: "fk_\(table)_\(ref)", table: table, columns: [c], referencedTable: ref, referencedColumns: [rc])
+        func table(_ n: String, _ c: String, _ cols: [ColumnMeta]) -> TableMeta {
+            TableMeta(name: n, comment: c, columns: cols,
+                      indexes: [IndexMeta(name: "PRIMARY", unique: true, columns: [cols[0].name])])
         }
         let tables = [
-            TableMeta(name: "tb_member", columns: [col("member_id", "bigint", pk: true), col("email", "varchar(100)"), col("status", "char(1)"), col("reg_dt", "datetime")]),
-            TableMeta(name: "tb_order", columns: [col("order_id", "bigint", pk: true), col("member_id", "bigint"), col("total", "decimal(12,2)"), col("ordered_at", "datetime")],
-                      foreignKeys: [fk("tb_order", "member_id", "tb_member", "member_id")]),
-            TableMeta(name: "tb_order_item", columns: [col("item_id", "bigint", pk: true), col("order_id", "bigint"), col("product_id", "bigint"), col("qty", "int")],
-                      foreignKeys: [fk("tb_order_item", "order_id", "tb_order", "order_id"), fk("tb_order_item", "product_id", "tb_product", "product_id")]),
-            TableMeta(name: "tb_product", columns: [col("product_id", "bigint", pk: true), col("name", "varchar(200)"), col("price", "decimal(12,2)")]),
-            TableMeta(name: "tb_point_hist", columns: [col("hist_id", "bigint", pk: true), col("member_id", "bigint"), col("point", "int")],
-                      foreignKeys: [fk("tb_point_hist", "member_id", "tb_member", "member_id")]),
-            TableMeta(name: "tb_notice", columns: [col("notice_id", "int", pk: true), col("title", "varchar(200)")]),
+            table("tb_member", "회원", [col("member_id", "bigint", "회원 ID", pk: true), col("email", "varchar(100)", "이메일"),
+                                        col("status", "char(1)", "상태"), col("reg_dt", "datetime", "가입일시")]),
+            table("tb_order", "주문", [col("order_id", "bigint", "주문 ID", pk: true), col("member_id", "bigint", "회원 ID"),
+                                       col("total", "decimal(12,2)", "결제 금액"), col("ordered_at", "datetime", "")]),
+            table("tb_order_item", "주문 상품", [col("item_id", "bigint", "주문상품 ID", pk: true), col("order_id", "bigint", "주문 ID"),
+                                               col("product_id", "bigint", "상품 ID"), col("qty", "int", "수량")]),
+            table("tb_product", "상품", [col("product_id", "bigint", "상품 ID", pk: true), col("name", "varchar(200)", "상품명"),
+                                         col("price", "decimal(12,2)", "판매가")]),
+            table("tb_point_hist", "", [col("hist_id", "bigint", "", pk: true), col("member_id", "bigint", "회원 ID"), col("point", "int", "포인트")]),
         ]
-        // ImageRenderer 는 ScrollView 안을 그리지 않아서 다이어그램 본문만 그린다
-        let view = DiagramView(doc: DiagramDoc(title: "sample / shop", tables: tables, focus: "tb_order")).canvas
+        let inferred = DiagramLayout.inferredRelations(tables)
+        let view = DiagramView(doc: DiagramDoc(title: "sample / shop", tables: tables, focus: nil, inferred: inferred)).canvas
             .background(Color(nsColor: .windowBackgroundColor))
         let renderer = ImageRenderer(content: view)
         renderer.scale = 1

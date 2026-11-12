@@ -108,6 +108,8 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    /// 사이드바에서 고른 테이블 (⌘/⇧ 클릭으로 여러 개)
+    var selectedTables: Set<String> = []
     /// 열린 ER 다이어그램 창들
     var diagrams: [UUID: DiagramDoc] = [:]
     /// 마지막으로 저장한 CSV (Finder 에서 보기)
@@ -375,6 +377,7 @@ final class AppState {
             $0.currentDatabase = db
             $0.schemaLoading = true
         }
+        if id == selectedProfileID { selectedTables = [] }
         if let i = selectedTabIndex, tabs[i].profileID == id { tabs[i].database = db }
         do {
             try await session.use(db)

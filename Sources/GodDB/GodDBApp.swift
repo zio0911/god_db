@@ -10,7 +10,8 @@ struct GodDBApp: App {
     init() {
         // 개발용: GodDB --render-diagram-sample <out.png> → 샘플 ER 다이어그램을 그려 저장하고 종료
         if let i = CommandLine.arguments.firstIndex(of: "--render-diagram-sample"), CommandLine.arguments.count > i + 1 {
-            DiagramSample.render(to: CommandLine.arguments[i + 1])
+            let mode = CommandLine.arguments.count > i + 2 ? CommandLine.arguments[i + 2] : "physical"
+            DiagramSample.render(to: CommandLine.arguments[i + 1], mode: mode)
             exit(0)
         }
         // `swift run` 으로 띄워도 Dock 아이콘과 메뉴가 있는 일반 앱으로 동작하게 한다.

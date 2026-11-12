@@ -8,7 +8,7 @@ struct SidebarView: View {
     var body: some View {
         @Bindable var app = app
         VStack(spacing: 0) {
-            List {
+            List(selection: $app.selectedTables) {
                 Section(tr("접속")) {
                     ForEach(app.profiles) { profile in
                         ProfileRow(profile: profile)
@@ -38,6 +38,7 @@ struct SidebarView: View {
                         }
                         ForEach(app.filteredTables) { table in
                             TableNode(table: table)
+                                .tag(table.name)
                         }
                     } header: {
                         HStack {
@@ -51,12 +52,21 @@ struct SidebarView: View {
                             .labelsHidden()
                             .fixedSize()
                             Spacer()
-                            Text("\(app.tables.count)").foregroundStyle(.secondary)
+                            if app.selectedTables.count > 1 {
+                                Text(tr("%@개 선택", "\(app.selectedTables.count)")).foregroundStyle(Color.accentColor)
+                            } else {
+                                Text("\(app.tables.count)").foregroundStyle(.secondary)
+                            }
                             Button {
-                                if let id = app.makeDiagram(focus: nil) { openWindow(id: "diagram", value: id) }
+                                let id = app.selectedTables.count > 1
+                                    ? app.makeDiagram(names: app.selectedTables)
+                                    : app.makeDiagram(focus: nil)
+                                if let id { openWindow(id: "diagram", value: id) }
                             } label: { Image(systemName: "point.3.connected.trianglepath.dotted") }
                             .buttonStyle(.borderless)
-                            .help(tr("스키마 전체 ER 다이어그램"))
+                            .help(app.selectedTables.count > 1
+                                  ? tr("선택한 테이블 %@개로 ER 다이어그램", "\(app.selectedTables.count)")
+                                  : tr("스키마 전체 ER 다이어그램 (⌘/⇧ 클릭으로 테이블을 여러 개 고르면 그 테이블만)"))
                             Button {
                                 Task { await app.refreshSchema() }
                             } label: { Image(systemName: "arrow.clockwise") }
@@ -220,8 +230,15 @@ struct TableNode: View {
                 .lineLimit(1)
                 .help(table.comment.isEmpty ? table.name : table.comment)
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2) { app.openTableQuery(table.name) }
+                // 한 번 클릭은 목록 선택(⌘/⇧ 다중 선택)에 맡기고, 두 번 클릭만 가로챈다
+                .simultaneousGesture(TapGesture(count: 2).onEnded { app.openTableQuery(table.name) })
                 .contextMenu {
+                    if app.selectedTables.count > 1 && app.selectedTables.contains(table.name) {
+                        Button(tr("선택한 테이블 %@개 다이어그램", "\(app.selectedTables.count)")) {
+                            if let id = app.makeDiagram(names: app.selectedTables) { openWindow(id: "diagram", value: id) }
+                        }
+                        Divider()
+                    }
                     Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(table.name) }
                     Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }
                     Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }

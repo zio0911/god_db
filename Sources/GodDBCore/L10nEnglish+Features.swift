@@ -129,6 +129,18 @@ extension L10nEnglish {
         "테이블 %@개 · 관계 %@개": "%@ tables · %@ relations",
         "테이블이 %@개라 앞의 %@개만 그려요.": "There are %@ tables, so only the first %@ are drawn.",
         "확대": "Zoom in",
+        "%@개 선택": "%@ selected",
+        "ER 다이어그램 · 테이블 %@개 · 관계 %@개 · 추정 %@개": "ER diagram · %@ tables · %@ relations · %@ inferred",
+        "관계 추정 %@개": "Infer relations (%@)",
+        "논리명": "Logical",
+        "둘 다": "Both",
+        "물리명": "Physical",
+        "물리명: 실제 테이블·컬럼 이름 / 논리명: 코멘트 (없으면 물리명)": "Physical: actual table/column names / Logical: comments (physical name if empty)",
+        "선택 %@개": "%@ selected",
+        "선택한 테이블 %@개 다이어그램": "Diagram of %@ selected tables",
+        "선택한 테이블 %@개로 ER 다이어그램": "ER diagram of the %@ selected tables",
+        "스키마 전체 ER 다이어그램 (⌘/⇧ 클릭으로 테이블을 여러 개 고르면 그 테이블만)": "ER diagram of the whole schema (⌘/⇧-click several tables to draw only those)",
+        "외래 키 제약이 없어도, 컬럼 이름이 다른 테이블의 기본 키 이름과 같으면 관계로 보고 점선으로 그려요": "Even without foreign key constraints, a column named like another table's primary key is treated as a relation and drawn dashed",
         "결과를 CSV 파일로 저장 (쿼리 전체 결과 또는 보이는 행)": "Save the result as a CSV file (entire query result or the visible rows)",
     ]
 }

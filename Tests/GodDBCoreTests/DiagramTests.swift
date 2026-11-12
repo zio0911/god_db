@@ -62,3 +62,32 @@ extension MultiDBChecks {
         _ = try await s.raw(d.dropTableSQL("tb_fk_parent"))
     }
 }
+
+@Suite("Inferred relations")
+struct InferredRelationTests {
+    func t(_ name: String, pk: String, cols: [String], fks: [ForeignKeyMeta] = []) -> TableMeta {
+        TableMeta(name: name,
+                  columns: ([pk] + cols).map { ColumnMeta(name: $0, columnType: "bigint", nullable: $0 != pk, columnKey: $0 == pk ? "PRI" : "") },
+                  indexes: [IndexMeta(name: "PRIMARY", unique: true, columns: [pk])], foreignKeys: fks)
+    }
+
+    @Test func matchesPrimaryKeyNames() {
+        let member = t("tb_member", pk: "member_id", cols: ["email"])
+        let order = t("tb_order", pk: "order_id", cols: ["member_id"])
+        let item = t("tb_order_item", pk: "item_id", cols: ["order_id", "id"])
+        let r = DiagramLayout.inferredRelations([member, order, item])
+        #expect(Set(r.map { "\($0.table).\($0.columns[0])->\($0.referencedTable)" })
+                == ["tb_order.member_id->tb_member", "tb_order_item.order_id->tb_order"])
+        #expect(DiagramLayout.related(to: "tb_member", in: [member, order, item], extra: r).map(\.name) == ["tb_member", "tb_order"])
+    }
+
+    @Test func skipsRealForeignKeysAndAmbiguous() {
+        let real = ForeignKeyMeta(name: "fk", table: "b", columns: ["a_id"], referencedTable: "a", referencedColumns: ["a_id"])
+        let a = t("a", pk: "a_id", cols: []), b = t("b", pk: "b_id", cols: ["a_id"], fks: [real])
+        #expect(DiagramLayout.inferredRelations([a, b]).isEmpty)
+        // 같은 기본 키 이름을 가진 테이블이 둘이고 이름으로도 못 고르면 건너뜀
+        let x1 = t("hist_2024", pk: "log_key", cols: []), x2 = t("hist_2025", pk: "log_key", cols: [])
+        let c = t("c", pk: "c_id", cols: ["log_key"])
+        #expect(DiagramLayout.inferredRelations([x1, x2, c]).isEmpty)
+    }
+}
