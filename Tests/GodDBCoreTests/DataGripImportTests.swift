@@ -58,6 +58,17 @@ struct DataGripImportTests {
         let rd = DataGripImport.profile(fromJDBC: "jdbc:redis://cache.local:6380/2")
         #expect(rd?.kind == .redis && rd?.port == 6380 && rd?.database == "2")
         #expect(DataGripImport.profile(fromJDBC: "jdbc:oracle:thin:@x:1521:ORCL") == nil)
+        // 드라이버 래퍼 / 하위 프로토콜 / 여러 호스트
+        let aws = DataGripImport.profile(fromJDBC: "jdbc:aws-wrapper:mysql://shop-prd.cluster-xyz.ap-northeast-2.rds.amazonaws.com:3306/shop_db")
+        #expect(aws?.kind == .mysql && aws?.host == "shop-prd.cluster-xyz.ap-northeast-2.rds.amazonaws.com" && aws?.port == 3306 && aws?.database == "shop_db")
+        let awsPG = DataGripImport.profile(fromJDBC: "jdbc:aws-wrapper:postgresql://pg.local:5432/app")
+        #expect(awsPG?.kind == .postgres && awsPG?.database == "app")
+        let spy = DataGripImport.profile(fromJDBC: "jdbc:p6spy:mysql://db:3306/a")
+        #expect(spy?.kind == .mysql && spy?.host == "db")
+        let repl = DataGripImport.profile(fromJDBC: "jdbc:mysql:replication://primary:3306,replica:3307/shop?useSSL=false")
+        #expect(repl?.host == "primary" && repl?.port == 3306 && repl?.database == "shop" && repl?.useTLS == false)
+        let jtds = DataGripImport.profile(fromJDBC: "jdbc:jtds:sqlserver://ms:1433;databaseName=HR")
+        #expect(jtds?.kind == .mssql && jtds?.database == "HR")
     }
 
     @Test func rejectsOtherText() {

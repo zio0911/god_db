@@ -72,8 +72,39 @@ public enum DataGripImport {
         (try? el.nodes(forXPath: path))?.first?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 드라이버 래퍼가 붙은 JDBC URL 을 기본 형태로
+    ///   jdbc:aws-wrapper:mysql://…      (AWS Advanced JDBC Wrapper) → jdbc:mysql://…
+    ///   jdbc:p6spy:mysql://… / jdbc:log4jdbc:mysql://…               → jdbc:mysql://…
+    ///   jdbc:mysql:replication://… / loadbalance:// / aws://        → jdbc:mysql://… (첫 호스트)
+    static func normalize(_ url: String) -> String {
+        var s = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard s.lowercased().hasPrefix("jdbc:") else { return s }
+        s = String(s.dropFirst(5))
+        for wrapper in ["aws-wrapper:", "p6spy:", "log4jdbc:", "otel:"] where s.lowercased().hasPrefix(wrapper) {
+            s = String(s.dropFirst(wrapper.count))
+        }
+        // mysql:replication:// 같은 하위 프로토콜은 떼어낸다
+        if let r = s.range(of: "://") {
+            let scheme = s[..<r.lowerBound]
+            let parts = scheme.split(separator: ":")
+            if parts.count > 1, ["mysql", "mariadb", "postgresql"].contains(parts[0].lowercased()) {
+                s = String(parts[0]) + s[r.lowerBound...]
+            }
+            // 여러 호스트(host1,host2:3306)면 첫 호스트만
+            if let r2 = s.range(of: "://") {
+                let rest = s[r2.upperBound...]
+                let end = rest.firstIndex { $0 == "/" || $0 == "?" || $0 == ";" } ?? rest.endIndex
+                if let comma = rest[..<end].firstIndex(of: ",") {
+                    s = String(s[..<comma]) + String(s[end...])
+                }
+            }
+        }
+        return "jdbc:" + s
+    }
+
     /// JDBC URL → 접속 정보 (호스트, 포트, DB, TLS)
-    public static func profile(fromJDBC url: String) -> ConnectionProfile? {
+    public static func profile(fromJDBC rawURL: String) -> ConnectionProfile? {
+        let url = normalize(rawURL)
         let lower = url.lowercased()
         var p = ConnectionProfile()
         var rest: Substring

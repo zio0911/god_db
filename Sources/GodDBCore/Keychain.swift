@@ -19,9 +19,11 @@ public enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    public static func setPassword(_ password: String, for id: UUID) {
+    /// - Returns: 저장 성공 여부 (빈 비밀번호는 지우기만 하고 true)
+    @discardableResult
+    public static func setPassword(_ password: String, for id: UUID) -> Bool {
         deletePassword(for: id)
-        guard !password.isEmpty else { return }
+        guard !password.isEmpty else { return true }
         let attrs: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -29,7 +31,7 @@ public enum Keychain {
             kSecAttrLabel as String: tr("GodDB DB 비밀번호"),
             kSecValueData as String: Data(password.utf8),
         ]
-        SecItemAdd(attrs as CFDictionary, nil)
+        return SecItemAdd(attrs as CFDictionary, nil) == errSecSuccess
     }
 
     public static func deletePassword(for id: UUID) {

@@ -48,8 +48,9 @@ public final class LogFile: @unchecked Sendable {
     }
 
     /// 한 항목을 파일용 텍스트로. 첫 줄은 시간·수준·종류·메시지, 나머지(SQL, 오류 원문)는 들여쓴다.
-    public static func format(_ e: LogEntry) -> String {
-        var line = "\(timeFormatter.string(from: e.date)) \(e.level.rawValue.uppercased().padding(toLength: 7, withPad: " ", startingAt: 0)) [\(e.source.title)] \(e.message)"
+    /// 한 줄 형식: 시각 수준 [사용자@컴퓨터] [종류] 메시지
+    public static func format(_ e: LogEntry, identity: String = ClientInfo.identity) -> String {
+        var line = "\(timeFormatter.string(from: e.date)) \(e.level.rawValue.uppercased().padding(toLength: 7, withPad: " ", startingAt: 0)) [\(identity)] [\(e.source.title)] \(e.message)"
         var extra: [String] = []
         if let hint = e.hint { extra.append(tr("해결 방법: %@", hint)) }
         if let detail = e.detail, !detail.isEmpty { extra.append(detail) }

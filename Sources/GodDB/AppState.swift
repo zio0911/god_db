@@ -130,7 +130,7 @@ final class AppState {
     init() {
         profiles = store.load()
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, NSUserName()))
+        log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, ClientInfo.identity), detail: ClientInfo.summary())
         // 90일 지난 다이어그램 AI 대화 정리
         DispatchQueue.global(qos: .utility).async { DiagramChatStore.shared.pruneAll() }
     }
@@ -238,7 +238,12 @@ final class AppState {
             profiles.append(profile)
         }
         if profile.savePassword {
-            if let password { Keychain.setPassword(password, for: profile.id) }
+            if let password {
+                if !Keychain.setPassword(password, for: profile.id) {
+                    log(.warning, .app, tr("%@ 비밀번호를 키체인에 저장하지 못했어요. 이번 실행 중에만 기억해요.", profile.name))
+                }
+                sessionPasswords[profile.id] = password
+            }
         } else {
             Keychain.deletePassword(for: profile.id)
             if let password, !password.isEmpty { sessionPasswords[profile.id] = password }
@@ -292,12 +297,14 @@ final class AppState {
         p.savePassword = save
         if let i = profiles.firstIndex(where: { $0.id == p.id }) { profiles[i] = p }
         if save {
-            Keychain.setPassword(password, for: p.id)
-            sessionPasswords[p.id] = nil
+            if !Keychain.setPassword(password, for: p.id) {
+                log(.warning, .app, tr("%@ 비밀번호를 키체인에 저장하지 못했어요. 이번 실행 중에만 기억해요.", p.name))
+            }
         } else {
             Keychain.deletePassword(for: p.id)
-            sessionPasswords[p.id] = password
         }
+        // 이번 실행에서는 입력한 값을 그대로 쓴다 (키체인 저장/읽기가 실패해도 연결되도록)
+        sessionPasswords[p.id] = password
         persist()
         Task { await connect(p.id) }
     }
@@ -326,13 +333,18 @@ final class AppState {
         selectedProfileID = id
         if connectionState(id) == .connected { return }
         let password = password(for: profile)
-        if password == nil && !profile.savePassword {
-            passwordPrompt = PasswordPrompt(profile: profile, message: nil)
+        if password == nil {
+            // 저장 안 함 설정이거나, 저장한다고 했지만 키체인에 없거나 읽지 못한 경우 → 비밀번호 없이 연결하지 않고 묻는다
+            passwordPrompt = PasswordPrompt(profile: profile, message: profile.savePassword
+                ? tr("키체인에 저장된 비밀번호가 없어요 (또는 읽지 못했어요). 비밀번호를 입력해 주세요. 비밀번호가 없는 DB 면 비워 두고 연결하세요.")
+                : nil)
             return
         }
         updateConnection(id) { $0.state = .connecting }
         let target = profile.ssh.map { tr("%@:%@ (SSH %@ 경유)", "\(profile.host)", "\(profile.port)", "\($0.host)") } ?? "\(profile.host):\(profile.port)"
-        log(.info, .connection, tr("%@ 연결 중… %@", "\(profile.name)", "\(target)"))
+        // 이 PC 에서 나가는 IP (감사 로그용). DNS 조회가 있을 수 있어 백그라운드에서 구한다.
+        let note = await Task.detached { ClientInfo.connectionNote(host: profile.host, port: profile.port, ssh: profile.ssh) }.value
+        log(.info, .connection, tr("%@ 연결 중… %@", "\(profile.name)", "\(target)"), detail: note + "\nuser: " + ClientInfo.identity)
         if profile.kind == .redis {
             await connectRedis(profile, password: password)
             return

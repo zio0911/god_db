@@ -49,3 +49,21 @@ struct LogFileTests {
         #expect(FileManager.default.fileExists(atPath: old.path))
     }
 }
+
+@Suite("ClientInfo")
+struct ClientInfoTests {
+    @Test func identityAndSummary() {
+        #expect(ClientInfo.identity.hasPrefix(NSUserName() + "@"))
+        #expect(!ClientInfo.identity.contains(" "))
+        let s = ClientInfo.summary()
+        #expect(s.contains("user: \(NSUserName())") && s.contains("computer:") && s.contains("ip:") && s.contains("os: macOS"))
+        #expect(LogFile.format(LogEntry(level: .info, source: .app, message: "m"), identity: "kim@pc").contains("INFO    [kim@pc] ["))
+    }
+
+    @Test func sourceIPToLocalhostAndAddresses() {
+        #expect(ClientInfo.sourceIP(toward: "127.0.0.1", port: 3306) == "127.0.0.1")
+        #expect(ClientInfo.addresses().allSatisfy { !$0.ip.hasPrefix("127.") && !$0.ip.lowercased().hasPrefix("fe80") })
+        #expect(ClientInfo.connectionNote(host: "127.0.0.1", port: 1, ssh: nil) == "client 127.0.0.1 → 127.0.0.1:1")
+        #expect(ClientInfo.connectionNote(host: "db", port: 3306, ssh: SSHConfig(host: "127.0.0.1", port: 22)).hasPrefix("client 127.0.0.1 → ssh 127.0.0.1:22 → db:3306"))
+    }
+}

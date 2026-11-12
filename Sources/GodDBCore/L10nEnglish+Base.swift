@@ -117,6 +117,8 @@ extension L10nEnglish {
         "다음 페이지": "Next page",
         "다음부터는 묻지 않고 바로 연결해요.": "Next time it connects without asking.",
         "닫기": "Close",
+        "%@ 비밀번호를 키체인에 저장하지 못했어요. 이번 실행 중에만 기억해요.": "Couldn't save the password for %@ in the Keychain. It is kept only while the app runs.",
+        "키체인에 저장된 비밀번호가 없어요 (또는 읽지 못했어요). 비밀번호를 입력해 주세요. 비밀번호가 없는 DB 면 비워 두고 연결하세요.": "No password is stored in the Keychain (or it couldn't be read). Enter the password. Leave it empty if the database has none.",
         "새 대화 (지금 대화는 기록에 남아요)": "New conversation (the current one stays in history)",
         "저장된 대화가 없어요.": "No saved conversations.",
         "(제목 없음)": "(untitled)",
