@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         @Bindable var app = app
@@ -51,6 +52,11 @@ struct SidebarView: View {
                             .fixedSize()
                             Spacer()
                             Text("\(app.tables.count)").foregroundStyle(.secondary)
+                            Button {
+                                if let id = app.makeDiagram(focus: nil) { openWindow(id: "diagram", value: id) }
+                            } label: { Image(systemName: "point.3.connected.trianglepath.dotted") }
+                            .buttonStyle(.borderless)
+                            .help(tr("스키마 전체 ER 다이어그램"))
                             Button {
                                 Task { await app.refreshSchema() }
                             } label: { Image(systemName: "arrow.clockwise") }
@@ -169,6 +175,7 @@ struct KindBadge: View {
 
 struct TableNode: View {
     @Environment(AppState.self) private var app
+    @Environment(\.openWindow) private var openWindow
     let table: TableMeta
     @State private var expanded = false
 
@@ -219,6 +226,9 @@ struct TableNode: View {
                     Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }
                     Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }
                     Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
+                    Button(tr("다이어그램 보기")) {
+                        if let id = app.makeDiagram(focus: table.name) { openWindow(id: "diagram", value: id) }
+                    }
                     Divider()
                     Button(tr("이름 복사")) { Pasteboard.copy(table.name) }
                     Divider()

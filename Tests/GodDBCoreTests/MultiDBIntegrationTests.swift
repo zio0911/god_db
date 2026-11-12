@@ -131,6 +131,7 @@ enum MultiDBChecks {
         try await renameAndDrop(s, container: c)
         try await editing(s, container: c)
         try await binary(s, container: c)
+        try await foreignKeys(s, container: c)
 
         // 날짜 형식
         let dt = try await s.execute("SELECT reg_dt FROM tb_member ORDER BY member_id", limit: 1)

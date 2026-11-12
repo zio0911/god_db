@@ -35,6 +35,7 @@ struct IntegrationTests {
         try await MultiDBChecks.renameAndDrop(s, container: "shop")
         try await MultiDBChecks.editing(s, container: "shop")
         try await MultiDBChecks.binary(s, container: "shop")
+        try await MultiDBChecks.foreignKeys(s, container: "shop")
 
         let empty = try await s.execute("SELECT * FROM tb_member WHERE 1 = 0", limit: 500)
         #expect(empty.message == "결과 없음")

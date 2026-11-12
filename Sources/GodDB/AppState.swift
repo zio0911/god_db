@@ -108,6 +108,8 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    /// 열린 ER 다이어그램 창들
+    var diagrams: [UUID: DiagramDoc] = [:]
     /// 마지막으로 저장한 CSV (Finder 에서 보기)
     var lastExportURL: URL?
 

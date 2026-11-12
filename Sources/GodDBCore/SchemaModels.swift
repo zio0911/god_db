@@ -52,12 +52,16 @@ public struct TableMeta: Hashable, Sendable, Identifiable {
     public var comment: String
     public var columns: [ColumnMeta]
     public var indexes: [IndexMeta]
+    /// 이 테이블이 다른 테이블을 참조하는 외래 키
+    public var foreignKeys: [ForeignKeyMeta] = []
 
-    public init(name: String, comment: String = "", columns: [ColumnMeta] = [], indexes: [IndexMeta] = []) {
+    public init(name: String, comment: String = "", columns: [ColumnMeta] = [], indexes: [IndexMeta] = [],
+                foreignKeys: [ForeignKeyMeta] = []) {
         self.name = name
         self.comment = comment
         self.columns = columns
         self.indexes = indexes
+        self.foreignKeys = foreignKeys
     }
 }
 

@@ -8,6 +8,11 @@ struct GodDBApp: App {
     @State private var settings = AppSettings()
 
     init() {
+        // 개발용: GodDB --render-diagram-sample <out.png> → 샘플 ER 다이어그램을 그려 저장하고 종료
+        if let i = CommandLine.arguments.firstIndex(of: "--render-diagram-sample"), CommandLine.arguments.count > i + 1 {
+            DiagramSample.render(to: CommandLine.arguments[i + 1])
+            exit(0)
+        }
         // `swift run` 으로 띄워도 Dock 아이콘과 메뉴가 있는 일반 앱으로 동작하게 한다.
         NSApplication.shared.setActivationPolicy(.regular)
         DispatchQueue.main.async { NSApplication.shared.activate(ignoringOtherApps: true) }
@@ -41,6 +46,15 @@ struct GodDBApp: App {
                 Button(tr("모든 접속 끊기")) { Task { await app.disconnectAll() } }
             }
         }
+
+        // ER 다이어그램 창 (여러 개 열 수 있음)
+        WindowGroup(tr("ER 다이어그램"), id: "diagram", for: UUID.self) { $id in
+            DiagramWindow(id: id)
+                .environment(app)
+                .environment(settings)
+                .id(settings.language)
+        }
+        .defaultSize(width: 1100, height: 760)
 
         Settings {
             SettingsView()

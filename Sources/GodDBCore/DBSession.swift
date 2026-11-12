@@ -177,7 +177,12 @@ public actor DBSession {
         let tableRows = try await raw(dialect.tablesSQL(schema)).rows
         let columnRows = try await raw(dialect.columnsSQL(schema)).rows
         let indexRows = try await raw(dialect.indexesSQL(schema)).rows
-        return SchemaBuilder.build(tableRows: tableRows, columnRows: columnRows, indexRows: indexRows)
+        var tables = SchemaBuilder.build(tableRows: tableRows, columnRows: columnRows, indexRows: indexRows)
+        // 외래 키는 권한 등으로 못 읽어도 스키마 자체는 보여준다
+        if let fkRows = try? await raw(dialect.foreignKeysSQL(schema)).rows {
+            tables = SchemaBuilder.attachForeignKeys(tables, rows: fkRows)
+        }
+        return tables
     }
 
     public func loadRoutines(_ schema: String) async throws -> [RoutineMeta] {
