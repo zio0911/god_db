@@ -16,6 +16,16 @@ struct GodDBApp: App {
         }
         // `swift run` 으로 띄워도 Dock 아이콘과 메뉴가 있는 일반 앱으로 동작하게 한다.
         NSApplication.shared.setActivationPolicy(.regular)
+        // 실행 중 Dock·⌘Tab 아이콘을 직접 지정한다. (macOS 아이콘 캐시가 예전 등록을 쓰거나,
+        // swift run 처럼 .app 번들 없이 실행해도 아이콘이 보이게)
+        let candidates = [
+            Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources/AppIcon.icns"),
+        ]
+        if let url = candidates.compactMap({ $0 }).first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+           let icon = NSImage(contentsOf: url) {
+            NSApplication.shared.applicationIconImage = icon
+        }
         DispatchQueue.main.async { NSApplication.shared.activate(ignoringOtherApps: true) }
     }
 

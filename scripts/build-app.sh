@@ -30,4 +30,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+# Finder/Dock 아이콘 캐시가 예전 등록(아이콘 없던 때)을 쓰지 않도록 다시 등록
+touch "$APP"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" >/dev/null 2>&1 || true
 echo "완료: $(pwd)/$APP"
