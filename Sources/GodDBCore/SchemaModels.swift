@@ -69,6 +69,11 @@ public struct QueryResult: Sendable {
     public struct Row: Identifiable, Sendable {
         public let id: Int
         public let values: [String?]
+
+        public init(id: Int, values: [String?]) {
+            self.id = id
+            self.values = values
+        }
     }
 
     public let id = UUID()
@@ -83,6 +88,13 @@ public struct QueryResult: Sendable {
     public var pageSize = 0
     public var hasMore = false
     public var totalCount: Int?
+    /// DB 에서 정렬해 가져온 경우 (페이지를 넘겨도 유지)
+    public var serverSort: ResultSort?
+    /// 앱 안에서 정렬한 경우 (한 페이지짜리 결과)
+    public var clientSort: ResultSort?
+
+    /// 헤더에 표시할 정렬
+    public var activeSort: ResultSort? { serverSort ?? clientSort }
 
     public var isPaged: Bool { pageSize > 0 }
     /// 이 페이지 첫 행의 전체 기준 번호 (0부터)
@@ -95,8 +107,8 @@ public struct QueryResult: Sendable {
         self.message = message
     }
 
-    /// 탭 구분 대신 RFC 4180 CSV 로 변환
-    public func csv() -> String {
+    /// RFC 4180 CSV 로 변환 (파일 저장은 lineEnding "\r\n" — 엑셀 호환)
+    public func csv(lineEnding: String = "\n") -> String {
         func esc(_ v: String?) -> String {
             guard let v else { return "" }
             if v.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) {
@@ -106,6 +118,6 @@ public struct QueryResult: Sendable {
         }
         var lines = [columns.map { esc($0.name) }.joined(separator: ",")]
         for r in rows { lines.append(r.values.map(esc).joined(separator: ",")) }
-        return lines.joined(separator: "\n")
+        return lines.joined(separator: lineEnding)
     }
 }

@@ -221,6 +221,12 @@ struct TableNode: View {
                     Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
                     Divider()
                     Button(tr("이름 복사")) { Pasteboard.copy(table.name) }
+                    Divider()
+                    let readOnly = app.selectedProfile?.readOnly == true
+                    Button(tr("이름 변경…")) { app.requestRename(table.name) }
+                        .disabled(readOnly)
+                    Button(tr("삭제 (DROP)…"), role: .destructive) { app.requestDrop(table.name) }
+                        .disabled(readOnly)
                 }
         }
     }

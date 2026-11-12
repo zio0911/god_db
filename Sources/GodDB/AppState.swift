@@ -3,6 +3,21 @@ import Foundation
 import GodDBCore
 import Observation
 
+/// DDL·정의를 연 탭이 어디서 왔는지 (생성문 새로고침용)
+enum TabSource: Equatable {
+    case table(String)
+    case routine(RoutineMeta)
+}
+
+/// 테이블 이름 변경 / 삭제 요청 (확인 창)
+struct TableActionRequest: Identifiable {
+    enum Kind { case rename, drop }
+    let id = UUID()
+    let kind: Kind
+    let profileID: UUID
+    let table: String
+}
+
 /// 쿼리 탭. 탭마다 어느 접속 / 어느 DB(스키마)에서 실행할지 정해져 있다.
 struct QueryTab: Identifiable {
     let id = UUID()
@@ -14,6 +29,8 @@ struct QueryTab: Identifiable {
     var number: Int
     /// DDL·정의 보기처럼 특별한 탭의 이름 (없으면 "쿼리 N")
     var customTitle: String?
+    /// DDL·정의 탭이면 원본 (생성문 새로고침)
+    var source: TabSource?
     var text: String = ""
     /// 화면에 보이는 결과 (results 중 하나)
     var result: QueryResult?
@@ -22,6 +39,10 @@ struct QueryTab: Identifiable {
     var resultIndex = 0
     var error: String?
     var running = false
+    /// 페이지 이동 / 전체 행 수 세기 중 (결과 표는 그대로 보여준다)
+    var pageLoading = false
+    /// 결과 편집 대기 중인 변경 (보고 있는 결과 기준)
+    var edits = PendingEdits()
     var lastSQL: String?
     /// 실행 계획(EXPLAIN) 결과인지
     var isPlan = false
@@ -83,6 +104,12 @@ final class AppState {
     var editingIsNew = false
     var passwordPrompt: PasswordPrompt?
     var alteringTable: TableMeta?
+    /// 진행 중이거나 결과를 보고 있는 쿼리 튜닝
+    var tuningJob: TuningJob?
+    var tableAction: TableActionRequest?
+    var editApply: EditApplyRequest?
+    /// 마지막으로 저장한 CSV (Finder 에서 보기)
+    var lastExportURL: URL?
 
     // 상태창 (로그 패널)
     var logs: [LogEntry] = []
@@ -436,7 +463,9 @@ final class AppState {
         guard let session else { return }
         do {
             let ddl = try await session.tableDDL(table)
-            addTab(text: ddl + "\n", title: "DDL · \(table.name)")
+            if let id = addTab(text: ddl + "\n", title: "DDL · \(table.name)") {
+                update(id) { $0.source = .table(table.name) }
+            }
             log(.info, .schema, tr("%@ CREATE 문 열기", "\(table.name)"))
         } catch {
             logError(error, .schema, context: tr("%@ CREATE 문 조회 실패", "\(table.name)"))
@@ -448,7 +477,9 @@ final class AppState {
         guard let session else { return }
         do {
             let body = try await session.definition(of: routine) ?? ""
-            addTab(text: body + "\n", title: "\(routine.kind.title) · \(routine.name)")
+            if let id = addTab(text: body + "\n", title: "\(routine.kind.title) · \(routine.name)") {
+                update(id) { $0.source = .routine(routine) }
+            }
             log(.info, .schema, tr("%@ %@ 정의 열기", "\(routine.kind.title)", "\(routine.name)"))
         } catch {
             logError(error, .schema, context: tr("%@ %@ 정의 조회 실패", "\(routine.kind.title)", "\(routine.name)"))
@@ -507,6 +538,7 @@ final class AppState {
             var shown = result
             shown.sql = trimmed
             update(tabID) {
+                $0.edits = PendingEdits()
                 $0.result = shown
                 $0.results = [shown]
                 $0.resultIndex = 0
@@ -559,6 +591,7 @@ final class AppState {
             // 결과 집합이 있는 마지막 결과를 먼저 보여준다.
             let index = results.lastIndex { !$0.columns.isEmpty } ?? max(0, results.count - 1)
             update(tabID) {
+                $0.edits = PendingEdits()
                 $0.results = results
                 $0.resultIndex = index
                 $0.result = results.isEmpty ? nil : results[index]
@@ -621,30 +654,75 @@ final class AppState {
         guard let t = tabs.first(where: { $0.id == tabID }),
               let current = t.result, current.isPaged, let sql = current.sql, page >= 0 else { return }
         let index = t.resultIndex
-        update(tabID) { $0.running = true; $0.error = nil }
+        update(tabID) { $0.pageLoading = true; $0.error = nil }
         do {
             guard let session = try await session(for: t) else {
-                update(tabID) { $0.error = notConnectedMessage(t); $0.running = false }
+                update(tabID) { $0.error = notConnectedMessage(t); $0.pageLoading = false }
                 return
             }
-            var r = try await session.execute(sql, limit: current.pageSize, page: page)
+            var r = try await session.execute(sql, limit: current.pageSize, page: page, sort: current.serverSort)
             r.sql = sql
             r.totalCount = current.totalCount
             // 마지막 페이지를 넘어가면 (데이터가 줄어든 경우) 빈 페이지 대신 그대로 둔다.
             if r.rows.isEmpty && page > 0 {
-                update(tabID) { $0.running = false }
+                update(tabID) { $0.pageLoading = false }
                 log(.info, .query, tr("더 이상 행이 없어요."))
                 return
             }
             update(tabID) {
+                $0.edits = PendingEdits()
                 $0.result = r
                 if $0.results.indices.contains(index) { $0.results[index] = r }
-                $0.running = false
+                $0.pageLoading = false
             }
             log(.info, .query, tr("%@–%@행 (%@페이지) · %@ms", "\(r.rowOffset + 1)", "\(r.rowOffset + r.rows.count)", "\(page + 1)", "\(Int(r.elapsed * 1000))"))
         } catch {
             let message = logError(error, .query, context: tr("페이지 불러오기 실패"), sql: sql)
-            update(tabID) { $0.error = message; $0.running = false }
+            update(tabID) { $0.error = message; $0.pageLoading = false }
+        }
+    }
+
+    /// 헤더 클릭 정렬: 원래 쿼리를 감싸 ORDER BY 로 다시 실행하고 첫 페이지부터 보여준다.
+    /// (SHOW 처럼 감쌀 수 없는 결과만 받아 온 행을 앱에서 정렬)
+    func sortResult(_ tabID: UUID, column: String, ascending: Bool) async {
+        guard let t = tabs.first(where: { $0.id == tabID }), let current = t.result, let sql = current.sql,
+              let columnIndex = current.columns.firstIndex(where: { $0.name == column }) else { return }
+        if !t.edits.isEmpty {
+            log(.warning, .query, tr("편집 중인 변경을 적용하거나 되돌린 뒤 정렬하세요."))
+            return
+        }
+        let index = t.resultIndex
+        let sort = ResultSort(column: column, ascending: ascending)
+        guard let session = connections[t.profileID]?.session, session.dialect.sortedSQL(sql, sort: sort) != nil else {
+            var r = current
+            r.rows = ResultSorting.sorted(current.rows, column: columnIndex, ascending: ascending)
+            r.clientSort = sort
+            update(tabID) {
+                $0.result = r
+                if $0.results.indices.contains(index) { $0.results[index] = r }
+            }
+            return
+        }
+        update(tabID) { $0.pageLoading = true; $0.error = nil }
+        do {
+            guard let session = try await self.session(for: t) else {
+                update(tabID) { $0.error = notConnectedMessage(t); $0.pageLoading = false }
+                return
+            }
+            let size = current.pageSize > 0 ? current.pageSize : rowLimit
+            var r = try await session.execute(sql, limit: size, page: 0, sort: sort)
+            r.sql = sql
+            r.totalCount = current.totalCount
+            update(tabID) {
+                $0.result = r
+                if $0.results.indices.contains(index) { $0.results[index] = r }
+                $0.pageLoading = false
+            }
+            log(.info, .query, tr("정렬: %@ %@ · %@ms", column, ascending ? "↑" : "↓", "\(Int(r.elapsed * 1000))"),
+                detail: session.dialect.sortedSQL(sql, sort: sort))
+        } catch {
+            let message = logError(error, .query, context: tr("정렬 실패"), sql: sql)
+            update(tabID) { $0.error = message; $0.pageLoading = false }
         }
     }
 
@@ -652,6 +730,8 @@ final class AppState {
     func countRows(in tabID: UUID) async {
         guard let t = tabs.first(where: { $0.id == tabID }), let sql = t.result?.sql else { return }
         let index = t.resultIndex
+        update(tabID) { $0.pageLoading = true }
+        defer { update(tabID) { $0.pageLoading = false } }
         do {
             guard let session = try await session(for: t), let total = try await session.count(sql) else { return }
             update(tabID) {
@@ -664,9 +744,93 @@ final class AppState {
         }
     }
 
+    // MARK: - 생성문 새로고침 / 테이블 이름 변경 / 삭제
+
+    /// DDL·정의 탭의 내용을 DB 에서 다시 읽어 바꾼다.
+    func refreshSource(_ tabID: UUID) async {
+        guard let tab = tabs.first(where: { $0.id == tabID }), let source = tab.source else { return }
+        do {
+            guard let session = try await session(for: tab) else {
+                update(tabID) { $0.error = notConnectedMessage(tab) }
+                return
+            }
+            let text: String
+            switch source {
+            case .table(let name):
+                // 구조가 바뀌었을 수 있으니 스키마를 새로 읽고 DDL 을 만든다
+                let tables = try await session.loadSchema(tab.database)
+                updateConnection(tab.profileID) { $0.tables = tables }
+                guard let meta = tables.first(where: { $0.name == name }) else {
+                    update(tabID) { $0.error = tr("테이블 %@ 이(가) 더 이상 없어요. (이름이 바뀌었거나 삭제됨)", name) }
+                    return
+                }
+                text = try await session.tableDDL(meta)
+            case .routine(let routine):
+                text = try await session.definition(of: routine) ?? ""
+            }
+            update(tabID) { $0.text = text + "\n"; $0.error = nil }
+            log(.info, .schema, tr("%@ 생성문 새로고침", tab.title))
+        } catch {
+            let message = logError(error, .schema, context: tr("생성문 새로고침 실패"))
+            update(tabID) { $0.error = message }
+        }
+    }
+
+    func requestRename(_ table: String) {
+        guard let id = selectedProfileID else { return }
+        tableAction = TableActionRequest(kind: .rename, profileID: id, table: table)
+    }
+
+    func requestDrop(_ table: String) {
+        guard let id = selectedProfileID else { return }
+        tableAction = TableActionRequest(kind: .drop, profileID: id, table: table)
+    }
+
+    /// 테이블 이름 변경 / 삭제 실행. 성공하면 사이드바를 새로 읽고, 열린 DDL 탭의 이름도 맞춘다.
+    func performTableAction(_ request: TableActionRequest, newName: String = "") async throws {
+        guard let session = connections[request.profileID]?.session else { throw DBError.notConnected }
+        let db = connections[request.profileID]?.currentDatabase ?? ""
+        if !db.isEmpty, await session.current != db { try await session.use(db) }
+        let sql: String
+        switch request.kind {
+        case .rename: sql = session.dialect.renameTableSQL(request.table, to: newName)
+        case .drop: sql = session.dialect.dropTableSQL(request.table)
+        }
+        do {
+            _ = try await session.execute(sql, limit: 0)
+        } catch {
+            logError(error, .schema, context: request.kind == .rename ? tr("테이블 이름 변경 실패") : tr("테이블 삭제 실패"), sql: sql)
+            throw error
+        }
+        switch request.kind {
+        case .rename:
+            log(.success, .schema, tr("테이블 이름 변경: %@ → %@", request.table, newName), detail: sql)
+            for i in tabs.indices where tabs[i].profileID == request.profileID && tabs[i].source == .table(request.table) {
+                tabs[i].source = .table(newName)
+                tabs[i].customTitle = "DDL · \(newName)"
+            }
+        case .drop:
+            log(.success, .schema, tr("테이블 삭제: %@", request.table), detail: sql)
+        }
+        await refreshSchema(for: request.profileID)
+    }
+
+    /// 튜닝 결과 등을 탭 편집기 끝에 덧붙인다.
+    func insertIntoTab(_ tabID: UUID, sql: String, label: String) {
+        update(tabID) {
+            var text = $0.text
+            if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+            text += "\n-- \(label)\n\(sql)" + (sql.hasSuffix(";") ? "" : ";") + "\n"
+            $0.text = text
+        }
+        selectTab(tabID)
+        tuningJob = nil
+    }
+
     func selectResult(_ index: Int, in tabID: UUID) {
         update(tabID) {
             guard $0.results.indices.contains(index) else { return }
+            $0.edits = PendingEdits()
             $0.resultIndex = index
             $0.result = $0.results[index]
         }
@@ -695,7 +859,7 @@ final class AppState {
         return s.count > max ? String(s.prefix(max)) + "…" : s
     }
 
-    private func update(_ id: UUID, _ change: (inout QueryTab) -> Void) {
+    func update(_ id: UUID, _ change: (inout QueryTab) -> Void) {
         guard let i = tabs.firstIndex(where: { $0.id == id }) else { return }
         change(&tabs[i])
     }

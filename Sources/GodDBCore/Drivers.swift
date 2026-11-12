@@ -110,8 +110,23 @@ final class MySQLDriver: DBDriver, @unchecked Sendable {
         guard isOpen else { throw DBError.notConnected }
         let result = try await connection.simpleQuery(sql).get()
         guard let first = result.first else { return ([], []) }
+        // binary/varbinary/BLOB 은 바이트 그대로 오므로 글자로 읽으면 깨진다 → 0x16진수로 보여준다
+        let binary = first.columnDefinitions.map(Self.isBinary)
         return (first.columnDefinitions.map(\.name),
-                result.map { $0.values.map { b in b.map { String(buffer: $0) } } })
+                result.map { row in
+                    row.values.enumerated().map { i, b in
+                        guard let b else { return nil }
+                        return binary[i] ? BinaryText.hex(b.readableBytesView) : String(buffer: b)
+                    }
+                })
+    }
+
+    /// 문자열·BLOB 계열이면서 문자셋이 binary(63)인 컬럼 (숫자 컬럼도 63 이라 타입을 함께 본다)
+    static func isBinary(_ def: MySQLProtocol.ColumnDefinition41) -> Bool {
+        guard def.characterSet == .binary else { return false }
+        let types: [MySQLProtocol.DataType] = [.varchar, .varString, .string, .tinyBlob, .mediumBlob,
+                                               .longBlob, .blob, .geometry, .bit]
+        return types.contains(def.columnType)
     }
 
     func close() async { try? await connection.close().get() }
@@ -160,7 +175,15 @@ final class PostgresDriver: DBDriver, @unchecked Sendable {
         for statement in statements.isEmpty ? [sql] : statements {
             let rows = try await connection.simpleQuery(statement).get()
             guard let first = rows.first else { continue }
-            last = (first.map(\.columnName), rows.map { row in row.map { cell in cell.bytes.map { String(buffer: $0) } } })
+            last = (first.map(\.columnName), rows.map { row in
+                row.map { cell in
+                    cell.bytes.map { b in
+                        let s = String(buffer: b)
+                        // bytea 는 텍스트 형식에서 \x… 로 온다 → 다른 DB 와 같게 0x… 로
+                        return cell.dataType == .bytea && s.hasPrefix("\\x") ? "0x" + s.dropFirst(2).uppercased() : s
+                    }
+                }
+            })
         }
         return last
     }

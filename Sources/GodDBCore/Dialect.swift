@@ -360,3 +360,24 @@ extension SQLText {
         return String(sql[..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+// MARK: - 테이블 이름 변경 / 삭제
+
+extension SQLDialect {
+    public func renameTableSQL(_ table: String, to newName: String) -> String {
+        switch kind {
+        case .mysql:
+            return "RENAME TABLE \(quoteTable(table)) TO \(quoteIdent(newName));"
+        case .postgres:
+            return "ALTER TABLE \(quoteTable(table)) RENAME TO \(quoteIdent(newName));"
+        case .mssql:
+            // sp_rename 의 새 이름에는 스키마를 붙이지 않는다
+            let bare = newName.split(separator: ".").last.map(String.init) ?? newName
+            return "EXEC sp_rename \(quoteString(quoteTable(table))), \(quoteString(bare));"
+        }
+    }
+
+    public func dropTableSQL(_ table: String) -> String {
+        "DROP TABLE \(quoteTable(table));"
+    }
+}

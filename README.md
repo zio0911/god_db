@@ -38,6 +38,16 @@ swift run                 # 개발 실행
 
 Xcode 로 열기: `open Package.swift`
 
+## DMG 만들기 (배포용)
+
+```bash
+./scripts/make-dmg.sh     # → build/GodDB-<버전>.dmg (갓디비.app + Applications 바로가기 + 읽어주세요.txt)
+```
+
+- 버전은 `scripts/build-app.sh` 의 `CFBundleShortVersionString` 에서 정한다.
+- 지금은 개발자 서명(Developer ID)·공증(notarization) 없이 임시 서명이라, 받은 사람이 처음 열 때 "확인되지 않은 개발자" 경고가 뜬다 → 우클릭 > 열기.
+- SQL Server 를 쓰려면 받는 Mac 에도 `brew install freetds` 가 필요하다.
+
 ## 로컬 테스트 DB (세 DB 통합 테스트)
 
 ```bash

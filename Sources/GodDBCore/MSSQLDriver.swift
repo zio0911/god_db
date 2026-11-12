@@ -56,7 +56,7 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
 
     static func connect(_ e: DriverEndpoint) async throws -> MSSQLDriver {
         _ = dblibInit
-        return try await HostResolver.tryEach(e.host, port: e.port) { ip in
+        let driver: MSSQLDriver = try await HostResolver.tryEach(e.host, port: e.port) { ip in
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<MSSQLDriver, Error>) in
                 DispatchQueue.global().async {
                     MessageBox.reset()
@@ -88,6 +88,13 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
                 }
             }
         }
+        // DB-Library 기본 세션은 ANSI_PADDING 등이 꺼져 있다 (varbinary 끝의 0 이 잘리고, 컬럼 기본값이 NOT NULL 등).
+        // DataGrip(JDBC)·SSMS(ODBC) 와 같은 표준 설정으로 맞춘다.
+        _ = try await driver.query("""
+            SET ANSI_NULLS ON; SET ANSI_PADDING ON; SET ANSI_WARNINGS ON; SET ANSI_NULL_DFLT_ON ON;
+            SET CONCAT_NULL_YIELDS_NULL ON; SET QUOTED_IDENTIFIER ON; SET ARITHABORT ON
+            """)
+        return driver
     }
 
     var isOpen: Bool {
@@ -155,6 +162,9 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
         let len = Int(dbdatlen(p, col))
         let type = dbcoltype(p, col)
         switch type {
+        case Int32(SYBBINARY), Int32(SYBVARBINARY), Int32(SYBIMAGE):
+            // dbconvert 는 끝의 0 바이트를 잘라서, 원래 바이트로 직접 16진수를 만든다
+            return BinaryText.hex(UnsafeBufferPointer(start: data, count: len))
         case Int32(SYBCHAR), Int32(SYBVARCHAR), Int32(SYBTEXT),
              Int32(SYBNTEXT), Int32(SYBNVARCHAR):
             return String(decoding: UnsafeBufferPointer(start: data, count: len), as: UTF8.self)

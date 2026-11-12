@@ -14,6 +14,9 @@ struct IntegrationTests {
 
     @Test func queryAndSchemaAndCompare() async throws {
         let s = try await DBSession.connect(profile: profile, password: password)
+        // 앱에서 테스트 DB 를 직접 고쳤을 수 있으니 회원 데이터를 처음 상태로 되돌린다
+        _ = try await s.raw("DELETE FROM shop.tb_member")
+        _ = try await s.raw("INSERT INTO shop.tb_member (member_id, email) VALUES (1, 'kim@sample.com'), (2, 'lee@sample.com'), (3, NULL)")
         #expect(try await s.serverVersion().hasPrefix("MySQL 8"))
         let dbs = try await s.databases()
         #expect(dbs.contains("shop"))
@@ -27,6 +30,11 @@ struct IntegrationTests {
         #expect(nulls.rows.first?.values.first == .some(nil))
 
         try await MultiDBChecks.paging(s, table: "tb_member")
+        try await MultiDBChecks.serverSort(s, table: "tb_member")
+        _ = try await s.raw("DROP TABLE IF EXISTS tb_rename_it, tb_renamed_it")
+        try await MultiDBChecks.renameAndDrop(s, container: "shop")
+        try await MultiDBChecks.editing(s, container: "shop")
+        try await MultiDBChecks.binary(s, container: "shop")
 
         let empty = try await s.execute("SELECT * FROM tb_member WHERE 1 = 0", limit: 500)
         #expect(empty.message == "결과 없음")

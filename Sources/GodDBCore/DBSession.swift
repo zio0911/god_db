@@ -81,11 +81,13 @@ public actor DBSession {
     /// - Parameters:
     ///   - limit: 페이지 크기 (0 이면 전부). SELECT 는 이 크기로 페이지 단위로 가져온다.
     ///   - page: 0부터 시작하는 페이지 번호
-    public func execute(_ sql: String, limit: Int, page: Int = 0) async throws -> QueryResult {
+    ///   - sort: DB 에서 정렬할 컬럼 (원래 쿼리를 감싸 ORDER BY)
+    public func execute(_ sql: String, limit: Int, page: Int = 0, sort: ResultSort? = nil) async throws -> QueryResult {
         if profile.readOnly && !SQLText.isReadOnly(sql) { throw DBError.readOnlyBlocked }
-        let paged = dialect.pagedSQL(sql, limit: limit, offset: max(0, page) * limit)
+        let source = sort.flatMap { dialect.sortedSQL(sql, sort: $0) } ?? sql
+        let paged = dialect.pagedSQL(source, limit: limit, offset: max(0, page) * limit)
         let started = Date()
-        var (columns, rows) = try await raw(paged?.sql ?? sql)
+        var (columns, rows) = try await raw(paged?.sql ?? source)
         let elapsed = Date().timeIntervalSince(started)
         var hasMore = false
         if let paged {
@@ -104,6 +106,7 @@ public actor DBSession {
             result.pageSize = limit
             result.hasMore = hasMore
         }
+        if source != sql { result.serverSort = sort }
         return result
     }
 

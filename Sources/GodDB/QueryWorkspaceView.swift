@@ -131,7 +131,8 @@ struct QueryTabView: View {
                 ResultPane(tab: tab,
                            onSelectResult: { index in app.selectResult(index, in: tab.id) },
                            onPage: { page in Task { await app.loadPage(page, in: tab.id) } },
-                           onCount: { Task { await app.countRows(in: tab.id) } })
+                           onCount: { Task { await app.countRows(in: tab.id) } },
+                           onSort: { column, ascending in Task { await app.sortResult(tab.id, column: column, ascending: ascending) } })
                     .frame(maxHeight: .infinity)
             }
         }
@@ -177,6 +178,27 @@ struct QueryTabView: View {
             .disabled(tab.running)
             .help(tr("EXPLAIN 으로 실행 계획 보기 (⇧⌘↩)"))
 
+            Button {
+                guard let sql = controller.sqlToRun() else { return }
+                app.startTuning(sql: sql)
+            } label: {
+                Label(tr("AI 튜닝"), systemImage: "sparkles")
+            }
+            .tint(.purple)
+            .buttonStyle(.bordered)
+            .keyboardShortcut("t", modifiers: [.command, .option])
+            .disabled(tab.running || app.tuningUnavailableReason != nil)
+            .help(app.tuningUnavailableReason ?? tr("로컬 Ollama 로 이 쿼리를 튜닝해요 (⌥⌘T) — 선택 영역 또는 커서가 있는 문장"))
+
+            if tab.source != nil {
+                Button {
+                    Task { await app.refreshSource(tab.id) }
+                } label: {
+                    Label(tr("생성문 새로고침"), systemImage: "arrow.clockwise")
+                }
+                .help(tr("DB 에서 생성문(정의)을 다시 읽어 편집기 내용을 바꿔요"))
+            }
+
             Picker(tr("페이지"), selection: $app.rowLimit) {
                 Text("100").tag(100)
                 Text("500").tag(500)
@@ -214,10 +236,12 @@ struct QueryTabView: View {
 // MARK: - 결과 영역
 
 struct ResultPane: View {
+    @Environment(AppState.self) private var app
     let tab: QueryTab
     var onSelectResult: (Int) -> Void = { _ in }
     var onPage: (Int) -> Void = { _ in }
     var onCount: () -> Void = {}
+    var onSort: (String, Bool) -> Void = { _, _ in }
     @State private var selection = Set<QueryResult.Row.ID>()
     @State private var detailWidth: CGFloat = 380
 
@@ -246,27 +270,42 @@ struct ResultPane: View {
                 }
             } else if let result = tab.result {
                 if tab.isPlan {
-                    PlanWarningsView(result: result, tree: tab.planTree)
+                    PlanWarningsView(result: result, tree: tab.planTree,
+                                     tuneDisabledReason: app.tuningUnavailableReason,
+                                     onTune: { if let sql = result.sql { app.startTuning(sql: sql) } })
                 }
                 if result.columns.isEmpty {
                     Text(result.message ?? tr("실행 완료"))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
+                    let target = app.editTarget(for: tab)
+                    if let target {
+                        EditBar(tab: tab, target: target, selection: $selection)
+                        Divider()
+                    }
+                    let rows = tab.edits.displayRows(result)
                     GeometryReader { geo in
                         HStack(spacing: 0) {
-                            ResultGrid(result: result, selection: $selection)
-                            if let row = selectedRow(result) {
+                            ResultGrid(result: result, rows: rows, edits: tab.edits, selection: $selection,
+                                       onSort: { column, ascending in onSort(column, ascending) },
+                                       editable: { if case .success = target { return true } else { return false } }(),
+                                       onAddRow: { if let id = app.addRow(tab.id) { selection = [id] } },
+                                       onDeleteRows: { ids in app.toggleDelete(tab.id, rows: ids) })
+                            if let row = selectedRow(rows) {
                                 ResizeHandle(axis: .vertical, size: $detailWidth,
                                              range: 240...max(240, geo.size.width - 200))
-                                RowDetailView(result: result, row: row, rowNumber: result.rowOffset + row.id + 1) { selection = [] }
+                                RowDetailView(result: result, row: row,
+                                              rowNumber: row.id >= newRowBase ? nil : result.rowOffset + row.id + 1,
+                                              editor: rowEditor(target)) { selection = [] }
                                     .frame(width: min(detailWidth, max(240, geo.size.width - 200)))
                             }
                         }
                     }
                 }
                 Divider()
-                StatusBar(result: result, selectedCount: selection.count, onPage: onPage, onCount: onCount)
+                StatusBar(result: result, selectedCount: selection.count, loading: tab.pageLoading || !tab.edits.isEmpty,
+                          onPage: onPage, onCount: onCount, onExport: { app.exportCSV(tab.id) })
             } else {
                 Text(tr("쿼리를 실행하면 결과가 여기 나와요."))
                     .foregroundStyle(.secondary)
@@ -282,9 +321,17 @@ struct ResultPane: View {
         }
     }
 
-    private func selectedRow(_ result: QueryResult) -> QueryResult.Row? {
+    private func selectedRow(_ rows: [QueryResult.Row]) -> QueryResult.Row? {
         guard selection.count == 1, let id = selection.first else { return nil }
-        return result.rows.first { $0.id == id }
+        return rows.first { $0.id == id }
+    }
+
+    private func rowEditor(_ target: Result<EditTarget, Error>?) -> RowEditor? {
+        guard case .success(let t) = target, let id = selection.first else { return nil }
+        let tabID = tab.id
+        return RowEditor(target: t, edits: tab.edits,
+                         set: { col, value in app.setCell(tabID, row: id, column: col, value: value) },
+                         resetToDefault: { col in app.resetInsertedCell(tabID, row: id, column: col) })
     }
 }
 
@@ -297,7 +344,7 @@ extension ResultPane {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ResultGrid(result: result, selection: $selection)
+            ResultGrid(result: result, rows: result.rows, edits: PendingEdits(), selection: $selection)
         }
     }
 }
@@ -326,7 +373,7 @@ struct ResultTabsBar: View {
                         .background(index == selected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08),
                                     in: RoundedRectangle(cornerRadius: 5))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.hover)
                     .help(r.sql ?? "")
                 }
             }
@@ -336,35 +383,104 @@ struct ResultTabsBar: View {
     }
 }
 
+/// 헤더 정렬용 비교자 (실제 정렬은 쿼리를 다시 실행해서 한다)
+struct ColumnSortComparator: SortComparator, Hashable {
+    let column: Int
+    var order: SortOrder = .forward
+
+    func compare(_ lhs: QueryResult.Row, _ rhs: QueryResult.Row) -> ComparisonResult {
+        let r = ResultSorting.compare(lhs.values[column], rhs.values[column])
+        return order == .forward ? r : (r == .orderedAscending ? .orderedDescending : r == .orderedDescending ? .orderedAscending : r)
+    }
+}
+
 struct ResultGrid: View {
     let result: QueryResult
+    /// 편집이 반영된 행 (기존 + 새 행)
+    var rows: [QueryResult.Row]
+    var edits: PendingEdits
     @Binding var selection: Set<QueryResult.Row.ID>
+    /// 헤더 클릭 정렬 (컬럼 이름, 오름차순 여부)
+    var onSort: ((String, Bool) -> Void)?
+    /// 편집 가능한 결과면 우클릭 메뉴에 편집 항목을 보여준다
+    var editable = false
+    var onAddRow: (() -> Void)?
+    var onDeleteRows: ((Set<Int>) -> Void)?
+    @State private var sortOrder: [ColumnSortComparator] = []
+    @State private var hoveredRow: Int?
 
     var body: some View {
-        Table(result.rows, selection: $selection) {
+        Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumnForEach(result.columns) { column in
-                TableColumn(column.name) { (row: QueryResult.Row) in
-                    if let value = row.values[column.id] {
-                        Text(Self.preview(value))
-                            .font(.system(.callout, design: .monospaced))
-                            .lineLimit(1)
-                    } else {
-                        Text("NULL")
-                            .font(.system(.callout, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                    }
+                TableColumn(column.name, sortUsing: ColumnSortComparator(column: column.id)) { (row: QueryResult.Row) in
+                    cell(row, column)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .background(hoveredRow == row.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .onHover { inside in
+                            if inside { hoveredRow = row.id } else if hoveredRow == row.id { hoveredRow = nil }
+                        }
                 }
                 .width(min: 50, ideal: 140)
             }
         }
+        .onAppear { syncSortOrder() }
+        .onChange(of: result.id) { syncSortOrder() }
+        .onChange(of: sortOrder) {
+            guard let first = sortOrder.first, result.columns.indices.contains(first.column) else { return }
+            let sort = ResultSort(column: result.columns[first.column].name, ascending: first.order == .forward)
+            if sort != result.activeSort { onSort?(sort.column, sort.ascending) }
+        }
         .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: QueryResult.Row.ID.self) { ids in
+            if editable {
+                Button(tr("이 행 편집")) { selection = ids }
+                    .disabled(ids.count != 1)
+                Button(tr("행 추가")) { onAddRow?() }
+                Button(edits.deletes.isSuperset(of: ids.filter { $0 < newRowBase }) && !ids.isEmpty
+                       ? tr("삭제 표시 해제") : tr("선택 행 삭제")) { onDeleteRows?(ids) }
+                    .disabled(ids.isEmpty)
+                Divider()
+            }
             Button(tr("행 복사 (CSV)")) {
                 var copy = result
-                copy.rows = result.rows.filter { ids.contains($0.id) }
+                copy.rows = rows.filter { ids.contains($0.id) }
                 Pasteboard.copy(copy.csv())
             }
+            .disabled(ids.isEmpty)
+        } primaryAction: { ids in
+            // 더블클릭: 그 행을 골라 오른쪽 상세(편집 가능하면 편집) 패널을 연다
+            selection = ids
         }
+    }
+
+    /// 헤더 화살표를 결과의 실제 정렬과 맞춘다
+    private func syncSortOrder() {
+        guard let s = result.activeSort, let i = result.columns.firstIndex(where: { $0.name == s.column }) else {
+            if !sortOrder.isEmpty { sortOrder = [] }
+            return
+        }
+        let wanted = [ColumnSortComparator(column: i, order: s.ascending ? .forward : .reverse)]
+        if sortOrder != wanted { sortOrder = wanted }
+    }
+
+    @ViewBuilder
+    private func cell(_ row: QueryResult.Row, _ column: QueryResult.Column) -> some View {
+        let state = edits.state(row: row.id, column: column.id)
+        let value = row.values[column.id]
+        Group {
+            if state == .insertedDefault {
+                Text(tr("(기본값)")).foregroundStyle(.tertiary)
+            } else if let value {
+                Text(Self.preview(value))
+            } else {
+                Text("NULL").foregroundStyle(state == .normal ? .tertiary : .secondary)
+            }
+        }
+        .font(.system(.callout, design: .monospaced).weight(state == .modified ? .semibold : .regular))
+        .lineLimit(1)
+        .foregroundStyle(state == .modified ? .orange : state == .inserted ? .green : state == .deleted ? .red : .primary)
+        .strikethrough(state == .deleted, color: .red)
     }
 
     /// 한 줄 미리보기 (줄바꿈은 ⏎ 로 표시)
@@ -374,48 +490,35 @@ struct ResultGrid: View {
     }
 }
 
-/// 선택한 행의 모든 컬럼 값을 전체 텍스트로 보여준다.
+/// 선택한 행의 모든 컬럼 값을 전체 텍스트로 보여준다. 편집 가능한 결과면 값을 고칠 수 있다.
 struct RowDetailView: View {
     let result: QueryResult
     let row: QueryResult.Row
-    var rowNumber: Int
+    /// 새 행이면 nil
+    var rowNumber: Int?
+    var editor: RowEditor?
     let onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(tr("행 상세")).font(.headline)
-                Text(tr("%@번째 행", "\(rowNumber)")).foregroundStyle(.secondary)
+                Text(editor == nil ? tr("행 상세") : tr("행 편집")).font(.headline)
+                Text(rowNumber.map { tr("%@번째 행", "\($0)") } ?? tr("새 행")).foregroundStyle(.secondary)
                 Spacer()
                 Button { onClose() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.hover)
                     .help(tr("닫기"))
             }
             .padding(8)
             Divider()
+            if editor?.edits.deletes.contains(row.id) == true {
+                Label(tr("삭제 표시된 행이에요. 적용하면 삭제돼요."), systemImage: "trash")
+                    .font(.caption).foregroundStyle(.red).padding(8)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(result.columns) { column in
-                        let value = row.values[column.id]
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(column.name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                Spacer()
-                                if let value {
-                                    Text(tr("%@자", "\(value.count)")).font(.caption2).foregroundStyle(.tertiary)
-                                    Button { Pasteboard.copy(value) } label: { Image(systemName: "doc.on.doc") }
-                                        .buttonStyle(.borderless)
-                                        .help(tr("값 복사"))
-                                }
-                            }
-                            Text(value ?? "NULL")
-                                .font(.system(.callout, design: .monospaced))
-                                .foregroundStyle(value == nil ? .tertiary : .primary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(6)
-                                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 4))
-                        }
+                        field(column)
                     }
                 }
                 .padding(8)
@@ -423,12 +526,74 @@ struct RowDetailView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
+
+    @ViewBuilder
+    private func field(_ column: QueryResult.Column) -> some View {
+        let value = row.values[column.id]
+        let editable = editor?.target.columnMap[column.id] != nil && editor?.edits.deletes.contains(row.id) != true
+        let state = editor?.edits.state(row: row.id, column: column.id) ?? .normal
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(column.name).font(.caption.weight(.semibold))
+                    .foregroundStyle(state == .modified ? .orange : state == .inserted ? .green : .secondary)
+                if editor?.target.primaryKey.contains(where: { $0.lowercased() == column.name.lowercased() }) == true {
+                    Image(systemName: "key.fill").font(.caption2).foregroundStyle(.yellow)
+                }
+                Spacer()
+                if let value {
+                    Text(tr("%@자", "\(value.count)")).font(.caption2).foregroundStyle(.tertiary)
+                    Button { Pasteboard.copy(value) } label: { Image(systemName: "doc.on.doc") }
+                        .buttonStyle(.hover)
+                        .help(tr("값 복사"))
+                }
+            }
+            if editable, let editor {
+                if state == .insertedDefault {
+                    Button(tr("값 입력 (지금은 DB 기본값)")) { editor.set(column.id, "") }
+                        .buttonStyle(.hover)
+                        .font(.callout)
+                } else {
+                    TextField("", text: Binding(
+                        get: { value ?? "" },
+                        set: { editor.set(column.id, $0) }
+                    ), axis: .vertical)
+                    .font(.system(.callout, design: .monospaced))
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...8)
+                    .disabled(value == nil)
+                    HStack(spacing: 10) {
+                        Toggle("NULL", isOn: Binding(
+                            get: { value == nil },
+                            set: { editor.set(column.id, $0 ? nil : "") }
+                        ))
+                        .toggleStyle(.checkbox)
+                        if row.id >= newRowBase {
+                            Button(tr("DB 기본값 사용")) { editor.resetToDefault(column.id) }
+                                .buttonStyle(.hover)
+                        }
+                    }
+                    .font(.caption)
+                }
+            } else {
+                Text(value ?? "NULL")
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(value == nil ? .tertiary : .primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 4))
+            }
+        }
+    }
 }
 
 /// 실행 계획 주의사항 + 트리 형태 계획
 struct PlanWarningsView: View {
     let result: QueryResult
     let tree: String?
+    /// AI 튜닝을 못 쓰는 이유 (nil 이면 사용 가능)
+    var tuneDisabledReason: String?
+    var onTune: (() -> Void)?
     @State private var showTree = false
 
     var body: some View {
@@ -445,6 +610,18 @@ struct PlanWarningsView: View {
                 Spacer()
                 if tree != nil {
                     Toggle(tr("트리로 보기"), isOn: $showTree).toggleStyle(.switch).controlSize(.small)
+                }
+                if let onTune {
+                    Button {
+                        onTune()
+                    } label: {
+                        Label(tr("AI 로 튜닝하기"), systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+                    .controlSize(.small)
+                    .disabled(tuneDisabledReason != nil)
+                    .help(tuneDisabledReason ?? tr("이 쿼리와 실행 계획을 로컬 Ollama 에 보내 개선 SQL 과 추천 인덱스를 받아요 (⌥⌘T)"))
                 }
             }
             ForEach(warnings, id: \.self) { w in
@@ -475,8 +652,11 @@ struct PlanWarningsView: View {
 struct StatusBar: View {
     let result: QueryResult
     var selectedCount = 0
+    /// 페이지 이동/행 수 세기 중 (표는 그대로 두고 여기만 표시)
+    var loading = false
     var onPage: (Int) -> Void = { _ in }
     var onCount: () -> Void = {}
+    var onExport: () -> Void = {}
 
     private var lastPage: Int? {
         guard let total = result.totalCount, result.pageSize > 0 else { return nil }
@@ -500,12 +680,13 @@ struct StatusBar: View {
             Spacer()
             if !result.columns.isEmpty {
                 Button {
-                    Pasteboard.copy(result.csv())
+                    onExport()
                 } label: {
-                    Label(tr("CSV 복사"), systemImage: "doc.on.doc")
+                    Label(tr("CSV 다운로드"), systemImage: "square.and.arrow.down")
                 }
-                .buttonStyle(.borderless)
-                .help(tr("지금 보이는 페이지의 행을 CSV 로 복사"))
+                .buttonStyle(.hover)
+                .disabled(loading)
+                .help(tr("결과를 CSV 파일로 저장 (쿼리 전체 결과 또는 보이는 행)"))
             }
         }
         .font(.callout)
@@ -518,14 +699,19 @@ struct StatusBar: View {
     private var pager: some View {
         let first = result.rowOffset + 1
         let last = result.rowOffset + result.rows.count
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             Button { onPage(0) } label: { Image(systemName: "backward.end.fill") }
                 .disabled(result.page == 0).help(tr("첫 페이지"))
             Button { onPage(result.page - 1) } label: { Image(systemName: "chevron.left") }
                 .disabled(result.page == 0).help(tr("이전 페이지"))
-            Text(result.rows.isEmpty ? tr("0행") : tr("%@–%@행", "\(first.formatted())", "\(last.formatted())"))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
+            ZStack {
+                Text(result.rows.isEmpty ? tr("0행") : tr("%@–%@행", "\(first.formatted())", "\(last.formatted())"))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .opacity(loading ? 0.3 : 1)
+                if loading { ProgressView().controlSize(.small) }
+            }
+            .padding(.horizontal, 4)
             Button { onPage(result.page + 1) } label: { Image(systemName: "chevron.right") }
                 .disabled(!result.hasMore).help(tr("다음 페이지"))
             if let lastPage {
@@ -533,13 +719,15 @@ struct StatusBar: View {
                     .disabled(result.page >= lastPage).help(tr("마지막 페이지"))
             }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.hover)
+        .disabled(loading)
         if let total = result.totalCount {
             Text(tr("/ 전체 %@행 · %@/%@페이지", "\(total.formatted())", "\(result.page + 1)", "\((lastPage ?? 0) + 1)"))
         } else {
             Text(tr("%@페이지", "\(result.page + 1)") + (result.hasMore ? tr(" · 더 있음") : tr(" · 끝")))
             Button(tr("전체 행 수")) { onCount() }
-                .buttonStyle(.borderless)
+                .buttonStyle(.hover)
+                .disabled(loading)
                 .help(tr("SELECT COUNT(*) 로 전체 행 수를 세요 (큰 테이블은 오래 걸릴 수 있어요)"))
         }
     }

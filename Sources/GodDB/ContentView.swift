@@ -53,6 +53,15 @@ struct ContentView: View {
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
+        .sheet(item: $app.editApply) { request in
+            EditApplySheet(request: request)
+        }
+        .sheet(item: $app.tableAction) { request in
+            TableActionSheet(request: request)
+        }
+        .sheet(item: $app.tuningJob) { job in
+            TuningSheet(job: job)
+        }
         .sheet(item: $app.passwordPrompt) { prompt in
             PasswordPromptView(prompt: prompt)
         }

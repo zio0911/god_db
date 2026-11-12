@@ -10,8 +10,15 @@ final class AppSettings {
         didSet { L10n.language = language }
     }
 
+    var tuningEnabled: Bool { didSet { TuningSettings.enabled = tuningEnabled } }
+    var ollamaURL: String { didSet { TuningSettings.url = ollamaURL } }
+    var tuningModel: String { didSet { TuningSettings.model = tuningModel } }
+
     init() {
         language = L10n.language
+        tuningEnabled = TuningSettings.enabled
+        ollamaURL = TuningSettings.url
+        tuningModel = TuningSettings.model
     }
 }
 
@@ -23,6 +30,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsView()
                 .tabItem { Label(tr("일반"), systemImage: "gearshape") }
+            TuningSettingsView()
+                .tabItem { Label(tr("쿼리 튜닝"), systemImage: "sparkles") }
             LicenseSettingsView()
                 .tabItem { Label(tr("라이선스"), systemImage: "doc.text") }
         }
@@ -142,5 +151,112 @@ struct LicenseSettingsView: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// 설정 > 쿼리 튜닝: 로컬 Ollama 연결과 모델
+struct TuningSettingsView: View {
+    @Environment(AppSettings.self) private var settings
+    @State private var status: OllamaStatus?
+    @State private var checking = false
+    @State private var startError: String?
+
+    private var models: [OllamaModel] {
+        if case .running(let m) = status { return m }
+        return []
+    }
+
+    var body: some View {
+        @Bindable var settings = settings
+        Form {
+            Section {
+                Toggle(tr("쿼리 튜닝 사용"), isOn: $settings.tuningEnabled)
+                Text(tr("쿼리 탭의 튜닝 버튼(⌥⌘T)을 누르면 쿼리·테이블 구조·인덱스·실행 계획을 로컬 Ollama 에 보내 개선 SQL 과 추천 인덱스를 받아요."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                TextField(tr("Ollama 주소"), text: $settings.ollamaURL)
+                    .onSubmit { Task { await refresh() } }
+                if !TuningSettings.isLocal {
+                    Label(tr("이 Mac 밖의 주소예요. 쿼리와 테이블 구조가 그 서버로 전송돼요."), systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                HStack {
+                    statusLabel
+                    Spacer()
+                    if checking { ProgressView().controlSize(.small) }
+                    Button(tr("다시 확인")) { Task { await refresh() } }
+                }
+                if status == .installedNotRunning {
+                    Button(tr("Ollama 실행")) {
+                        do {
+                            try OllamaClient.start()
+                            Task {
+                                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                                await refresh()
+                            }
+                        } catch {
+                            startError = ErrorText.describe(error).message
+                        }
+                    }
+                    if let startError { Text(startError).font(.caption).foregroundStyle(.red) }
+                }
+                if status == .notInstalled {
+                    Link(tr("Ollama 내려받기 (ollama.com)"), destination: URL(string: "https://ollama.com/download")!)
+                }
+            } header: {
+                Text("Ollama")
+            }
+            Section {
+                Picker(tr("모델"), selection: $settings.tuningModel) {
+                    Text(tr("자동 (첫 번째 모델)")).tag("")
+                    ForEach(models) { m in
+                        Text("\(m.name)  ·  \(m.parameterSize)  ·  \(String(format: "%.1f", m.sizeGB))GB").tag(m.name)
+                    }
+                    if !settings.tuningModel.isEmpty && !models.contains(where: { $0.name == settings.tuningModel }) {
+                        Text(settings.tuningModel).tag(settings.tuningModel)
+                    }
+                }
+                Text(tr("추천: %@ (코드·SQL 에 강하고 한국어도 잘 알아들어요). 메모리가 넉넉하면 큰 모델일수록 정확해요.",
+                        TuningSettings.recommendedModels.joined(separator: ", ")))
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("ollama pull qwen2.5-coder:14b").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    Button(tr("복사")) { Pasteboard.copy("ollama pull qwen2.5-coder:14b") }.controlSize(.small)
+                }
+            } header: {
+                Text(tr("모델"))
+            }
+            Section {
+                Label(tr("보내는 것: 쿼리, 쿼리에 나온 테이블의 구조(DDL·인덱스), 예상 행 수, 실행 계획"), systemImage: "arrow.up.doc")
+                Label(tr("보내지 않는 것: 실제 데이터 행, 비밀번호, 접속 정보"), systemImage: "lock")
+                Label(tr("개선 SQL 과 인덱스는 자동으로 실행하지 않아요. 확인 후 직접 실행하세요."), systemImage: "hand.raised")
+            } header: {
+                Text(tr("보내는 정보"))
+            }
+            .font(.callout)
+        }
+        .formStyle(.grouped)
+        .task { await refresh() }
+    }
+
+    @ViewBuilder
+    private var statusLabel: some View {
+        switch status {
+        case .running(let models):
+            Label(tr("실행 중 · 모델 %@개", "\(models.count)"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+        case .installedNotRunning:
+            Label(tr("설치됐지만 꺼져 있어요"), systemImage: "pause.circle").foregroundStyle(.orange)
+        case .notInstalled:
+            Label(tr("설치되지 않았어요"), systemImage: "xmark.circle").foregroundStyle(.red)
+        case nil:
+            Label(tr("확인 중…"), systemImage: "hourglass").foregroundStyle(.secondary)
+        }
+    }
+
+    private func refresh() async {
+        checking = true
+        status = await TuningSettings.client.status()
+        checking = false
     }
 }
