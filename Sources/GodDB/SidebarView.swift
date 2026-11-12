@@ -13,13 +13,27 @@ struct SidebarView: View {
                     ForEach(app.profiles) { profile in
                         ProfileRow(profile: profile)
                     }
-                    Button {
-                        app.newProfile()
-                    } label: {
-                        Label(tr("새 접속"), systemImage: "plus")
+                    HStack {
+                        Button {
+                            app.newProfile()
+                        } label: {
+                            Label(tr("새 접속"), systemImage: "plus")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                        Spacer()
+                        Menu {
+                            Button(tr("접속 정보 내보내기…")) { app.showExportConnections = true }
+                                .disabled(app.profiles.isEmpty)
+                            Button(tr("접속 정보 가져오기…")) { app.chooseImportFile() }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down.circle")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help(tr("접속 정보 내보내기 / 가져오기"))
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
                 }
 
                 if case .failed(let message) = app.state {

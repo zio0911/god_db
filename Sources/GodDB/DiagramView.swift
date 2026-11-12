@@ -13,6 +13,8 @@ struct DiagramDoc: Identifiable {
     var highlighted: Set<String> = []
     /// 컬럼 이름으로 추정한 관계 (외래 키 제약이 없는 DB 용)
     var inferred: [ForeignKeyMeta] = []
+    /// DB 종류 (AI 분석 SQL 문법용)
+    var kind: DatabaseKind = .mysql
 }
 
 /// 다이어그램에 보일 이름
@@ -72,7 +74,8 @@ extension AppState {
         let names = Set(list.map(\.name))
         let doc = DiagramDoc(title: title, tables: list, focus: focus,
                              highlighted: focus.map { [$0] } ?? highlighted.intersection(names),
-                             inferred: inferredAll.filter { names.contains($0.table) && names.contains($0.referencedTable) })
+                             inferred: inferredAll.filter { names.contains($0.table) && names.contains($0.referencedTable) },
+                             kind: profile.kind)
         diagrams[doc.id] = doc
         let fkCount = list.reduce(0) { $0 + $1.foreignKeys.filter { names.contains($0.referencedTable) }.count }
         log(.info, .schema, tr("ER 다이어그램 · 테이블 %@개 · 관계 %@개 · 추정 %@개", "\(list.count)", "\(fkCount)", "\(doc.inferred.count)"))
@@ -105,6 +108,9 @@ struct DiagramView: View {
     @State private var showInferred: Bool
     @State private var viewport: CGSize = .zero
     @State private var didFit = false
+    @State private var showAI = false
+    @State private var chat = DiagramChat()
+    @State private var aiWidth: CGFloat = 380
     @AppStorage("GodDB.diagram.nameMode") private var nameModeRaw = DiagramNameMode.physical.rawValue
 
     private let margin: CGFloat = 40
@@ -128,6 +134,7 @@ struct DiagramView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
+            HStack(spacing: 0) {
             GeometryReader { geo in
                 ScrollView([.horizontal, .vertical]) {
                     canvas
@@ -142,7 +149,14 @@ struct DiagramView: View {
                 }
                 .onChange(of: geo.size) { viewport = geo.size }
             }
+            if showAI {
+                ResizeHandle(axis: .vertical, size: $aiWidth, range: 300...700)
+                DiagramAIPanel(doc: doc, chat: chat)
+                    .frame(width: aiWidth)
+            }
+            }
         }
+        .onDisappear { chat.cancel() }
         .frame(minWidth: 700, minHeight: 480)
 
     }
@@ -180,6 +194,12 @@ struct DiagramView: View {
             Divider().frame(height: 16)
             Button { relayoutAnimated() } label: { Label(tr("자동 정렬"), systemImage: "rectangle.3.group") }
             Button { exportPNG() } label: { Label(tr("PNG 저장"), systemImage: "square.and.arrow.down") }
+            Divider().frame(height: 16)
+            Button { withAnimation(.easeInOut(duration: 0.2)) { showAI.toggle() } } label: {
+                Label(tr("AI 분석"), systemImage: "sparkles")
+            }
+            .foregroundStyle(showAI ? Color.purple : Color.primary)
+            .help(tr("로컬 Ollama 로 관계를 분석하고 질문할 수 있어요"))
         }
         .buttonStyle(.hover)
         .padding(.horizontal, 12)
@@ -408,6 +428,20 @@ struct TableCard: View {
 enum DiagramSample {
     @MainActor
     static func render(to path: String, mode: String = "physical") {
+        if mode == "ai-answer" {
+            // AI 답변 마크다운 표시 확인용
+            let sample = "### 1. 스키마 용도\n- **업무 도메인**: 회원 기반 주문 관리\n- 핵심 테이블: `member`, `orders`\n\n---\n\n### 2. 관계\n- `member` → `orders` (1:N)\n  - 정의된 FK\n\n### 5. 대표 JOIN\n```sql\nSELECT o.*, m.name\nFROM orders o\nJOIN member m ON o.member_id = m.member_id;\n```\n끝."
+            let view = MarkdownBlocks(text: sample).padding(8)
+                .background(Color.purple.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                .frame(width: 360).padding(10).background(Color(nsColor: .windowBackgroundColor))
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            if let tiff = renderer.nsImage?.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path))
+            }
+            return
+        }
         UserDefaults.standard.set(mode.hasPrefix("selection") ? "physical" : mode, forKey: "GodDB.diagram.nameMode")
         func col(_ n: String, _ t: String, _ c: String, pk: Bool = false) -> ColumnMeta {
             ColumnMeta(name: n, columnType: t, nullable: !pk, columnKey: pk ? "PRI" : "", comment: c)

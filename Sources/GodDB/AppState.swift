@@ -108,6 +108,8 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    var showExportConnections = false
+    var importRequest: ImportRequest?
     /// 사이드바에서 고른 테이블 (⌘/⇧ 클릭으로 여러 개)
     var selectedTables: Set<String> = []
     /// 열린 ER 다이어그램 창들
@@ -121,7 +123,7 @@ final class AppState {
     var selectedLogID: LogEntry.ID?
 
     /// 저장하지 않기로 한 비밀번호를 앱 실행 중에만 기억
-    private var sessionPasswords: [UUID: String] = [:]
+    var sessionPasswords: [UUID: String] = [:]
 
     init() {
         profiles = store.load()
@@ -269,7 +271,7 @@ final class AppState {
         persist()
     }
 
-    private func persist() {
+    func persist() {
         do { try store.save(profiles) } catch { logError(error, .app, context: tr("접속 목록 저장 실패")) }
     }
 

@@ -65,6 +65,12 @@ struct ContentView: View {
         .sheet(item: $app.passwordPrompt) { prompt in
             PasswordPromptView(prompt: prompt)
         }
+        .sheet(isPresented: $app.showExportConnections) {
+            ExportConnectionsSheet()
+        }
+        .sheet(item: $app.importRequest) { request in
+            ImportConnectionsSheet(request: request)
+        }
     }
 }
 
