@@ -125,6 +125,8 @@ final class AppState {
 
     init() {
         profiles = store.load()
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, NSUserName()))
     }
 
     // MARK: - 사이드바에서 보고 있는 접속 (기존 화면 코드 호환)
@@ -182,6 +184,7 @@ final class AppState {
              detail: String? = nil, hint: String? = nil) {
         let entry = LogEntry(level: level, source: source, message: message, detail: detail, hint: hint)
         logs.append(entry)
+        LogFile.shared.append(entry)
         if logs.count > 1000 { logs.removeFirst(logs.count - 1000) }
         if level == .error {
             // 오류가 나면 상태창을 자동으로 열고 해당 항목을 선택한다.

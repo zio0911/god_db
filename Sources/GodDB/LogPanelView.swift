@@ -1,3 +1,4 @@
+import AppKit
 import GodDBCore
 import SwiftUI
 
@@ -61,6 +62,13 @@ struct LogPanelView: View {
                     Pasteboard.copy(visible.reversed().map(\.fullText).joined(separator: "\n\n"))
                 } label: { Label(tr("전체 복사"), systemImage: "doc.on.doc") }
                     .disabled(visible.isEmpty)
+                if LogFile.enabled {
+                    Button {
+                        try? FileManager.default.createDirectory(at: LogFile.shared.directory, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(LogFile.shared.directory)
+                    } label: { Label(tr("로그 폴더"), systemImage: "folder") }
+                        .help(tr("날짜별 로그 파일이 있는 폴더를 열어요 (~/Library/Logs/GodDB)"))
+                }
                 Button {
                     app.clearLogs()
                 } label: { Label(tr("지우기"), systemImage: "trash") }

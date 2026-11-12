@@ -1,3 +1,4 @@
+import AppKit
 import GodDBCore
 import Observation
 import SwiftUI
@@ -13,12 +14,14 @@ final class AppSettings {
     var tuningEnabled: Bool { didSet { TuningSettings.enabled = tuningEnabled } }
     var ollamaURL: String { didSet { TuningSettings.url = ollamaURL } }
     var tuningModel: String { didSet { TuningSettings.model = tuningModel } }
+    var logFileEnabled: Bool { didSet { LogFile.enabled = logFileEnabled } }
 
     init() {
         language = L10n.language
         tuningEnabled = TuningSettings.enabled
         ollamaURL = TuningSettings.url
         tuningModel = TuningSettings.model
+        logFileEnabled = LogFile.enabled
     }
 }
 
@@ -62,6 +65,25 @@ struct GeneralSettingsView: View {
                 }
             } header: {
                 Text(tr("언어"))
+            }
+            Section {
+                Toggle(tr("로그 파일 남기기"), isOn: $settings.logFileEnabled)
+                Text(tr("상태창에 나오는 기록(접속, 실행한 SQL, 데이터 변경, 오류)을 날짜별 파일로 남겨요. 조회 결과 행은 남기지 않아요. %@일 지난 파일은 지워요.", "\(LogFile.shared.keepDays)"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Text(LogFile.shared.directory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Spacer()
+                    Button(tr("로그 폴더")) {
+                        try? FileManager.default.createDirectory(at: LogFile.shared.directory, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(LogFile.shared.directory)
+                    }
+                }
+            } header: {
+                Text(tr("로그"))
             }
             Section {
                 LabeledContent(tr("버전"), value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
