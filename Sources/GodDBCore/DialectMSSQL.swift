@@ -218,7 +218,7 @@ public struct MSSQLDialect: SQLDialect {
         }
         if old.defaultValue != new.defaultValue {
             if old.defaultValue != nil {
-                out.append("-- 기존 기본값 제약조건을 먼저 지워야 해요: ALTER TABLE \(t) DROP CONSTRAINT <기본값 제약조건 이름>;")
+                out.append(tr("-- 기존 기본값 제약조건을 먼저 지워야 해요: ALTER TABLE %@ DROP CONSTRAINT <기본값 제약조건 이름>;", "\(t)"))
             }
             if let d = new.defaultValue {
                 out.append("ALTER TABLE \(t) ADD DEFAULT \(d) FOR \(quoteIdent(new.name));")

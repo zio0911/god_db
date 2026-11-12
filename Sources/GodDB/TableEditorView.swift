@@ -31,10 +31,10 @@ struct TableEditorView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "tablecells")
-                Text("테이블 수정 · \(table.name)").font(.headline)
+                Text(tr("테이블 수정 · %@", "\(table.name)")).font(.headline)
                 Spacer()
-                Text("코멘트").foregroundStyle(.secondary)
-                TextField("테이블 코멘트", text: $comment).frame(width: 260)
+                Text(tr("코멘트")).foregroundStyle(.secondary)
+                TextField(tr("테이블 코멘트"), text: $comment).frame(width: 260)
             }
             .padding(12)
             Divider()
@@ -53,31 +53,31 @@ struct TableEditorView: View {
 
             HStack {
                 if readOnly {
-                    Label("읽기전용 접속이라 실행할 수 없어요. SQL을 복사해서 사용하세요.", systemImage: "lock")
+                    Label(tr("읽기전용 접속이라 실행할 수 없어요. SQL을 복사해서 사용하세요."), systemImage: "lock")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("취소") { app.alteringTable = nil }
+                Button(tr("취소")) { app.alteringTable = nil }
                     .keyboardShortcut(.cancelAction)
-                Button("쿼리 탭으로 열기") {
+                Button(tr("쿼리 탭으로 열기")) {
                     if case .success(let sql?) = preview {
                         app.addTab(text: sql, title: "ALTER · \(table.name)")
                         app.alteringTable = nil
                     }
                 }
                 .disabled(sqlText == nil)
-                Button("실행…") { confirming = true }
+                Button(tr("실행…")) { confirming = true }
                     .keyboardShortcut(.defaultAction)
                     .disabled(sqlText == nil || readOnly || executing)
             }
             .padding(12)
         }
         .frame(width: 980, height: 680)
-        .alert("이 ALTER 문을 실행할까요?", isPresented: $confirming) {
-            Button("실행", role: .destructive) { Task { await execute() } }
-            Button("취소", role: .cancel) {}
+        .alert(tr("이 ALTER 문을 실행할까요?"), isPresented: $confirming) {
+            Button(tr("실행"), role: .destructive) { Task { await execute() } }
+            Button(tr("취소"), role: .cancel) {}
         } message: {
-            Text("\(app.selectedProfile?.name ?? "") / \(app.currentDatabase) 에서 바로 실행돼요. 컬럼 삭제는 되돌릴 수 없어요.")
+            Text(tr("%@ / %@ 에서 바로 실행돼요. 컬럼 삭제는 되돌릴 수 없어요.", "\(app.selectedProfile?.name ?? "")", "\(app.currentDatabase)"))
         }
     }
 
@@ -91,20 +91,20 @@ struct TableEditorView: View {
     private var columnSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("컬럼").font(.headline)
+                Text(tr("컬럼")).font(.headline)
                 Spacer()
                 Button {
                     columns.append(EditableColumn(name: "new_column"))
-                } label: { Label("컬럼 추가", systemImage: "plus") }
+                } label: { Label(tr("컬럼 추가"), systemImage: "plus") }
             }
             HStack(spacing: 6) {
                 Text("").frame(width: 44)
-                Text("이름").frame(width: 150, alignment: .leading)
-                Text("타입").frame(width: 130, alignment: .leading)
+                Text(tr("이름")).frame(width: 150, alignment: .leading)
+                Text(tr("타입")).frame(width: 130, alignment: .leading)
                 Text("NULL").frame(width: 40)
-                Text("기본값").frame(width: 120, alignment: .leading)
+                Text(tr("기본값")).frame(width: 120, alignment: .leading)
                 Text("Extra").frame(width: 120, alignment: .leading)
-                Text("코멘트").frame(maxWidth: .infinity, alignment: .leading)
+                Text(tr("코멘트")).frame(maxWidth: .infinity, alignment: .leading)
                 Text("").frame(width: 24)
             }
             .font(.caption).foregroundStyle(.secondary)
@@ -120,10 +120,10 @@ struct TableEditorView: View {
                     }
                     .buttonStyle(.borderless)
                     .frame(width: 44)
-                    TextField("이름", text: $col.name).frame(width: 150)
-                    TextField("타입", text: $col.columnType).frame(width: 130)
+                    TextField(tr("이름"), text: $col.name).frame(width: 150)
+                    TextField(tr("타입"), text: $col.columnType).frame(width: 130)
                     Toggle("", isOn: $col.nullable).labelsHidden().frame(width: 40)
-                    TextField(app.dialect.kind == .mysql ? "없음" : "없음 (SQL 식)", text: Binding(
+                    TextField(app.dialect.kind == .mysql ? tr("없음") : tr("없음 (SQL 식)"), text: Binding(
                         get: { col.defaultValue ?? "" },
                         set: { col.defaultValue = $0.isEmpty ? nil : $0 }
                     )).frame(width: 120)
@@ -134,7 +134,7 @@ struct TableEditorView: View {
                     } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
                         .frame(width: 24)
-                        .help("컬럼 삭제")
+                        .help(tr("컬럼 삭제"))
                 }
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.callout, design: .monospaced))
@@ -164,23 +164,23 @@ struct TableEditorView: View {
     private var indexSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("인덱스").font(.headline)
+                Text(tr("인덱스")).font(.headline)
                 Spacer()
                 Button {
                     indexes.append(EditableIndex(name: "idx_\(table.name)_", columns: []))
-                } label: { Label("인덱스 추가", systemImage: "plus") }
+                } label: { Label(tr("인덱스 추가"), systemImage: "plus") }
             }
             HStack(spacing: 6) {
-                Text("이름").frame(width: 200, alignment: .leading)
+                Text(tr("이름")).frame(width: 200, alignment: .leading)
                 Text("UNIQUE").frame(width: 60)
-                Text("컬럼 (쉼표로 구분, 순서대로)").frame(maxWidth: .infinity, alignment: .leading)
+                Text(tr("컬럼 (쉼표로 구분, 순서대로)")).frame(maxWidth: .infinity, alignment: .leading)
                 Text("").frame(width: 24)
             }
             .font(.caption).foregroundStyle(.secondary)
 
             ForEach($indexes) { $idx in
                 HStack(spacing: 6) {
-                    TextField("이름", text: $idx.name).frame(width: 200)
+                    TextField(tr("이름"), text: $idx.name).frame(width: 200)
                         .disabled(idx.name == "PRIMARY")
                     Toggle("", isOn: $idx.unique).labelsHidden().frame(width: 60)
                         .disabled(idx.name == "PRIMARY")
@@ -193,7 +193,7 @@ struct TableEditorView: View {
                     } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
                         .frame(width: 24)
-                        .help("인덱스 삭제")
+                        .help(tr("인덱스 삭제"))
                 }
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.callout, design: .monospaced))
@@ -206,10 +206,10 @@ struct TableEditorView: View {
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("미리보기 SQL").font(.headline)
+                Text(tr("미리보기 SQL")).font(.headline)
                 Spacer()
                 if let sql = sqlText {
-                    Button { Pasteboard.copy(sql) } label: { Label("복사", systemImage: "doc.on.doc") }
+                    Button { Pasteboard.copy(sql) } label: { Label(tr("복사"), systemImage: "doc.on.doc") }
                         .buttonStyle(.borderless)
                 }
             }
@@ -219,7 +219,7 @@ struct TableEditorView: View {
                     case .success(let sql?):
                         Text(sql).foregroundStyle(.primary)
                     case .success(nil):
-                        Text("-- 변경 사항이 없어요.").foregroundStyle(.secondary)
+                        Text(tr("-- 변경 사항이 없어요.")).foregroundStyle(.secondary)
                     case .failure(let error):
                         Text("-- \(error.localizedDescription)").foregroundStyle(.red)
                     }

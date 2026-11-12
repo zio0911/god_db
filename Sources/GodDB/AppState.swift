@@ -27,7 +27,7 @@ struct QueryTab: Identifiable {
     var isPlan = false
     var planTree: String?
 
-    var title: String { customTitle ?? "쿼리 \(number)" }
+    var title: String { customTitle ?? tr("쿼리 %@", "\(number)") }
 }
 
 enum MainMode: String, CaseIterable, Identifiable {
@@ -165,10 +165,10 @@ final class AppState {
     @discardableResult
     func logError(_ error: any Error, _ source: LogEntry.Source, context: String, sql: String? = nil) -> String {
         let d = ErrorText.describe(error)
-        var detail = "원본 오류: \(d.raw)"
-        if let sql { detail = "실행한 SQL:\n\(sql)\n\n" + detail }
+        var detail = tr("원본 오류: %@", "\(d.raw)")
+        if let sql { detail = tr("실행한 SQL:\n%@\n\n", "\(sql)") + detail }
         log(.error, source, "\(context): \(d.message)", detail: detail, hint: d.hint)
-        return d.hint.map { "\(d.message)\n\n해결 방법: \($0)" } ?? d.message
+        return d.hint.map { tr("%@\n\n해결 방법: %@", "\(d.message)", "\($0)") } ?? d.message
     }
 
     func toggleLog() { showLog.toggle() }
@@ -205,7 +205,7 @@ final class AppState {
         }
         persist()
         editingProfile = nil
-        log(.info, .app, "\(profile.name) 접속 정보 저장" + (profile.savePassword ? " (비밀번호 키체인 저장)" : " (비밀번호 저장 안 함)"))
+        log(.info, .app, tr("%@ 접속 정보 저장", "\(profile.name)") + (profile.savePassword ? tr(" (비밀번호 키체인 저장)") : tr(" (비밀번호 저장 안 함)")))
         // 열려 있던 접속이면 바뀐 설정으로 다시 연결
         if connectionState(profile.id) == .connected {
             Task {
@@ -229,14 +229,14 @@ final class AppState {
     func duplicate(_ profile: ConnectionProfile) {
         var copy = profile
         copy.id = UUID()
-        copy.name += " 복사본"
+        copy.name += tr(" 복사본")
         if let pw = Keychain.password(for: profile.id) { Keychain.setPassword(pw, for: copy.id) }
         profiles.append(copy)
         persist()
     }
 
     private func persist() {
-        do { try store.save(profiles) } catch { logError(error, .app, context: "접속 목록 저장 실패") }
+        do { try store.save(profiles) } catch { logError(error, .app, context: tr("접속 목록 저장 실패")) }
     }
 
     /// 키체인 또는 이번 실행 중 입력한 비밀번호
@@ -291,21 +291,21 @@ final class AppState {
             return
         }
         updateConnection(id) { $0.state = .connecting }
-        let target = profile.ssh.map { "\(profile.host):\(profile.port) (SSH \($0.host) 경유)" } ?? "\(profile.host):\(profile.port)"
-        log(.info, .connection, "\(profile.name) 연결 중… \(target)")
+        let target = profile.ssh.map { tr("%@:%@ (SSH %@ 경유)", "\(profile.host)", "\(profile.port)", "\($0.host)") } ?? "\(profile.host):\(profile.port)"
+        log(.info, .connection, tr("%@ 연결 중… %@", "\(profile.name)", "\(target)"))
         do {
             let s = try await DBSession.connect(profile: profile, password: password)
             updateConnection(id) {
                 $0.session = s
                 $0.state = .connected
             }
-            log(.success, .connection, "\(profile.name) 연결됨" + (profile.readOnly ? " (읽기전용)" : "")
-                + (connectedCount > 1 ? " · 열린 접속 \(connectedCount)개" : ""))
+            log(.success, .connection, tr("%@ 연결됨", "\(profile.name)") + (profile.readOnly ? tr(" (읽기전용)") : "")
+                + (connectedCount > 1 ? tr(" · 열린 접속 %@개", "\(connectedCount)") : ""))
             do {
                 let dbs = try await s.databases()
                 updateConnection(id) { $0.databases = dbs }
             } catch {
-                logError(error, .schema, context: "\(profile.name) DB 목록 조회 실패")
+                logError(error, .schema, context: tr("%@ DB 목록 조회 실패", "\(profile.name)"))
             }
             await selectDatabase(s.dialect.initialContainer(profile: profile, available: connections[id]?.databases ?? []),
                                  for: id)
@@ -316,12 +316,12 @@ final class AppState {
                 selectTab(tab.id)
             }
         } catch {
-            let message = logError(error, .connection, context: "\(profile.name) 연결 실패")
+            let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"))
             updateConnection(id) { $0.state = .failed(message); $0.session = nil }
             // 비밀번호가 틀렸으면 다시 입력받는다.
             if ErrorText.isAuthFailure(error) {
                 sessionPasswords[id] = nil
-                passwordPrompt = PasswordPrompt(profile: profile, message: "비밀번호가 틀렸어요. 다시 입력해 주세요.")
+                passwordPrompt = PasswordPrompt(profile: profile, message: tr("비밀번호가 틀렸어요. 다시 입력해 주세요."))
             }
         }
     }
@@ -330,7 +330,7 @@ final class AppState {
     func disconnect(_ id: UUID) async {
         if let session = connections[id]?.session {
             await session.close()
-            log(.info, .connection, "\(session.profile.name) 연결 끊음")
+            log(.info, .connection, tr("%@ 연결 끊음", "\(session.profile.name)"))
         }
         connections[id] = ConnectionInfo()
     }
@@ -351,17 +351,17 @@ final class AppState {
             try await session.use(db)
             let tables = try await session.loadSchema(db)
             updateConnection(id) { $0.tables = tables }
-            log(.info, .schema, "\(session.profile.name) / \(db) 스키마 불러옴 · 테이블 \(tables.count)개")
+            log(.info, .schema, tr("%@ / %@ 스키마 불러옴 · 테이블 %@개", "\(session.profile.name)", "\(db)", "\(tables.count)"))
         } catch {
             updateConnection(id) { $0.tables = [] }
-            logError(error, .schema, context: "\(db) 스키마 조회 실패")
+            logError(error, .schema, context: tr("%@ 스키마 조회 실패", "\(db)"))
         }
         do {
             let routines = try await session.loadRoutines(db)
             updateConnection(id) { $0.routines = routines }
         } catch {
             updateConnection(id) { $0.routines = [] }
-            logError(error, .schema, context: "\(db) 뷰/프로시저 조회 실패")
+            logError(error, .schema, context: tr("%@ 뷰/프로시저 조회 실패", "\(db)"))
         }
         updateConnection(id) { $0.schemaLoading = false }
     }
@@ -383,7 +383,7 @@ final class AppState {
     @discardableResult
     func addTab(text: String = "", title: String? = nil, for profileID: UUID? = nil) -> UUID? {
         guard let id = profileID ?? selectedProfileID, connectionState(id) == .connected else {
-            log(.warning, .app, "먼저 왼쪽에서 접속을 연결해 주세요. 쿼리 탭은 연결된 접속 기준으로 만들어져요.")
+            log(.warning, .app, tr("먼저 왼쪽에서 접속을 연결해 주세요. 쿼리 탭은 연결된 접속 기준으로 만들어져요."))
             return nil
         }
         let number = (tabs.filter { $0.profileID == id }.map(\.number).max() ?? 0) + 1
@@ -437,9 +437,9 @@ final class AppState {
         do {
             let ddl = try await session.tableDDL(table)
             addTab(text: ddl + "\n", title: "DDL · \(table.name)")
-            log(.info, .schema, "\(table.name) CREATE 문 열기")
+            log(.info, .schema, tr("%@ CREATE 문 열기", "\(table.name)"))
         } catch {
-            logError(error, .schema, context: "\(table.name) CREATE 문 조회 실패")
+            logError(error, .schema, context: tr("%@ CREATE 문 조회 실패", "\(table.name)"))
         }
     }
 
@@ -449,16 +449,16 @@ final class AppState {
         do {
             let body = try await session.definition(of: routine) ?? ""
             addTab(text: body + "\n", title: "\(routine.kind.title) · \(routine.name)")
-            log(.info, .schema, "\(routine.kind.title) \(routine.name) 정의 열기")
+            log(.info, .schema, tr("%@ %@ 정의 열기", "\(routine.kind.title)", "\(routine.name)"))
         } catch {
-            logError(error, .schema, context: "\(routine.kind.title) \(routine.name) 정의 조회 실패")
+            logError(error, .schema, context: tr("%@ %@ 정의 조회 실패", "\(routine.kind.title)", "\(routine.name)"))
         }
     }
 
     /// 인덱스 상세 (카디널리티 등)
     func openIndexes(_ table: String) {
         let sql = dialect.indexDetailSQL(table, schema: currentDatabase)
-        guard addTab(text: sql, title: "인덱스 · \(table)") != nil else { return }
+        guard addTab(text: sql, title: tr("인덱스 · %@", "\(table)")) != nil else { return }
         Task { await run(sql: sql) }
     }
 
@@ -472,7 +472,7 @@ final class AppState {
     }
 
     private func notConnectedMessage(_ tab: QueryTab) -> String {
-        "\(profile(tab.profileID)?.name ?? "이 탭의 접속") 이(가) 연결돼 있지 않아요. 왼쪽에서 접속을 눌러 다시 연결해 주세요."
+        tr("%@ 이(가) 연결돼 있지 않아요. 왼쪽에서 접속을 눌러 다시 연결해 주세요.", "\(profile(tab.profileID)?.name ?? tr("이 탭의 접속"))")
     }
 
     /// 선택된 탭에서 sql 실행. explain 이면 실행 계획을 보여준다.
@@ -519,11 +519,11 @@ final class AppState {
             if explain {
                 let warnings = PlanAnalyzer.warnings(result)
                 log(warnings.isEmpty ? .success : .warning, .query,
-                    label + "실행 계획 · 주의 \(warnings.count)건 · \(Self.oneLine(trimmed))",
+                    label + tr("실행 계획 · 주의 %@건 · %@", "\(warnings.count)", "\(Self.oneLine(trimmed))"),
                     detail: ([finalSQL] + warnings.map { "[\($0.table)] \($0.message)" }).joined(separator: "\n"))
             } else {
-                let summary = result.columns.isEmpty ? (result.message ?? "실행 완료")
-                    : "\(result.rows.count)행" + (result.hasMore ? "+" : "")
+                let summary = result.columns.isEmpty ? (result.message ?? tr("실행 완료"))
+                    : tr("%@행", "\(result.rows.count)") + (result.hasMore ? "+" : "")
                 log(.success, .query, label + "\(summary) · \(ms)ms · \(Self.oneLine(trimmed))", detail: trimmed)
             }
             let kw = SQLText.firstKeyword(trimmed)
@@ -531,7 +531,7 @@ final class AppState {
                                   schemaChanged: !explain && ["CREATE", "ALTER", "DROP", "RENAME", "TRUNCATE"].contains(kw),
                                   usedUse: kw == "USE")
         } catch {
-            let message = logError(error, .query, context: explain ? "실행 계획 실패" : "쿼리 실패", sql: trimmed)
+            let message = logError(error, .query, context: explain ? tr("실행 계획 실패") : tr("쿼리 실패"), sql: trimmed)
             update(tabID) { $0.error = message; $0.running = false }
         }
     }
@@ -575,7 +575,7 @@ final class AppState {
             }
             session = s
         } catch {
-            finish(error: logError(error, .query, context: "DB 전환 실패"))
+            finish(error: logError(error, .query, context: tr("DB 전환 실패")))
             return
         }
 
@@ -588,8 +588,8 @@ final class AppState {
                 if ["CREATE", "ALTER", "DROP", "RENAME", "TRUNCATE"].contains(kw) { schemaChanged = true }
                 if kw == "USE" { usedUse = true }
             } catch {
-                let message = logError(error, .query, context: "\(n + 1)/\(list.count)번째 문장 실패", sql: statement)
-                finish(error: "\(n + 1)번째 문장에서 멈췄어요. (앞의 \(n)개는 실행됨)\n\n\(message)")
+                let message = logError(error, .query, context: tr("%@/%@번째 문장 실패", "\(n + 1)", "\(list.count)"), sql: statement)
+                finish(error: tr("%@번째 문장에서 멈췄어요. (앞의 %@개는 실행됨)\n\n%@", "\(n + 1)", "\(n)", "\(message)"))
                 await afterStatements(session: session, tabID: tabID, schemaChanged: schemaChanged, usedUse: usedUse)
                 return
             }
@@ -597,7 +597,7 @@ final class AppState {
         finish(error: nil)
         let ms = Int(Date().timeIntervalSince(started) * 1000)
         let withRows = results.filter { !$0.columns.isEmpty }.count
-        log(.success, .query, "[\(session.profile.name)] \(list.count)개 문장 실행 · 결과 \(withRows)개 · \(ms)ms",
+        log(.success, .query, tr("[%@] %@개 문장 실행 · 결과 %@개 · %@ms", "\(session.profile.name)", "\(list.count)", "\(withRows)", "\(ms)"),
             detail: list.joined(separator: ";\n\n"))
         await afterStatements(session: session, tabID: tabID, schemaChanged: schemaChanged, usedUse: usedUse)
     }
@@ -633,7 +633,7 @@ final class AppState {
             // 마지막 페이지를 넘어가면 (데이터가 줄어든 경우) 빈 페이지 대신 그대로 둔다.
             if r.rows.isEmpty && page > 0 {
                 update(tabID) { $0.running = false }
-                log(.info, .query, "더 이상 행이 없어요.")
+                log(.info, .query, tr("더 이상 행이 없어요."))
                 return
             }
             update(tabID) {
@@ -641,9 +641,9 @@ final class AppState {
                 if $0.results.indices.contains(index) { $0.results[index] = r }
                 $0.running = false
             }
-            log(.info, .query, "\(r.rowOffset + 1)–\(r.rowOffset + r.rows.count)행 (\(page + 1)페이지) · \(Int(r.elapsed * 1000))ms")
+            log(.info, .query, tr("%@–%@행 (%@페이지) · %@ms", "\(r.rowOffset + 1)", "\(r.rowOffset + r.rows.count)", "\(page + 1)", "\(Int(r.elapsed * 1000))"))
         } catch {
-            let message = logError(error, .query, context: "페이지 불러오기 실패", sql: sql)
+            let message = logError(error, .query, context: tr("페이지 불러오기 실패"), sql: sql)
             update(tabID) { $0.error = message; $0.running = false }
         }
     }
@@ -658,9 +658,9 @@ final class AppState {
                 $0.result?.totalCount = total
                 if $0.results.indices.contains(index) { $0.results[index].totalCount = total }
             }
-            log(.info, .query, "전체 \(total.formatted())행")
+            log(.info, .query, tr("전체 %@행", "\(total.formatted())"))
         } catch {
-            logError(error, .query, context: "전체 행 수 세기 실패", sql: sql)
+            logError(error, .query, context: tr("전체 행 수 세기 실패"), sql: sql)
         }
     }
 
@@ -681,10 +681,10 @@ final class AppState {
                 try await session.use(currentDatabase)
             }
             _ = try await session.execute(sql, limit: 0)
-            log(.success, .schema, "\(table) 테이블 수정 완료", detail: sql)
+            log(.success, .schema, tr("%@ 테이블 수정 완료", "\(table)"), detail: sql)
             await refreshSchema()
         } catch {
-            logError(error, .schema, context: "\(table) 테이블 수정 실패", sql: sql)
+            logError(error, .schema, context: tr("%@ 테이블 수정 실패", "\(table)"), sql: sql)
             throw error
         }
     }

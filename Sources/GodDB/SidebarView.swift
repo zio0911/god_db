@@ -8,14 +8,14 @@ struct SidebarView: View {
         @Bindable var app = app
         VStack(spacing: 0) {
             List {
-                Section("접속") {
+                Section(tr("접속")) {
                     ForEach(app.profiles) { profile in
                         ProfileRow(profile: profile)
                     }
                     Button {
                         app.newProfile()
                     } label: {
-                        Label("새 접속", systemImage: "plus")
+                        Label(tr("새 접속"), systemImage: "plus")
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
@@ -33,7 +33,7 @@ struct SidebarView: View {
                 if app.state == .connected {
                     Section {
                         if app.schemaLoading {
-                            HStack { ProgressView().controlSize(.small); Text("스키마 불러오는 중…") }
+                            HStack { ProgressView().controlSize(.small); Text(tr("스키마 불러오는 중…")) }
                         }
                         ForEach(app.filteredTables) { table in
                             TableNode(table: table)
@@ -55,7 +55,7 @@ struct SidebarView: View {
                                 Task { await app.refreshSchema() }
                             } label: { Image(systemName: "arrow.clockwise") }
                             .buttonStyle(.borderless)
-                            .help("스키마 새로고침 (⇧⌘R)")
+                            .help(tr("스키마 새로고침 (⇧⌘R)"))
                         }
                     }
 
@@ -75,7 +75,7 @@ struct SidebarView: View {
                 Divider()
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("테이블 검색", text: $app.tableFilter)
+                    TextField(tr("테이블 검색"), text: $app.tableFilter)
                         .textFieldStyle(.plain)
                 }
                 .padding(8)
@@ -104,12 +104,12 @@ struct ProfileRow: View {
             Text(profile.name).lineLimit(1)
             KindBadge(kind: profile.kind)
             if profile.readOnly {
-                Text("읽기전용").font(.caption2).foregroundStyle(.red)
+                Text(tr("읽기전용")).font(.caption2).foregroundStyle(.red)
             }
             Spacer()
             if tabCount > 0 {
                 Text("\(tabCount)").font(.caption2).foregroundStyle(.secondary)
-                    .help("이 접속의 쿼리 탭 \(tabCount)개")
+                    .help(tr("이 접속의 쿼리 탭 %@개", "\(tabCount)"))
             }
         }
         .padding(.vertical, 2)
@@ -122,25 +122,25 @@ struct ProfileRow: View {
         }
         .contextMenu {
             if state == .connected {
-                Button("새 쿼리 탭") {
+                Button(tr("새 쿼리 탭")) {
                     app.selectedProfileID = profile.id
                     app.addTab(for: profile.id)
                 }
-                Button("다시 연결") {
+                Button(tr("다시 연결")) {
                     Task {
                         await app.disconnect(profile.id)
                         await app.connect(profile.id)
                     }
                 }
-                Button("연결 끊기") { Task { await app.disconnect(profile.id) } }
+                Button(tr("연결 끊기")) { Task { await app.disconnect(profile.id) } }
             } else {
-                Button("연결") { Task { await app.connect(profile.id) } }
+                Button(tr("연결")) { Task { await app.connect(profile.id) } }
             }
             Divider()
-            Button("편집…") { app.edit(profile) }
-            Button("복제") { app.duplicate(profile) }
+            Button(tr("편집…")) { app.edit(profile) }
+            Button(tr("복제")) { app.duplicate(profile) }
             Divider()
-            Button("삭제", role: .destructive) { app.deleteProfile(profile) }
+            Button(tr("삭제"), role: .destructive) { app.deleteProfile(profile) }
         }
     }
 }
@@ -201,10 +201,10 @@ struct TableNode: View {
                         .help("\(idx.unique ? "UNIQUE " : "")\(idx.name) (\(idx.columns.joined(separator: ", ")))")
                     }
                 } label: {
-                    Label("인덱스 \(table.indexes.count)", systemImage: "list.bullet.indent")
+                    Label(tr("인덱스 %@", "\(table.indexes.count)"), systemImage: "list.bullet.indent")
                         .font(.callout)
                         .contextMenu {
-                            Button("인덱스 상세 보기") { app.openIndexes(table.name) }
+                            Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
                         }
                 }
             }
@@ -215,12 +215,12 @@ struct TableNode: View {
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { app.openTableQuery(table.name) }
                 .contextMenu {
-                    Button("데이터 보기 (SELECT)") { app.openTableQuery(table.name) }
-                    Button("테이블 수정 (ALTER)…") { app.alteringTable = table }
-                    Button("CREATE 문 보기") { Task { await app.openTableDDL(table) } }
-                    Button("인덱스 상세 보기") { app.openIndexes(table.name) }
+                    Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(table.name) }
+                    Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }
+                    Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }
+                    Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
                     Divider()
-                    Button("이름 복사") { Pasteboard.copy(table.name) }
+                    Button(tr("이름 복사")) { Pasteboard.copy(table.name) }
                 }
         }
     }
@@ -242,21 +242,21 @@ struct RoutineRow: View {
     var body: some View {
         Label(routine.name, systemImage: icon)
             .lineLimit(1)
-            .help(routine.comment.isEmpty ? "더블클릭하면 정의를 열어요" : routine.comment)
+            .help(routine.comment.isEmpty ? tr("더블클릭하면 정의를 열어요") : routine.comment)
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { Task { await app.openRoutine(routine) } }
             .contextMenu {
-                Button("정의 보기") { Task { await app.openRoutine(routine) } }
+                Button(tr("정의 보기")) { Task { await app.openRoutine(routine) } }
                 if routine.kind == .view {
-                    Button("데이터 보기 (SELECT)") { app.openTableQuery(routine.name) }
+                    Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(routine.name) }
                 }
                 if routine.kind == .procedure {
-                    Button("CALL 문 만들기") {
-                        app.addTab(text: app.dialect.callSQL(routine.name), title: "호출 · \(routine.name)")
+                    Button(tr("CALL 문 만들기")) {
+                        app.addTab(text: app.dialect.callSQL(routine.name), title: tr("호출 · %@", "\(routine.name)"))
                     }
                 }
                 Divider()
-                Button("이름 복사") { Pasteboard.copy(routine.name) }
+                Button(tr("이름 복사")) { Pasteboard.copy(routine.name) }
             }
     }
 }

@@ -1,6 +1,6 @@
 # 갓디비 기능 명세
 
-> 버전 0.4 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+
+> 버전 0.5 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+
 > 이 문서는 기능이 추가·변경될 때마다 함께 갱신한다.
 
 ## 목차
@@ -23,6 +23,7 @@
 15. [단축키](#15-단축키)
 16. [저장 위치](#16-저장-위치)
 17. [알려진 제약](#17-알려진-제약)
+19. [설정 (언어 · 라이선스)](#19-설정-언어--라이선스)
 18. [변경 이력](#18-변경-이력)
 
 ---
@@ -314,6 +315,34 @@
 | 비밀번호 | macOS 로그인 키체인 (서비스 `GodDB`) |
 | 상태창 로그 | 메모리 (저장 안 함) |
 
+## 19. 설정 (언어 · 라이선스)
+
+메뉴 **갓디비 > 설정…** (`⌘,`)
+
+### 일반
+- **언어**: 시스템 언어 따르기 / 한국어 / English. 고르면 바로 적용된다 (화면 전체를 새 언어로 다시 그리고, 접속·탭·입력 중인 SQL 은 유지).
+  - 시스템 언어 따르기: macOS 첫 번째 선호 언어가 한국어면 한국어, 아니면 영어.
+  - 번역 범위: 모든 화면 문구, 상태창 메시지, 오류 설명과 해결 방법, 실행 계획 주의사항, 스키마 비교 내용, 생성 SQL 의 안내 주석.
+  - 이미 상태창에 쌓인 기록은 기록될 때의 언어로 남는다.
+- **정보**: 버전, 소스 코드 링크 (github.com/zio0911/god_db).
+
+### 라이선스
+- 갓디비: **MIT License** · Copyright (c) 2026 zio0911 (저장소의 `LICENSE`).
+- 오픈소스 목록: 이름, 버전, 라이선스, 저작권, 링크, 비고, 전체 문구(MIT / Apache-2.0). 같은 내용이 저장소의 `THIRD_PARTY_NOTICES.md` 에도 있다.
+
+| 구성 요소 | 라이선스 | 비고 |
+|---|---|---|
+| mysql-nio | MIT | |
+| postgres-nio | MIT | 결과 텍스트 형식 1줄 패치 (`Vendor/postgres-nio`) |
+| SwiftNIO 계열 (NIO, SSL, Transport Services, Crypto, Log, Metrics, Collections, Algorithms, Atomics, Numerics, System, ASN.1, Service Lifecycle) | Apache-2.0 | NIOSSL 은 BoringSSL 포함 |
+| FreeTDS | LGPL | 포함하지 않음 — Homebrew 로 설치한 라이브러리를 실행 시 연결 |
+
+### 다국어 구조 (개발자용)
+- 소스에는 한국어 문장을 `tr("…")` 로 감싸 쓴다. 값이 들어가면 `tr("%@행", "\(count)")`.
+- 영어는 `Sources/GodDBCore/L10nEnglish+Base.swift` (생성) 와 `L10nEnglish.swift` 의 `extra` (직접 추가) 에 있다. 표에 없으면 한국어 그대로 보인다.
+- 테스트 `Localization` 이 소스의 모든 `tr` 문장에 영어가 있는지, `%@` 개수가 같은지, 영어에 한글이 섞이지 않았는지 검사한다.
+- 테스트와 CLI 는 환경변수 `GODDB_LANG=ko|en` 으로 언어를 고정할 수 있다.
+
 ## 17. 알려진 제약
 
 - SQL Server: 세션 단위 읽기전용이 없어 앱 검사만 한다. 기본값 변경 시 기존 기본값 제약조건 삭제는 안내 주석으로만 만든다. Windows 통합 인증 미지원 (SQL 인증만).
@@ -326,6 +355,12 @@
 - 화면 동작은 수동 확인 필요 (자동 테스트는 Core 로직과 실제 MySQL 연동만 검증).
 
 ## 18. 변경 이력
+
+### 0.5
+- 설정 창 (`⌘,`): 언어(시스템/한국어/English) 즉시 전환, 버전·소스 링크
+- 다국어: 모든 화면·메시지·오류 안내 영어 번역 (330여 문장), 번역 누락 검사 테스트
+- 라이선스: 갓디비 MIT (`LICENSE`), 오픈소스 고지 화면과 `THIRD_PARTY_NOTICES.md`
+- GitHub 공개 저장소: https://github.com/zio0911/god_db
 
 ### 0.4
 - 여러 접속 동시 연결, 쿼리 탭마다 접속 / DB 지정, 탭에 접속 표시, 기본 "쿼리 1" 탭 제거

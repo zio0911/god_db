@@ -20,30 +20,30 @@ struct CompareView: View {
             controls
             Divider()
             if running {
-                ProgressView("두 DB 스키마를 읽는 중…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView(tr("두 DB 스키마를 읽는 중…")).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error {
                 Text(error).foregroundStyle(.red).textSelection(.enabled)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
             } else if let report {
                 resultView(report)
             } else {
-                ContentUnavailableView("기준과 대상을 고르고 비교를 눌러 주세요",
+                ContentUnavailableView(tr("기준과 대상을 고르고 비교를 눌러 주세요"),
                                        systemImage: "arrow.left.arrow.right",
-                                       description: Text("대상 DB에 없는 테이블·컬럼·인덱스를 기준에 맞추는 SQL을 만들어요. 삭제(DROP)는 만들지 않아요."))
+                                       description: Text(tr("대상 DB에 없는 테이블·컬럼·인덱스를 기준에 맞추는 SQL을 만들어요. 삭제(DROP)는 만들지 않아요.")))
             }
         }
     }
 
     private var controls: some View {
         HStack(spacing: 12) {
-            endpointPicker("기준", id: $sourceID, db: $sourceDB)
+            endpointPicker(tr("기준"), id: $sourceID, db: $sourceDB)
             Image(systemName: "arrow.right").foregroundStyle(.secondary)
-            endpointPicker("대상", id: $targetID, db: $targetDB)
+            endpointPicker(tr("대상"), id: $targetID, db: $targetDB)
             Spacer()
             Button {
                 Task { await compare() }
             } label: {
-                Label("비교", systemImage: "arrow.left.arrow.right")
+                Label(tr("비교"), systemImage: "arrow.left.arrow.right")
             }
             .buttonStyle(.borderedProminent)
             .disabled(sourceID == nil || targetID == nil || running)
@@ -55,12 +55,12 @@ struct CompareView: View {
         HStack(spacing: 6) {
             Text(title).foregroundStyle(.secondary)
             Picker(title, selection: id) {
-                Text("선택").tag(UUID?.none)
+                Text(tr("선택")).tag(UUID?.none)
                 ForEach(app.profiles) { Text($0.name).tag(UUID?.some($0.id)) }
             }
             .labelsHidden()
             .fixedSize()
-            TextField("DB/스키마 (비우면 기본)", text: db)
+            TextField(tr("DB/스키마 (비우면 기본)"), text: db)
                 .frame(width: 150)
         }
     }
@@ -69,41 +69,41 @@ struct CompareView: View {
     private func resultView(_ report: SchemaDiffReport) -> some View {
         let visible = report.items.filter { showExtra || $0.severity != .extra }
         HStack(spacing: 8) {
-            Chip(text: "일치 테이블 \(report.matchedTables)", color: .green)
-            Chip(text: "다름 \(report.differentCount)", color: .orange)
-            Chip(text: "누락 \(report.missingCount)", color: .red)
-            Toggle("대상에만 있는 항목 \(report.extraCount)", isOn: $showExtra)
+            Chip(text: tr("일치 테이블 %@", "\(report.matchedTables)"), color: .green)
+            Chip(text: tr("다름 %@", "\(report.differentCount)"), color: .orange)
+            Chip(text: tr("누락 %@", "\(report.missingCount)"), color: .red)
+            Toggle(tr("대상에만 있는 항목 %@", "\(report.extraCount)"), isOn: $showExtra)
                 .toggleStyle(.checkbox)
             Spacer()
             Button {
                 Pasteboard.copy(report.fixScript)
-            } label: { Label("전체 SQL 복사", systemImage: "doc.on.doc") }
+            } label: { Label(tr("전체 SQL 복사"), systemImage: "doc.on.doc") }
                 .disabled(report.fixScript.isEmpty)
             Button {
-                app.addTab(text: "-- 스키마 보정 SQL (실행 전 반드시 검토하세요)\n\n" + report.fixScript)
-            } label: { Label("쿼리 탭으로 열기", systemImage: "square.and.pencil") }
+                app.addTab(text: tr("-- 스키마 보정 SQL (실행 전 반드시 검토하세요)\n\n") + report.fixScript)
+            } label: { Label(tr("쿼리 탭으로 열기"), systemImage: "square.and.pencil") }
                 .disabled(report.fixScript.isEmpty)
         }
         .padding(10)
 
         if visible.isEmpty {
-            ContentUnavailableView("차이가 없어요", systemImage: "checkmark.circle",
-                                   description: Text("두 스키마의 테이블·컬럼·인덱스가 같아요."))
+            ContentUnavailableView(tr("차이가 없어요"), systemImage: "checkmark.circle",
+                                   description: Text(tr("두 스키마의 테이블·컬럼·인덱스가 같아요.")))
         } else {
             HStack(spacing: 0) {
                 Table(visible, selection: $selection) {
                     TableColumn("") { item in icon(item) }.width(20)
-                    TableColumn("테이블", value: \.table).width(min: 100, ideal: 160)
-                    TableColumn("대상") { item in Text(item.object ?? "—") }.width(min: 80, ideal: 140)
-                    TableColumn("내용", value: \.detail)
+                    TableColumn(tr("테이블"), value: \.table).width(min: 100, ideal: 160)
+                    TableColumn(tr("대상")) { item in Text(item.object ?? "—") }.width(min: 80, ideal: 140)
+                    TableColumn(tr("내용"), value: \.detail)
                 }
                 .frame(minWidth: 300)
 
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("보정 SQL").font(.headline)
+                    Text(tr("보정 SQL")).font(.headline)
                     let sql = visible.first { $0.id == selection }?.fixSQL
-                        ?? (selection == nil ? "왼쪽에서 항목을 선택하세요." : "-- 참고용 항목이라 SQL을 만들지 않아요.")
+                        ?? (selection == nil ? tr("왼쪽에서 항목을 선택하세요.") : tr("-- 참고용 항목이라 SQL을 만들지 않아요."))
                     ScrollView {
                         Text(sql)
                             .font(.system(.callout, design: .monospaced))
@@ -112,7 +112,7 @@ struct CompareView: View {
                             .padding(8)
                     }
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-                    Button("이 SQL 복사") { Pasteboard.copy(sql) }
+                    Button(tr("이 SQL 복사")) { Pasteboard.copy(sql) }
                 }
                 .padding(10)
                 .frame(width: 360)
@@ -146,7 +146,7 @@ struct CompareView: View {
             let sdb = sourceDB.isEmpty ? (s.kind == .postgres ? "public" : s.database) : sourceDB
             let tdb = targetDB.isEmpty ? (t.kind == .postgres ? "public" : t.database) : targetDB
             guard !sdb.isEmpty, !tdb.isEmpty else {
-                error = "비교할 DB 이름을 입력하거나 접속의 기본 DB를 설정해 주세요."
+                error = tr("비교할 DB 이름을 입력하거나 접속의 기본 DB를 설정해 주세요.")
                 return
             }
             try await ss.use(sdb)
@@ -161,15 +161,15 @@ struct CompareView: View {
             // 보정 SQL 은 대상 DB 문법으로 만든다. 종류가 다르면 MySQL 의 SHOW CREATE 결과는 쓰지 않는다.
             if s.kind != t.kind {
                 creates = [:]
-                app.log(.warning, .compare, "기준(\(s.kind.title))과 대상(\(t.kind.title)) DB 종류가 달라요. 타입 이름 차이로 '다름'이 많이 나올 수 있어요.")
+                app.log(.warning, .compare, tr("기준(%@)과 대상(%@) DB 종류가 달라요. 타입 이름 차이로 '다름'이 많이 나올 수 있어요.", "\(s.kind.title)", "\(t.kind.title)"))
             }
             let result = SchemaDiff.compare(source: source, target: target, createStatements: creates, dialect: ts.dialect)
             report = result
             selection = nil
             app.log(.success, .compare,
-                    "\(s.name)/\(sdb) → \(t.name)/\(tdb) 비교 완료 · 누락 \(result.missingCount), 다름 \(result.differentCount)")
+                    tr("%@/%@ → %@/%@ 비교 완료 · 누락 %@, 다름 %@", "\(s.name)", "\(sdb)", "\(t.name)", "\(tdb)", "\(result.missingCount)", "\(result.differentCount)"))
         } catch {
-            self.error = app.logError(error, .compare, context: "스키마 비교 실패")
+            self.error = app.logError(error, .compare, context: tr("스키마 비교 실패"))
         }
     }
 }

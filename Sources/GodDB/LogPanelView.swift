@@ -14,22 +14,22 @@ struct MainStatusBar: View {
                     .truncationMode(.tail)
                     .foregroundStyle(last.level == .error ? .red : .secondary)
             } else {
-                Text("준비됨").foregroundStyle(.secondary)
+                Text(tr("준비됨")).foregroundStyle(.secondary)
             }
             Spacer()
             if app.errorCount > 0 {
                 Label("\(app.errorCount)", systemImage: "exclamationmark.octagon.fill")
                     .foregroundStyle(.red)
-                    .help("오류 \(app.errorCount)건")
+                    .help(tr("오류 %@건", "\(app.errorCount)"))
             }
             Button {
                 app.toggleLog()
             } label: {
-                Label("상태창", systemImage: app.showLog ? "chevron.down" : "chevron.up")
+                Label(tr("상태창"), systemImage: app.showLog ? "chevron.down" : "chevron.up")
             }
             .buttonStyle(.borderless)
             .keyboardShortcut("l", modifiers: [.command, .shift])
-            .help("상태창 열기/닫기 (⇧⌘L)")
+            .help(tr("상태창 열기/닫기 (⇧⌘L)"))
         }
         .font(.callout)
         .padding(.horizontal, 10)
@@ -54,22 +54,22 @@ struct LogPanelView: View {
         @Bindable var app = app
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Text("상태창").font(.headline)
-                Toggle("오류만", isOn: $errorsOnly).toggleStyle(.checkbox)
+                Text(tr("상태창")).font(.headline)
+                Toggle(tr("오류만"), isOn: $errorsOnly).toggleStyle(.checkbox)
                 Spacer()
                 Button {
                     Pasteboard.copy(visible.reversed().map(\.fullText).joined(separator: "\n\n"))
-                } label: { Label("전체 복사", systemImage: "doc.on.doc") }
+                } label: { Label(tr("전체 복사"), systemImage: "doc.on.doc") }
                     .disabled(visible.isEmpty)
                 Button {
                     app.clearLogs()
-                } label: { Label("지우기", systemImage: "trash") }
+                } label: { Label(tr("지우기"), systemImage: "trash") }
                     .disabled(app.logs.isEmpty)
                 Button {
                     app.showLog = false
                 } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless)
-                    .help("닫기")
+                    .help(tr("닫기"))
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, 10)
@@ -77,7 +77,7 @@ struct LogPanelView: View {
             Divider()
 
             if visible.isEmpty {
-                Text(errorsOnly ? "오류가 없어요." : "아직 기록이 없어요.")
+                Text(errorsOnly ? tr("오류가 없어요.") : tr("아직 기록이 없어요."))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -108,7 +108,7 @@ struct LogRow: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
             LevelIcon(level: entry.level)
-            Text(entry.source.rawValue)
+            Text(entry.source.title)
                 .font(.caption)
                 .padding(.horizontal, 5)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
@@ -149,13 +149,13 @@ struct LogDetail: View {
                     }
                     Button {
                         Pasteboard.copy(entry.fullText)
-                    } label: { Label("이 항목 복사", systemImage: "doc.on.doc") }
+                    } label: { Label(tr("이 항목 복사"), systemImage: "doc.on.doc") }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
             }
         } else {
-            Text("항목을 선택하면 자세한 내용이 나와요.")
+            Text(tr("항목을 선택하면 자세한 내용이 나와요."))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

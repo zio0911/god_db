@@ -39,9 +39,9 @@ struct ContentView: View {
                 ConnectionBadge()
             }
             ToolbarItem(placement: .principal) {
-                Picker("모드", selection: $app.mode) {
-                    Label("쿼리", systemImage: "terminal").tag(MainMode.query)
-                    Label("스키마 비교", systemImage: "arrow.left.arrow.right").tag(MainMode.compare)
+                Picker(tr("모드"), selection: $app.mode) {
+                    Label(tr("쿼리"), systemImage: "terminal").tag(MainMode.query)
+                    Label(tr("스키마 비교"), systemImage: "arrow.left.arrow.right").tag(MainMode.compare)
                 }
                 .pickerStyle(.segmented)
                 .labelStyle(.titleAndIcon)
@@ -73,21 +73,21 @@ struct ConnectionBadge: View {
                         .background(.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                 }
                 if app.selectedProfile?.readOnly == true {
-                    Text("읽기전용").font(.caption2).foregroundStyle(.red).padding(.horizontal, 4)
+                    Text(tr("읽기전용")).font(.caption2).foregroundStyle(.red).padding(.horizontal, 4)
                         .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
                 }
             case .connecting:
                 ProgressView().controlSize(.small)
-                Text("연결 중…")
+                Text(tr("연결 중…"))
             case .failed:
                 Circle().fill(.red).frame(width: 8, height: 8)
-                Text("연결 실패")
+                Text(tr("연결 실패"))
             case .disconnected:
                 Circle().fill(.secondary).frame(width: 8, height: 8)
-                Text("연결 안 됨").foregroundStyle(.secondary)
+                Text(tr("연결 안 됨")).foregroundStyle(.secondary)
             }
             if app.connectedCount > 1 {
-                Text("· 열린 접속 \(app.connectedCount)개").foregroundStyle(.secondary)
+                Text(tr("· 열린 접속 %@개", "\(app.connectedCount)")).foregroundStyle(.secondary)
             }
         }
         .font(.callout)
@@ -108,23 +108,23 @@ struct PasswordPromptView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("\(prompt.profile.name) 비밀번호", systemImage: "key").font(.headline)
+            Label(tr("%@ 비밀번호", "\(prompt.profile.name)"), systemImage: "key").font(.headline)
             Text("\(prompt.profile.username)@\(prompt.profile.host):\(String(prompt.profile.port))")
                 .font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
             if let message = prompt.message {
                 Text(message).foregroundStyle(.red).font(.callout)
             }
-            SecureField("비밀번호", text: $password)
+            SecureField(tr("비밀번호"), text: $password)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(submit)
-            Toggle("macOS 키체인에 비밀번호 저장", isOn: $save)
-            Text(save ? "다음부터는 묻지 않고 바로 연결해요." : "앱을 끄기 전까지만 기억하고, 다음 실행 때 다시 물어봐요.")
+            Toggle(tr("macOS 키체인에 비밀번호 저장"), isOn: $save)
+            Text(save ? tr("다음부터는 묻지 않고 바로 연결해요.") : tr("앱을 끄기 전까지만 기억하고, 다음 실행 때 다시 물어봐요."))
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("취소") { app.passwordPrompt = nil }
+                Button(tr("취소")) { app.passwordPrompt = nil }
                     .keyboardShortcut(.cancelAction)
-                Button("연결", action: submit)
+                Button(tr("연결"), action: submit)
                     .keyboardShortcut(.defaultAction)
             }
         }

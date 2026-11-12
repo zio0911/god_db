@@ -63,7 +63,7 @@ public enum SchemaDiff {
             guard let t = targetByName[s.name.lowercased()] else {
                 var create = createStatements[s.name] ?? dialect.createTableSQL(s)
                 if !create.hasSuffix(";") { create += ";" }
-                items.append(.init(kind: .missingTable, table: s.name, object: nil, detail: "테이블 없음", fixSQL: create))
+                items.append(.init(kind: .missingTable, table: s.name, object: nil, detail: tr("테이블 없음"), fixSQL: create))
                 continue
             }
             let tableItems = compareTable(source: s, target: t, dialect: dialect)
@@ -71,7 +71,7 @@ public enum SchemaDiff {
             items += tableItems
         }
         for t in target where !sourceNames.contains(t.name.lowercased()) {
-            items.append(.init(kind: .extraTable, table: t.name, object: nil, detail: "대상에만 있음", fixSQL: nil))
+            items.append(.init(kind: .extraTable, table: t.name, object: nil, detail: tr("대상에만 있음"), fixSQL: nil))
         }
         return SchemaDiffReport(items: items, matchedTables: matched)
     }
@@ -92,13 +92,13 @@ public enum SchemaDiff {
                                        fixSQL: sql(.modifyColumn(old: tc, new: c))))
                 }
             } else {
-                items.append(.init(kind: .missingColumn, table: s.name, object: c.name, detail: "컬럼 없음",
+                items.append(.init(kind: .missingColumn, table: s.name, object: c.name, detail: tr("컬럼 없음"),
                                    fixSQL: sql(.addColumn(c, after: previous))))
             }
             previous = c.name
         }
         for c in t.columns where !sColNames.contains(c.name.lowercased()) {
-            items.append(.init(kind: .extraColumn, table: s.name, object: c.name, detail: "대상에만 있음", fixSQL: nil))
+            items.append(.init(kind: .extraColumn, table: s.name, object: c.name, detail: tr("대상에만 있음"), fixSQL: nil))
         }
 
         // 기본 키는 DB 마다 이름이 달라서 이름이 아니라 "기본 키" 끼리 비교한다.
@@ -116,23 +116,23 @@ public enum SchemaDiff {
                                        fixSQL: dialect.render([.dropIndex(ti), .addIndex(fixed)], table: t.name)))
                 }
             } else {
-                items.append(.init(kind: .missingIndex, table: s.name, object: i.name, detail: "인덱스 없음",
+                items.append(.init(kind: .missingIndex, table: s.name, object: i.name, detail: tr("인덱스 없음"),
                                    fixSQL: sql(.addIndex(i))))
             }
         }
         for i in t.indexes where !sIdxKeys.contains(key(i)) {
-            items.append(.init(kind: .extraIndex, table: s.name, object: i.name, detail: "대상에만 있음", fixSQL: nil))
+            items.append(.init(kind: .extraIndex, table: s.name, object: i.name, detail: tr("대상에만 있음"), fixSQL: nil))
         }
         return items
     }
 
     public static func columnDifferences(_ s: ColumnMeta, _ t: ColumnMeta) -> [String] {
         var d: [String] = []
-        if s.columnType.lowercased() != t.columnType.lowercased() { d.append("타입 \(t.columnType) → \(s.columnType)") }
+        if s.columnType.lowercased() != t.columnType.lowercased() { d.append(tr("타입 %@ → %@", "\(t.columnType)", "\(s.columnType)")) }
         if s.nullable != t.nullable { d.append(s.nullable ? "NOT NULL → NULL" : "NULL → NOT NULL") }
-        if s.defaultValue != t.defaultValue { d.append("기본값 \(t.defaultValue ?? "없음") → \(s.defaultValue ?? "없음")") }
+        if s.defaultValue != t.defaultValue { d.append(tr("기본값 %@ → %@", "\(t.defaultValue ?? tr("없음"))", "\(s.defaultValue ?? tr("없음"))")) }
         if normalizedExtra(s.extra) != normalizedExtra(t.extra) { d.append("EXTRA \(t.extra) → \(s.extra)") }
-        if s.comment != t.comment { d.append("코멘트 변경") }
+        if s.comment != t.comment { d.append(tr("코멘트 변경")) }
         return d
     }
 

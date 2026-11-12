@@ -67,12 +67,12 @@ public enum TableAlterError: LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .emptyColumnName: return "이름이 비어 있는 컬럼이 있어요."
-        case .emptyColumnType(let c): return "\(c) 컬럼의 타입이 비어 있어요."
-        case .duplicateColumn(let c): return "컬럼 이름 \(c) 이(가) 중복돼요."
-        case .emptyIndex(let i): return "\(i.isEmpty ? "이름 없는" : i) 인덱스에 이름 또는 컬럼이 없어요."
-        case .unknownIndexColumn(let i, let c): return "\(i) 인덱스의 컬럼 \(c) 이(가) 테이블에 없어요."
-        case .noColumns: return "컬럼이 최소 1개는 있어야 해요."
+        case .emptyColumnName: return tr("이름이 비어 있는 컬럼이 있어요.")
+        case .emptyColumnType(let c): return tr("%@ 컬럼의 타입이 비어 있어요.", "\(c)")
+        case .duplicateColumn(let c): return tr("컬럼 이름 %@ 이(가) 중복돼요.", "\(c)")
+        case .emptyIndex(let i): return tr("%@ 인덱스에 이름 또는 컬럼이 없어요.", "\(i.isEmpty ? tr("이름 없는") : i)")
+        case .unknownIndexColumn(let i, let c): return tr("%@ 인덱스의 컬럼 %@ 이(가) 테이블에 없어요.", "\(i)", "\(c)")
+        case .noColumns: return tr("컬럼이 최소 1개는 있어야 해요.")
         }
     }
 }

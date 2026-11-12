@@ -3,7 +3,9 @@
 사내용 macOS DB 클라이언트 — **MySQL / PostgreSQL / SQL Server**.
 SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https://github.com/vapor/postgres-nio)(텍스트 결과 패치본, `Vendor/`) + [FreeTDS](https://www.freetds.org).
 
-상세 기능 명세: [docs/FEATURES.md](docs/FEATURES.md)
+상세 기능 명세: [docs/FEATURES.md](docs/FEATURES.md) · 한국어 / English (설정 `⌘,`)
+
+라이선스: [MIT](LICENSE) © 2026 zio0911 · 사용한 오픈소스: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ## 기능 요약
 

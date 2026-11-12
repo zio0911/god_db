@@ -7,9 +7,9 @@ public enum SSHTunnelError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .noFreePort: return "로컬 포트를 확보하지 못했어요."
-        case .exited(let msg): return "SSH 터널 연결에 실패했어요.\n\(msg)"
-        case .timeout: return "SSH 터널이 15초 안에 열리지 않았어요."
+        case .noFreePort: return tr("로컬 포트를 확보하지 못했어요.")
+        case .exited(let msg): return tr("SSH 터널 연결에 실패했어요.\n%@", "\(msg)")
+        case .timeout: return tr("SSH 터널이 15초 안에 열리지 않았어요.")
         }
     }
 }
@@ -60,7 +60,7 @@ public final class SSHTunnel: @unchecked Sendable {
             if !process.isRunning {
                 let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                 let msg = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                throw SSHTunnelError.exited(msg.isEmpty ? "ssh 종료 코드 \(process.terminationStatus)" : msg)
+                throw SSHTunnelError.exited(msg.isEmpty ? tr("ssh 종료 코드 %@", "\(process.terminationStatus)") : msg)
             }
             if SSHTunnel.canConnect(port: localPort) { return }
             try await Task.sleep(nanoseconds: 200_000_000)

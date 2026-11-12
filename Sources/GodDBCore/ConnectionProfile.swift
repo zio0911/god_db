@@ -26,7 +26,7 @@ public enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable 
 
     /// 사이드바 DB 선택 드롭다운이 의미하는 것
     public var containerTitle: String {
-        self == .postgres ? "스키마" : "DB"
+        self == .postgres ? tr("스키마") : "DB"
     }
 }
 
@@ -48,7 +48,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     public init(
         id: UUID = UUID(),
         kind: DatabaseKind = .mysql,
-        name: String = "새 접속",
+        name: String = tr("새 접속"),
         host: String = "",
         port: Int = 3306,
         username: String = "",

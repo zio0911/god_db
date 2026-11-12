@@ -26,7 +26,7 @@ private enum MessageBox {
 }
 
 private let errHandler: EHANDLEFUNC = { _, _, dberr, _, dberrstr, oserrstr in
-    var text = dberrstr.map { String(cString: $0) } ?? "DB-Library 오류"
+    var text = dberrstr.map { String(cString: $0) } ?? tr("DB-Library 오류")
     if let os = oserrstr.map({ String(cString: $0) }), !os.isEmpty, os != "Success" { text += " (\(os))" }
     MessageBox.append(MSSQLError(number: Int(dberr), message: text))
     return INT_CANCEL
@@ -61,7 +61,7 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
                 DispatchQueue.global().async {
                     MessageBox.reset()
                     guard let login = dblogin() else {
-                        cont.resume(throwing: MSSQLError(number: 0, message: "로그인 정보를 만들 수 없어요."))
+                        cont.resume(throwing: MSSQLError(number: 0, message: tr("로그인 정보를 만들 수 없어요.")))
                         return
                     }
                     defer { dbloginfree(login) }
@@ -82,7 +82,7 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
                         let errors = MessageBox.errors
                         // 서버 메시지(로그인 실패 등)를 우선으로 보여준다.
                         let main = errors.first { $0.number < 20000 } ?? errors.last
-                            ?? MSSQLError(number: 20009, message: "서버에 연결할 수 없어요.")
+                            ?? MSSQLError(number: 20009, message: tr("서버에 연결할 수 없어요."))
                         cont.resume(throwing: main)
                     }
                 }
@@ -118,7 +118,7 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
         MessageBox.reset()
         func fail() -> MSSQLError {
             let errors = MessageBox.errors
-            return errors.first { $0.number < 20000 } ?? errors.last ?? MSSQLError(number: 0, message: "알 수 없는 오류")
+            return errors.first { $0.number < 20000 } ?? errors.last ?? MSSQLError(number: 0, message: tr("알 수 없는 오류"))
         }
         guard dbcmd(p, sql) == SUCCEED, dbsqlexec(p) == SUCCEED else {
             dbcancel(p)

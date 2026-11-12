@@ -6,8 +6,8 @@ public enum DBError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .readOnlyBlocked: return "읽기전용 접속이라 이 쿼리는 실행할 수 없어요. (SELECT / SHOW / DESC / EXPLAIN 만 허용)"
-        case .notConnected: return "DB 연결이 끊어졌어요. 다시 연결해 주세요."
+        case .readOnlyBlocked: return tr("읽기전용 접속이라 이 쿼리는 실행할 수 없어요. (SELECT / SHOW / DESC / EXPLAIN 만 허용)")
+        case .notConnected: return tr("DB 연결이 끊어졌어요. 다시 연결해 주세요.")
         }
     }
 }
@@ -95,7 +95,7 @@ public actor DBSession {
         }
         let kw = SQLText.firstKeyword(sql)
         let message: String? = columns.isEmpty
-            ? (["SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "WITH"].contains(kw) ? "결과 없음" : "실행 완료")
+            ? (["SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "WITH"].contains(kw) ? tr("결과 없음") : tr("실행 완료"))
             : nil
         if kw == "USE" { current = (try? await currentContainer()) ?? current }
         var result = QueryResult(columns: columns, rows: rows, elapsed: elapsed, message: message)

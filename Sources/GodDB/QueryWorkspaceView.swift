@@ -22,15 +22,15 @@ struct QueryWorkspaceView: View {
     private var emptyState: some View {
         if app.state == .connected, let name = app.selectedProfile?.name {
             ContentUnavailableView {
-                Label("열린 쿼리 탭이 없어요", systemImage: "terminal")
+                Label(tr("열린 쿼리 탭이 없어요"), systemImage: "terminal")
             } description: {
-                Text("\(name) / \(app.currentDatabase) 에서 쿼리를 쓰려면 새 탭을 여세요.")
+                Text(tr("%@ / %@ 에서 쿼리를 쓰려면 새 탭을 여세요.", "\(name)", "\(app.currentDatabase)"))
             } actions: {
-                Button("새 쿼리 탭 (⌘T)") { app.addTab() }
+                Button(tr("새 쿼리 탭 (⌘T)")) { app.addTab() }
             }
         } else {
-            ContentUnavailableView("접속을 연결하세요", systemImage: "cylinder.split.1x2",
-                                   description: Text("왼쪽에서 접속을 누르면 연결되고, 그 접속의 쿼리 탭이 열려요.\n여러 접속을 동시에 열어 탭마다 다른 DB 에서 쿼리할 수 있어요."))
+            ContentUnavailableView(tr("접속을 연결하세요"), systemImage: "cylinder.split.1x2",
+                                   description: Text(tr("왼쪽에서 접속을 누르면 연결되고, 그 접속의 쿼리 탭이 열려요.\n여러 접속을 동시에 열어 탭마다 다른 DB 에서 쿼리할 수 있어요.")))
         }
     }
 }
@@ -47,8 +47,8 @@ struct TabStrip: View {
                 }
                 Button { app.addTab() } label: { Image(systemName: "plus") }
                     .buttonStyle(.borderless)
-                    .help(app.selectedProfile.map { "\($0.name) / \(app.currentDatabase) 에 새 쿼리 탭 (⌘T)" }
-                          ?? "접속을 먼저 연결하세요")
+                    .help(app.selectedProfile.map { tr("%@ / %@ 에 새 쿼리 탭 (⌘T)", "\($0.name)", "\(app.currentDatabase)") }
+                          ?? tr("접속을 먼저 연결하세요"))
                     .disabled(app.state != .connected)
                     .padding(.leading, 4)
             }
@@ -75,7 +75,7 @@ struct TabChip: View {
             if let profile { KindBadge(kind: profile.kind) }
             VStack(alignment: .leading, spacing: 0) {
                 Text(tab.title).lineLimit(1)
-                Text("\(profile?.name ?? "삭제된 접속")\(tab.database.isEmpty ? "" : " / \(tab.database)")")
+                Text("\(profile?.name ?? tr("삭제된 접속"))\(tab.database.isEmpty ? "" : " / \(tab.database)")")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -85,7 +85,7 @@ struct TabChip: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("탭 닫기")
+            .help(tr("탭 닫기"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -95,11 +95,11 @@ struct TabChip: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { app.selectTab(tab.id) }
-        .help(connected ? "\(profile?.name ?? "") / \(tab.database)" : "연결이 끊긴 접속이에요. 왼쪽에서 다시 연결하세요.")
+        .help(connected ? "\(profile?.name ?? "") / \(tab.database)" : tr("연결이 끊긴 접속이에요. 왼쪽에서 다시 연결하세요."))
         .contextMenu {
-            Button("이 접속에 새 탭") { app.addTab(for: tab.profileID) }
-            Button("탭 닫기") { app.closeTab(tab.id) }
-            Button("다른 탭 모두 닫기") {
+            Button(tr("이 접속에 새 탭")) { app.addTab(for: tab.profileID) }
+            Button(tr("탭 닫기")) { app.closeTab(tab.id) }
+            Button(tr("다른 탭 모두 닫기")) {
                 for other in app.tabs where other.id != tab.id { app.closeTab(other.id) }
             }
         }
@@ -139,19 +139,19 @@ struct QueryTabView: View {
             controller.schemaProvider = { [app] in (app.tables, app.routines) }
             controller.focus()
         }
-        .alert("전체 \(pendingScript?.count ?? 0)개 문장을 실행할까요?",
+        .alert(tr("전체 %@개 문장을 실행할까요?", "\(pendingScript?.count ?? 0)"),
                isPresented: Binding(get: { pendingScript != nil }, set: { if !$0 { pendingScript = nil } })) {
-            Button("전체 실행", role: .destructive) {
+            Button(tr("전체 실행"), role: .destructive) {
                 if let script = pendingScript { Task { await app.runScript(script) } }
                 pendingScript = nil
             }
-            Button("취소", role: .cancel) { pendingScript = nil }
+            Button(tr("취소"), role: .cancel) { pendingScript = nil }
         } message: {
             let writes = (pendingScript ?? []).filter { !SQLText.isReadOnly($0) }
-            Text("선택 영역이 없어서 편집기의 모든 문장을 위에서부터 실행해요.\n변경 문 \(writes.count)개 포함: "
+            Text(tr("선택 영역이 없어서 편집기의 모든 문장을 위에서부터 실행해요.\n변경 문 %@개 포함: ", "\(writes.count)")
                  + writes.prefix(3).map { AppState.oneLine($0, max: 40) }.joined(separator: " / ")
                  + (writes.count > 3 ? " …" : "")
-                 + "\n\n일부만 실행하려면 그 부분을 선택하고 실행하세요.")
+                 + tr("\n\n일부만 실행하려면 그 부분을 선택하고 실행하세요."))
         }
     }
 
@@ -161,32 +161,32 @@ struct QueryTabView: View {
             Button {
                 run(explain: false)
             } label: {
-                Label("실행", systemImage: "play.fill")
+                Label(tr("실행"), systemImage: "play.fill")
             }
             .keyboardShortcut(.return, modifiers: .command)
             .buttonStyle(.borderedProminent)
             .disabled(tab.running)
-            .help("선택 영역만 실행, 선택이 없으면 전체를 위에서부터 실행 (⌘↩)")
+            .help(tr("선택 영역만 실행, 선택이 없으면 전체를 위에서부터 실행 (⌘↩)"))
 
             Button {
                 run(explain: true)
             } label: {
-                Label("실행 계획", systemImage: "point.3.connected.trianglepath.dotted")
+                Label(tr("실행 계획"), systemImage: "point.3.connected.trianglepath.dotted")
             }
             .keyboardShortcut(.return, modifiers: [.command, .shift])
             .disabled(tab.running)
-            .help("EXPLAIN 으로 실행 계획 보기 (⇧⌘↩)")
+            .help(tr("EXPLAIN 으로 실행 계획 보기 (⇧⌘↩)"))
 
-            Picker("페이지", selection: $app.rowLimit) {
+            Picker(tr("페이지"), selection: $app.rowLimit) {
                 Text("100").tag(100)
                 Text("500").tag(500)
                 Text("1000").tag(1000)
                 Text("5000").tag(5000)
-                Text("제한 없음").tag(0)
+                Text(tr("제한 없음")).tag(0)
             }
             .fixedSize()
             Spacer()
-            Text("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘T 새 탭").font(.caption).foregroundStyle(.secondary)
+            Text(tr("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘T 새 탭")).font(.caption).foregroundStyle(.secondary)
         }
         .padding(8)
     }
@@ -228,7 +228,7 @@ struct ResultPane: View {
                 Divider()
             }
             if tab.running {
-                ProgressView("실행 중…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView(tr("실행 중…")).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = tab.error {
                 ScrollView {
                     Text(error)
@@ -249,7 +249,7 @@ struct ResultPane: View {
                     PlanWarningsView(result: result, tree: tab.planTree)
                 }
                 if result.columns.isEmpty {
-                    Text(result.message ?? "실행 완료")
+                    Text(result.message ?? tr("실행 완료"))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -268,7 +268,7 @@ struct ResultPane: View {
                 Divider()
                 StatusBar(result: result, selectedCount: selection.count, onPage: onPage, onCount: onCount)
             } else {
-                Text("쿼리를 실행하면 결과가 여기 나와요.")
+                Text(tr("쿼리를 실행하면 결과가 여기 나와요."))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -293,7 +293,7 @@ extension ResultPane {
     @ViewBuilder
     func resultBody(_ result: QueryResult) -> some View {
         if result.columns.isEmpty {
-            Text(result.message ?? "실행 완료")
+            Text(result.message ?? tr("실행 완료"))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -312,7 +312,7 @@ struct ResultTabsBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
                 ForEach(Array(results.enumerated()), id: \.offset) { index, r in
-                    let summary = r.columns.isEmpty ? (r.message ?? "완료") : "\(r.rows.count)행"
+                    let summary = r.columns.isEmpty ? (r.message ?? tr("완료")) : tr("%@행", "\(r.rows.count)")
                     Button {
                         onSelect(index)
                     } label: {
@@ -359,7 +359,7 @@ struct ResultGrid: View {
         }
         .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: QueryResult.Row.ID.self) { ids in
-            Button("행 복사 (CSV)") {
+            Button(tr("행 복사 (CSV)")) {
                 var copy = result
                 copy.rows = result.rows.filter { ids.contains($0.id) }
                 Pasteboard.copy(copy.csv())
@@ -384,12 +384,12 @@ struct RowDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("행 상세").font(.headline)
-                Text("\(rowNumber)번째 행").foregroundStyle(.secondary)
+                Text(tr("행 상세")).font(.headline)
+                Text(tr("%@번째 행", "\(rowNumber)")).foregroundStyle(.secondary)
                 Spacer()
                 Button { onClose() } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless)
-                    .help("닫기")
+                    .help(tr("닫기"))
             }
             .padding(8)
             Divider()
@@ -402,10 +402,10 @@ struct RowDetailView: View {
                                 Text(column.name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                 Spacer()
                                 if let value {
-                                    Text("\(value.count)자").font(.caption2).foregroundStyle(.tertiary)
+                                    Text(tr("%@자", "\(value.count)")).font(.caption2).foregroundStyle(.tertiary)
                                     Button { Pasteboard.copy(value) } label: { Image(systemName: "doc.on.doc") }
                                         .buttonStyle(.borderless)
-                                        .help("값 복사")
+                                        .help(tr("값 복사"))
                                 }
                             }
                             Text(value ?? "NULL")
@@ -436,15 +436,15 @@ struct PlanWarningsView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
-                Text("실행 계획").font(.headline)
+                Text(tr("실행 계획")).font(.headline)
                 if warnings.isEmpty {
-                    Label("특별한 주의사항 없음", systemImage: "checkmark.circle").foregroundStyle(.green)
+                    Label(tr("특별한 주의사항 없음"), systemImage: "checkmark.circle").foregroundStyle(.green)
                 } else {
-                    Label("주의 \(warnings.count)건", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Label(tr("주의 %@건", "\(warnings.count)"), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 }
                 Spacer()
                 if tree != nil {
-                    Toggle("트리로 보기", isOn: $showTree).toggleStyle(.switch).controlSize(.small)
+                    Toggle(tr("트리로 보기"), isOn: $showTree).toggleStyle(.switch).controlSize(.small)
                 }
             }
             ForEach(warnings, id: \.self) { w in
@@ -489,23 +489,23 @@ struct StatusBar: View {
                 if result.isPaged {
                     pager
                 } else {
-                    Text("\(result.rows.count.formatted())행")
+                    Text(tr("%@행", "\(result.rows.count.formatted())"))
                 }
-                if selectedCount > 0 { Text("\(selectedCount)행 선택") }
+                if selectedCount > 0 { Text(tr("%@행 선택", "\(selectedCount)")) }
             }
             Text(String(format: "%.0fms", result.elapsed * 1000))
             if !result.columns.isEmpty && selectedCount == 0 && !result.isPaged {
-                Text("행을 클릭하면 상세가 나와요").foregroundStyle(.tertiary)
+                Text(tr("행을 클릭하면 상세가 나와요")).foregroundStyle(.tertiary)
             }
             Spacer()
             if !result.columns.isEmpty {
                 Button {
                     Pasteboard.copy(result.csv())
                 } label: {
-                    Label("CSV 복사", systemImage: "doc.on.doc")
+                    Label(tr("CSV 복사"), systemImage: "doc.on.doc")
                 }
                 .buttonStyle(.borderless)
-                .help("지금 보이는 페이지의 행을 CSV 로 복사")
+                .help(tr("지금 보이는 페이지의 행을 CSV 로 복사"))
             }
         }
         .font(.callout)
@@ -520,27 +520,27 @@ struct StatusBar: View {
         let last = result.rowOffset + result.rows.count
         HStack(spacing: 4) {
             Button { onPage(0) } label: { Image(systemName: "backward.end.fill") }
-                .disabled(result.page == 0).help("첫 페이지")
+                .disabled(result.page == 0).help(tr("첫 페이지"))
             Button { onPage(result.page - 1) } label: { Image(systemName: "chevron.left") }
-                .disabled(result.page == 0).help("이전 페이지")
-            Text(result.rows.isEmpty ? "0행" : "\(first.formatted())–\(last.formatted())행")
+                .disabled(result.page == 0).help(tr("이전 페이지"))
+            Text(result.rows.isEmpty ? tr("0행") : tr("%@–%@행", "\(first.formatted())", "\(last.formatted())"))
                 .monospacedDigit()
                 .foregroundStyle(.primary)
             Button { onPage(result.page + 1) } label: { Image(systemName: "chevron.right") }
-                .disabled(!result.hasMore).help("다음 페이지")
+                .disabled(!result.hasMore).help(tr("다음 페이지"))
             if let lastPage {
                 Button { onPage(lastPage) } label: { Image(systemName: "forward.end.fill") }
-                    .disabled(result.page >= lastPage).help("마지막 페이지")
+                    .disabled(result.page >= lastPage).help(tr("마지막 페이지"))
             }
         }
         .buttonStyle(.borderless)
         if let total = result.totalCount {
-            Text("/ 전체 \(total.formatted())행 · \(result.page + 1)/\((lastPage ?? 0) + 1)페이지")
+            Text(tr("/ 전체 %@행 · %@/%@페이지", "\(total.formatted())", "\(result.page + 1)", "\((lastPage ?? 0) + 1)"))
         } else {
-            Text("\(result.page + 1)페이지" + (result.hasMore ? " · 더 있음" : " · 끝"))
-            Button("전체 행 수") { onCount() }
+            Text(tr("%@페이지", "\(result.page + 1)") + (result.hasMore ? tr(" · 더 있음") : tr(" · 끝")))
+            Button(tr("전체 행 수")) { onCount() }
                 .buttonStyle(.borderless)
-                .help("SELECT COUNT(*) 로 전체 행 수를 세요 (큰 테이블은 오래 걸릴 수 있어요)")
+                .help(tr("SELECT COUNT(*) 로 전체 행 수를 세요 (큰 테이블은 오래 걸릴 수 있어요)"))
         }
     }
 }

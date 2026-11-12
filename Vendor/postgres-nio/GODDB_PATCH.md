@@ -1,6 +1,6 @@
 # GodDB 패치
 
-원본: https://github.com/vapor/postgres-nio (MIT)
+원본: https://github.com/vapor/postgres-nio 1.33.3 (MIT)
 
 변경 1줄: `Sources/PostgresNIO/New/PostgresFrontendMessageEncoder.swift` 의 Bind 메시지에서
 결과 컬럼 형식을 `binary` → `text` 로 바꿨다.
