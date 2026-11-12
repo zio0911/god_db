@@ -16,6 +16,8 @@ rm -rf "$STAGE" "$DMG"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+# DMG 를 마운트했을 때 디스크 아이콘도 앱 아이콘으로
+cp Resources/AppIcon.icns "$STAGE/.VolumeIcon.icns"
 cat > "$STAGE/읽어주세요.txt" <<TXT
 갓디비 $VERSION
 
@@ -32,6 +34,15 @@ SQL Server 를 쓰려면 FreeTDS 가 필요해요:
 소스: https://github.com/zio0911/god_db (MIT)
 TXT
 
-hdiutil create -volname "GodDB $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+# 읽기/쓰기 이미지로 만들어 볼륨 아이콘 표시를 켠 뒤 압축 이미지로 변환
+RW="build/GodDB-rw.dmg"
+rm -f "$RW"
+hdiutil create -volname "GodDB $VERSION" -srcfolder "$STAGE" -ov -format UDRW "$RW" >/dev/null 2>&1
+MNT=$(mktemp -d)
+hdiutil attach "$RW" -nobrowse -mountpoint "$MNT" >/dev/null 2>&1
+if command -v SetFile >/dev/null 2>&1; then SetFile -a C "$MNT"; else xattr -wx com.apple.FinderInfo "0000000000000000040000000000000000000000000000000000000000000000" "$MNT"; fi
+hdiutil detach "$MNT" >/dev/null 2>&1
+hdiutil convert "$RW" -format UDZO -ov -o "$DMG" >/dev/null 2>&1
+rm -f "$RW"; rmdir "$MNT" 2>/dev/null || true
 rm -rf "$STAGE"
 echo "완료: $(pwd)/$DMG ($(du -h "$DMG" | cut -f1))"

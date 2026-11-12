@@ -38,6 +38,15 @@ swift run                 # 개발 실행
 
 Xcode 로 열기: `open Package.swift`
 
+## 앱 아이콘
+
+`Resources/AppIcon.icns` (후광이 있는 DB). 다시 만들려면:
+
+```bash
+swift scripts/draw-icon.swift iconset Resources/AppIcon.iconset
+iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns && rm -rf Resources/AppIcon.iconset
+```
+
 ## DMG 만들기 (배포용)
 
 ```bash
