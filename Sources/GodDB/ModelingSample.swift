@@ -85,6 +85,14 @@ enum ModelingSample {
         var c = ConnectionProfile(name: "shop-prd", readOnly: true); c.group = "운영"
         let d = ConnectionProfile(kind: .redis, name: "local redis", port: 6379)
         app.profiles = [d, a, b, c]
+        var sample = QueryResult(columns: ["member_id", "email"], rows: (0..<500).map { [String($0), "user\($0)@sample.com"] }, elapsed: 0.01)
+        sample.sql = "SELECT * FROM tb_member"; sample.pageSize = 500; sample.hasMore = true
+        let req = ExportRequest(tabID: UUID(), result: sample, kind: .mysql, visibleRows: 500, canFetchAll: true,
+                                knownTotal: 12_345, stable: true, sort: nil, defaultTable: "tb_member", baseName: "tb_member")
+        shot("export-sheet", ExportSheet(request: req), size: NSSize(width: 540, height: 640))
+        let req2 = ExportRequest(tabID: UUID(), result: sample, kind: .mysql, visibleRows: 500, canFetchAll: true,
+                                 knownTotal: nil, stable: false, sort: nil, defaultTable: "table", baseName: "query")
+        shot("export-sheet-unstable", ExportSheet(request: req2), size: NSSize(width: 540, height: 680))
         shot("sidebar-groups", List { Section(tr("접속")) { ProfileList() } }.listStyle(.sidebar), size: NSSize(width: 300, height: 320))
     }
 }
