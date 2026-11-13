@@ -138,7 +138,13 @@ final class AppState {
     init() {
         profiles = store.load()
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, ClientInfo.identity), detail: ClientInfo.summary())
+        // PC 상세(IP 등)는 백그라운드에서 모아 기록한다. 시작 화면을 막지 않도록.
+        Task.detached(priority: .utility) {
+            let identity = ClientInfo.identity, summary = ClientInfo.summary()
+            await MainActor.run { [weak self] in
+                self?.log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, identity), detail: summary)
+            }
+        }
         // 90일 지난 다이어그램 AI 대화 정리
         DispatchQueue.global(qos: .utility).async { DiagramChatStore.shared.pruneAll() }
         modeling.onError = { [weak self] context, error in self?.logError(error, .schema, context: context) }

@@ -52,6 +52,15 @@ struct LogFileTests {
 
 @Suite("ClientInfo")
 struct ClientInfoTests {
+    /// 이름 읽기는 네트워크 조회 없이 바로 끝나야 한다 (앱 시작이 멈추던 문제)
+    @Test func namesAreQuickAndNonEmpty() {
+        let start = Date()
+        #expect(!ClientInfo.computerName.isEmpty)
+        #expect(!ClientInfo.hostName.isEmpty)
+        #expect(!ClientInfo.identity.contains(" "))
+        #expect(Date().timeIntervalSince(start) < 1)
+    }
+
     @Test func identityAndSummary() {
         #expect(ClientInfo.identity.hasPrefix(NSUserName() + "@"))
         #expect(!ClientInfo.identity.contains(" "))
