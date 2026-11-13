@@ -1,6 +1,6 @@
 # GodDB 기능 명세
 
-> 버전 0.9.1 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+, Redis 6+
+> 버전 1.0.0 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+, Redis 6+
 > 이 문서는 기능이 추가·변경될 때마다 함께 갱신한다.
 
 ## 목차
@@ -562,7 +562,8 @@
 
 ## 18. 변경 이력
 
-### 0.10.0 (개발 중)
+### 1.0.0
+- **Developer ID 서명 + Apple 공증**: 받아서 끌어다 놓으면 경고 없이 실행
 - **감사 로그 정리**: `goddb-audit-날짜.tsv` 한 줄 = 한 행위 (시각 · 사용자@PC · 구분 · 대상 · 결과 · 내용), 조회/추가/수정/삭제/구조변경 자동 구분, AI 는 요약 한 줄만
 - 결과 **내보내기**: CSV · TSV · Excel · JSON · SQL INSERT · Markdown, 전체 결과는 5,000행씩 나눠 조회하며 바로 기록 (COUNT 확인, 진행률, 취소, 정렬 기준 자동)
 
