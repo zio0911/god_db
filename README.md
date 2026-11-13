@@ -57,7 +57,11 @@ iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns && rm -rf R
 ```
 
 - 버전은 `scripts/build-app.sh` 의 `CFBundleShortVersionString` 에서 정한다.
-- 지금은 개발자 서명(Developer ID)·공증(notarization) 없이 임시 서명이라, 받은 사람이 처음 열 때 "확인되지 않은 개발자" 경고가 뜬다 → 우클릭 > 열기.
+- 지금은 개발자 서명(Developer ID)·공증(notarization) 없이 임시 서명이라, 처음 열 때 macOS(게이트키퍼)가 막는다. macOS 15 부터는 우클릭 > 열기로 넘어가지지 않는다.
+  - **방법 A (권장)**: DMG 를 열기 전에 터미널에서 `xattr -d com.apple.quarantine ~/Downloads/GodDB-*.dmg` → DMG 열고 Applications 로 옮겨 실행.
+  - **방법 B**: 한 번 실행 → 경고 창 닫기 → 시스템 설정 > 개인정보 보호 및 보안 > "GodDB 이(가) 차단되었습니다" 옆 **그래도 열기**.
+  - **경고 없이 Dock 아이콘만 계속 튀고 창이 안 뜨면**: 시스템 설정 > 개인정보 보호 및 보안 > "다음에서 다운로드한 응용 프로그램 허용" 을 **App Store** 로 바꿨다가 다시 **App Store 및 확인된 개발자** 로 돌린 뒤 다시 실행. (게이트키퍼 검사가 멈춘 상태가 풀린다)
+  - `/Applications` 안의 앱에 `xattr -cr` 를 하면 `Operation not permitted` 가 날 수 있다(앱 관리 권한). 방법 A 처럼 DMG 단계에서 지운다.
 - FreeTDS·OpenSSL 라이브러리는 앱 안(`Contents/Frameworks`)에 넣어 배포하므로 받는 Mac 에 Homebrew 가 없어도 된다. (빌드하는 Mac 에만 `brew install freetds` 필요)
 - 서명·DMG 조립은 iCloud 밖 임시 폴더에서 한다. iCloud 폴더에서는 확장 속성 때문에 서명이 깨진다.
 
