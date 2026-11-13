@@ -1,0 +1,38 @@
+name: 버그 신고
+description: 잘못 동작하는 것을 알려 주세요
+labels: ["type:bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: GodDB 버전
+      description: 설정(⌘,) 에서 확인
+      placeholder: "0.9.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: db
+    attributes:
+      label: DB 종류
+      options: [MySQL, PostgreSQL, SQL Server, Redis, 해당 없음]
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 방법
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 동작 / 실제 동작
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: 상태창 / 로그
+      description: ⇧⌘L 상태창 내용 또는 ~/Library/Logs/GodDB 일부. 호스트·계정·데이터는 지우고 붙여 주세요.
+      render: text

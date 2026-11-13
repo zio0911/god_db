@@ -1,0 +1,12 @@
+changelog:
+  exclude:
+    labels: [skip-changelog]
+  categories:
+    - title: 새 기능
+      labels: [type:feature]
+    - title: 버그 수정
+      labels: [type:bug]
+    - title: 문서
+      labels: [type:docs]
+    - title: 빌드 · CI · 기타
+      labels: ["*"]
