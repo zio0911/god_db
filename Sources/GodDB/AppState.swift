@@ -111,6 +111,8 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    /// 결과 내보내기 설정 창
+    var exportRequest: ExportRequest?
     var showExportConnections = false
     var importRequest: ImportRequest?
     /// 접속 그룹 이름 입력창
