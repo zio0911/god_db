@@ -1,0 +1,29 @@
+name: 기능 요청
+description: 새 기능이나 개선을 제안합니다
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: 왜 필요한가요?
+      description: 지금 불편한 점, 쓰려는 상황
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 원하는 동작
+      description: 화면·동작을 구체적으로 (비슷한 툴 화면 캡처가 있으면 첨부)
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 영역
+      multiple: true
+      options: [SQL (MySQL/PostgreSQL/SQL Server), Redis, 모델링, AI, 화면/UX, 기타]
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 조건
+      description: 무엇이 되면 끝인가요?

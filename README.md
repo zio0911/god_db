@@ -81,6 +81,10 @@ GODDB_IT_PORT=33306 GODDB_IT_PASSWORD=goddbtest ./scripts/test.sh
 
 앱에서 접속: 호스트 `127.0.0.1`, 포트 `33306`, 사용자 `root`, 비밀번호 위 값, DB `shop`.
 
+## 개발 흐름
+
+이슈 → 브랜치 → PR(CI 통과) → squash 머지 → 마일스톤 단위 릴리스. 자세한 내용은 [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## 구조
 
 - `Sources/GodDBCore` — UI 없는 로직 (접속/터널/키체인/SQL 유틸/스키마 비교). 테스트 대상
