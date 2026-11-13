@@ -11,10 +11,14 @@ concurrency:
 
 jobs:
   test:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      # 의존 패키지가 Swift tools 6.4 를 요구 → 러너의 최신 Xcode 사용
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
       - name: FreeTDS 설치 (SQL Server 드라이버)
         run: brew install freetds
       - name: Swift 버전
