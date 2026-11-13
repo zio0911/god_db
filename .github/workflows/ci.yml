@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # 의존 패키지가 Swift tools 6.4 를 요구 → 러너의 최신 Xcode 사용
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: FreeTDS 설치 (SQL Server 드라이버)
+        run: brew install freetds
+      - name: Swift 버전
+        run: swift --version
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+      - name: 빌드
+        run: swift build
+      - name: 단위 테스트
+        run: ./scripts/test.sh
