@@ -21,7 +21,7 @@ public struct AuditRecord: Sendable, Hashable {
     }
 
     public var action: Action
-    /// 접속 이름과 DB (예: "m5s_prd/m5s_db", Redis 는 "redis_dev db0")
+    /// 접속 이름과 DB (예: "dev/shop", Redis 는 "redis_dev db0")
     public var target: String
     /// 결과 요약 (예: "1행 · 3ms", "3건", "실패: …")
     public var result: String
