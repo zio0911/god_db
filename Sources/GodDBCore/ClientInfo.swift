@@ -1,4 +1,5 @@
 import Foundation
+import SystemConfiguration
 
 /// 이 PC 와 사용자 정보 (감사 로그용). 외부 서비스에 묻지 않고 PC 안에서만 구한다.
 public enum ClientInfo {
@@ -14,13 +15,21 @@ public enum ClientInfo {
     /// 계정의 전체 이름 (없으면 빈 문자열)
     public static var fullName: String { NSFullUserName() }
 
-    /// 컴퓨터 이름 (공유 설정의 이름, 없으면 호스트 이름)
+    /// 컴퓨터 이름 (시스템 설정 > 일반 > 공유 의 이름, 없으면 호스트 이름)
+    /// `Host.current()` · `ProcessInfo.hostName` 은 DNS 조회를 해서 VPN · 사내 DNS 환경에서 오래 멈출 수 있어
+    /// 네트워크를 쓰지 않는 API 만 쓴다. (앱 시작이 멈추던 문제)
     public static var computerName: String {
-        if let n = Host.current().localizedName, !n.isEmpty { return n }
-        return ProcessInfo.processInfo.hostName
+        if let n = SCDynamicStoreCopyComputerName(nil, nil) as String?, !n.isEmpty { return n }
+        return hostName
     }
 
-    public static var hostName: String { ProcessInfo.processInfo.hostName }
+    /// 로컬 호스트 이름 (gethostname, DNS 조회 없음)
+    public static var hostName: String {
+        var buf = [CChar](repeating: 0, count: 256)
+        guard gethostname(&buf, buf.count) == 0 else { return "localhost" }
+        let n = String(cString: buf)
+        return n.isEmpty ? "localhost" : n
+    }
 
     public static var osVersion: String {
         let v = ProcessInfo.processInfo.operatingSystemVersion
