@@ -2,6 +2,23 @@
 # 릴리스 빌드 후 build/GodDB.app 번들을 만든다. (Finder 더블클릭 / 응용 프로그램 폴더로 복사 가능)
 set -e
 cd "$(dirname "$0")/.."
+
+# 서명 인증서: 키체인에 "Developer ID Application" 이 있으면 그걸로 정식 서명(공증 가능),
+# 없으면 임시 서명(-). 직접 고르려면 SIGN_IDENTITY="Developer ID Application: 이름 (팀ID)"
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+fi
+[[ -z "$SIGN_IDENTITY" ]] && SIGN_IDENTITY="-"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+  echo "서명: 임시 서명 (Developer ID 인증서 없음 — 받는 Mac 에서 확인되지 않은 개발자 경고가 나와요)"
+  SIGN_ARGS=(--force --sign -)
+else
+  echo "서명: $SIGN_IDENTITY"
+  # Hardened Runtime + 보안 타임스탬프 (공증 필수 조건)
+  SIGN_ARGS=(--force --options runtime --timestamp --sign "$SIGN_IDENTITY")
+fi
+export SIGN_IDENTITY
+
 swift build -c release --product GodDB
 # iCloud 폴더(문서)에서는 File Provider 가 확장 속성을 계속 붙여 서명이 깨진다.
 # 그래서 iCloud 밖(임시 폴더)에서 조립·서명하고, 끝나면 build/ 로 복사한다.
@@ -42,7 +59,7 @@ for lib in "$FW"/*.dylib(N); do
 done
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$BIN" 2>/dev/null || true
 install_name_tool -delete_rpath "/opt/homebrew/opt/freetds/lib" "$BIN" 2>/dev/null || true
-for lib in "$FW"/*.dylib(N); do codesign --force --sign - "$lib" >/dev/null 2>&1; done
+for lib in "$FW"/*.dylib(N); do codesign "${SIGN_ARGS[@]}" "$lib"; done
 if otool -L "$BIN" "$FW"/*.dylib(N) | grep -q '/opt/homebrew/'; then
   echo "오류: 아직 Homebrew 경로를 참조하는 라이브러리가 있어요." >&2
   exit 1
@@ -69,7 +86,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 # iCloud 폴더의 확장 속성(FinderInfo 등)이 있으면 서명이 깨진다 → 지우고 서명, 실패하면 중단
 xattr -cr "$APP"
-codesign --force --deep --sign - "$APP"
+# 안쪽(Frameworks) 은 위에서 서명했고, 앱 본체를 마지막에 서명한다 (--deep 은 쓰지 않음)
+codesign "${SIGN_ARGS[@]}" "$APP"
 codesign --verify --deep --strict "$APP"
 # 로컬 실행용 사본
 rm -rf build/GodDB.app; mkdir -p build
