@@ -57,11 +57,14 @@ iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns && rm -rf R
 ```
 
 - 버전은 `scripts/build-app.sh` 의 `CFBundleShortVersionString` 에서 정한다.
-- 지금은 개발자 서명(Developer ID)·공증(notarization) 없이 임시 서명이라, 처음 열 때 macOS(게이트키퍼)가 막는다. macOS 15 부터는 우클릭 > 열기로 넘어가지지 않는다.
-  - **방법 A (권장)**: DMG 를 열기 전에 터미널에서 `xattr -d com.apple.quarantine ~/Downloads/GodDB-*.dmg` → DMG 열고 Applications 로 옮겨 실행.
-  - **방법 B**: 한 번 실행 → 경고 창 닫기 → 시스템 설정 > 개인정보 보호 및 보안 > "GodDB 이(가) 차단되었습니다" 옆 **그래도 열기**.
-  - **경고 없이 Dock 아이콘만 계속 튀고 창이 안 뜨면**: 시스템 설정 > 개인정보 보호 및 보안 > "다음에서 다운로드한 응용 프로그램 허용" 을 **App Store** 로 바꿨다가 다시 **App Store 및 확인된 개발자** 로 돌린 뒤 다시 실행. (게이트키퍼 검사가 멈춘 상태가 풀린다)
-  - `/Applications` 안의 앱에 `xattr -cr` 를 하면 `Operation not permitted` 가 날 수 있다(앱 관리 권한). 방법 A 처럼 DMG 단계에서 지운다.
+- **서명·공증** (0.10.0 부터): 빌드하는 Mac 키체인에 `Developer ID Application` 인증서가 있으면 그걸로 서명(Hardened Runtime, 타임스탬프)하고, DMG 를 Apple 에 **공증** 받아 결과를 붙인다(stapler). 받는 사람은 경고 없이 끌어다 놓고 실행하면 된다.
+  - 공증 암호는 저장소가 아니라 키체인 프로필에만 둔다 (한 번만):
+    `xcrun notarytool store-credentials goddb --apple-id <Apple ID> --team-id <팀 ID>` → Apple ID 의 **앱 전용 암호** 입력
+  - 인증서가 없는 Mac 에서 빌드하면 예전처럼 임시 서명(-)이 되고 공증은 건너뛴다. `SKIP_NOTARIZE=1` 로 공증만 건너뛸 수도 있다.
+- 임시 서명 빌드(0.9.x 이하)를 받은 경우 macOS(게이트키퍼)가 처음 실행을 막는다. macOS 15 부터는 우클릭 > 열기로 넘어가지지 않는다.
+  - **방법 A**: DMG 를 열기 전에 터미널에서 `xattr -d com.apple.quarantine ~/Downloads/GodDB-*.dmg` → DMG 열고 Applications 로 옮겨 실행.
+  - **방법 B**: 한 번 실행 → 시스템 설정 > 개인정보 보호 및 보안 > "GodDB 이(가) 차단되었습니다" 옆 **그래도 열기**.
+  - **Dock 아이콘만 계속 튀고 창이 안 뜨면**: 시스템 설정 > 개인정보 보호 및 보안 > "다음에서 다운로드한 응용 프로그램 허용" 을 **App Store** 로 바꿨다가 다시 **App Store 및 확인된 개발자** 로 돌린 뒤 실행.
 - FreeTDS·OpenSSL 라이브러리는 앱 안(`Contents/Frameworks`)에 넣어 배포하므로 받는 Mac 에 Homebrew 가 없어도 된다. (빌드하는 Mac 에만 `brew install freetds` 필요)
 - 서명·DMG 조립은 iCloud 밖 임시 폴더에서 한다. iCloud 폴더에서는 확장 속성 때문에 서명이 깨진다.
 
