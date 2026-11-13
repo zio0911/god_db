@@ -36,6 +36,25 @@ public enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable 
     public var isSQL: Bool { self != .redis }
 }
 
+/// Redis 접속 방식
+public enum RedisMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// 단일 서버 (또는 ElastiCache 클러스터 모드 끔)
+    case standalone
+    /// Redis Cluster: 노드 하나만 적으면 나머지 노드와 슬롯을 찾아 키마다 맞는 노드로 보낸다
+    case cluster
+    /// Sentinel: 센티널에게 현재 마스터 주소를 물어 접속
+    case sentinel
+
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .standalone: return tr("단일")
+        case .cluster: return "Cluster"
+        case .sentinel: return "Sentinel"
+        }
+    }
+}
+
 /// 저장되는 접속 정보. 비밀번호는 여기 담지 않고 키체인에 따로 보관한다.
 public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
@@ -50,6 +69,12 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     public var ssh: SSHConfig?
     /// true 면 비밀번호를 키체인에 저장, false 면 연결할 때마다 묻는다.
     public var savePassword: Bool
+    /// Redis 접속 방식 (Redis 일 때만)
+    public var redisMode: RedisMode = .standalone
+    /// Sentinel 마스터 이름 (예: mymaster)
+    public var sentinelMaster: String = ""
+    /// 사이드바 그룹 이름 (비우면 그룹 없음). "회사/운영" 처럼 쓰지 않고 한 단계만.
+    public var group: String = ""
 
     public init(
         id: UUID = UUID(),
@@ -91,6 +116,9 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         readOnly = try c.decodeIfPresent(Bool.self, forKey: .readOnly) ?? false
         ssh = try c.decodeIfPresent(SSHConfig.self, forKey: .ssh)
         savePassword = try c.decodeIfPresent(Bool.self, forKey: .savePassword) ?? true
+        redisMode = try c.decodeIfPresent(RedisMode.self, forKey: .redisMode) ?? .standalone
+        sentinelMaster = try c.decodeIfPresent(String.self, forKey: .sentinelMaster) ?? ""
+        group = try c.decodeIfPresent(String.self, forKey: .group) ?? ""
     }
 }
 

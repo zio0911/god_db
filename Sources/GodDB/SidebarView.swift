@@ -10,9 +10,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             List(selection: $app.selectedTables) {
                 Section(tr("접속")) {
-                    ForEach(app.profiles) { profile in
-                        ProfileRow(profile: profile)
-                    }
+                    ProfileList()
                     HStack {
                         Button {
                             app.newProfile()
@@ -162,6 +160,7 @@ struct ProfileRow: View {
         .padding(.horizontal, 4)
         .background(selected ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 5))
         .contentShape(Rectangle())
+        .draggable(profile.id.uuidString)
         .onTapGesture(count: 1) {
             // 다른 접속은 끊지 않고 이 접속을 열거나 보기로 바꾼다.
             Task { await app.open(profile.id) }
@@ -185,6 +184,7 @@ struct ProfileRow: View {
             Divider()
             Button(tr("편집…")) { app.edit(profile) }
             Button(tr("복제")) { app.duplicate(profile) }
+            ProfileGroupMenu(profile: profile)
             Divider()
             Button(tr("삭제"), role: .destructive) { app.deleteProfile(profile) }
         }
@@ -196,7 +196,7 @@ struct KindBadge: View {
     let kind: DatabaseKind
 
     var body: some View {
-        Text(kind == .mssql ? "MSSQL" : kind == .postgres ? "PG" : "MY")
+        Text(kind == .mssql ? "MSSQL" : kind == .postgres ? "PG" : kind == .redis ? "RD" : "MY")
             .font(.system(size: 9, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 3)

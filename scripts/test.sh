@@ -8,7 +8,7 @@ export GODDB_LANG=ko
 F=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
 L=/Library/Developer/CommandLineTools/Library/Developer/usr/lib
 if xcode-select -p | grep -q "Xcode.app"; then
-  swift test
+  swift test "$@"
 else
-  swift test -Xswiftc -F -Xswiftc $F -Xlinker -F -Xlinker $F -Xlinker -rpath -Xlinker $F -Xlinker -rpath -Xlinker $L
+  swift test -Xswiftc -F -Xswiftc $F -Xlinker -F -Xlinker $F -Xlinker -rpath -Xlinker $F -Xlinker -rpath -Xlinker $L "$@"
 fi

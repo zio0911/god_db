@@ -54,6 +54,7 @@ struct QueryTab: Identifiable {
 enum MainMode: String, CaseIterable, Identifiable {
     case query = "쿼리"
     case compare = "스키마 비교"
+    case modeling = "모델링"
     var id: String { rawValue }
 }
 
@@ -110,6 +111,13 @@ final class AppState {
     var editApply: EditApplyRequest?
     var showExportConnections = false
     var importRequest: ImportRequest?
+    /// 접속 그룹 이름 입력창
+    var groupPrompt: GroupPrompt?
+    /// 모델링 (논리/물리 모델, 저장된 모델 목록)
+    let modeling = ModelingState()
+    var showReverseEngineer = false
+    /// 오른쪽 AI 어시스턴트
+    let assistant = AssistantState()
     /// 연결된 Redis 접속의 화면 상태
     var redisWorkspaces: [UUID: RedisWorkspace] = [:]
     /// 사이드바에서 고른 테이블 (⌘/⇧ 클릭으로 여러 개)
@@ -133,6 +141,7 @@ final class AppState {
         log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, ClientInfo.identity), detail: ClientInfo.summary())
         // 90일 지난 다이어그램 AI 대화 정리
         DispatchQueue.global(qos: .utility).async { DiagramChatStore.shared.pruneAll() }
+        modeling.onError = { [weak self] context, error in self?.logError(error, .schema, context: context) }
     }
 
     // MARK: - 사이드바에서 보고 있는 접속 (기존 화면 코드 호환)

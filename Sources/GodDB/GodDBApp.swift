@@ -20,6 +20,11 @@ struct GodDBApp: App {
             RedisSample.render(dir: a[i + 1], port: Int(a[i + 2]) ?? 6379, password: a[i + 3], app: app)
             exit(0)
         }
+        // 개발용: GodDB --render-modeling-sample <폴더> → 모델링·테이블 수정·AI 패널·접속 그룹 PNG
+        if let i = CommandLine.arguments.firstIndex(of: "--render-modeling-sample"), CommandLine.arguments.count > i + 1 {
+            ModelingSample.render(dir: CommandLine.arguments[i + 1], app: app)
+            exit(0)
+        }
         // `swift run` 으로 띄워도 Dock 아이콘과 메뉴가 있는 일반 앱으로 동작하게 한다.
         NSApplication.shared.setActivationPolicy(.regular)
         // 실행 중 Dock·⌘Tab 아이콘을 직접 지정한다. (macOS 아이콘 캐시가 예전 등록을 쓰거나,

@@ -85,4 +85,21 @@ struct ConnectionProfileTests {
         #expect(p[0].savePassword == true)
         #expect(p[0].ssh == nil)
     }
+
+    @Test func extraParts() {
+        let e = ColumnExtraParts("DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)", kind: .mysql)
+        #expect(!e.autoIncrement)
+        #expect(e.onUpdate == "CURRENT_TIMESTAMP(3)")
+        #expect(e.rest == "DEFAULT_GENERATED")
+        var ai = ColumnExtraParts("auto_increment", kind: .mysql)
+        #expect(ai.autoIncrement && ai.rest.isEmpty)
+        ai.onUpdate = "CURRENT_TIMESTAMP"
+        #expect(ai.compose(kind: .mysql) == "auto_increment on update CURRENT_TIMESTAMP")
+        ai.autoIncrement = false
+        ai.onUpdate = ""
+        #expect(ai.compose(kind: .mysql) == "")
+        let pg = ColumnExtraParts("identity", kind: .postgres)
+        #expect(pg.autoIncrement)
+        #expect(pg.compose(kind: .postgres) == "identity")
+    }
 }

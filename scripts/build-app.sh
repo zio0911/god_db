@@ -12,6 +12,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/GodDB "$APP/Contents/MacOS/GodDB"
 # 앱 아이콘 (scripts/draw-icon.swift 로 만든 Resources/AppIcon.icns)
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# AI 어시스턴트가 앱 사용법 질문에 참조하는 기능 명세
+cp docs/FEATURES.md "$APP/Contents/Resources/FEATURES.md"
 
 # Homebrew 라이브러리(FreeTDS, OpenSSL)를 앱 안(Contents/Frameworks)에 넣는다.
 # 안 넣으면 Homebrew 가 없는 맥에서 실행하자마자 "예기치 않게 종료" 된다.
@@ -56,7 +58,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>GodDB</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.8.2</string>
+  <key>CFBundleShortVersionString</key><string>0.9.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>

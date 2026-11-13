@@ -14,15 +14,25 @@ struct ContentView: View {
             // VSplitView(NSSplitView) 를 쓰면 사이드바 경계 드래그가 꼬여서 직접 만든 경계선을 쓴다.
             GeometryReader { geo in
                 VStack(spacing: 0) {
-                    Group {
-                        switch app.mode {
-                        case .query:
-                            if let ws = app.selectedRedis {
-                                RedisWorkspaceView(ws: ws)
-                            } else {
-                                QueryWorkspaceView()
+                    HStack(spacing: 0) {
+                        Group {
+                            switch app.mode {
+                            case .query:
+                                if let ws = app.selectedRedis {
+                                    RedisWorkspaceView(ws: ws)
+                                } else {
+                                    QueryWorkspaceView()
+                                }
+                            case .compare: CompareView()
+                            case .modeling: ModelingView()
                             }
-                        case .compare: CompareView()
+                        }
+                        .frame(maxWidth: .infinity)
+                        if app.assistant.visible {
+                            ResizeHandle(axis: .vertical, size: Binding(get: { app.assistant.width }, set: { app.assistant.width = $0 }),
+                                         range: 320...max(320, min(760, geo.size.width - 420)))
+                            AssistantPanel()
+                                .frame(width: min(app.assistant.width, max(320, geo.size.width - 420)))
                         }
                     }
                     .frame(maxHeight: .infinity)
@@ -52,10 +62,23 @@ struct ContentView: View {
                     Label(tr("스키마 비교"), systemImage: "arrow.left.arrow.right")
                         .foregroundStyle(isRedis ? .tertiary : .primary)
                         .tag(MainMode.compare)
+                    Label(tr("모델링"), systemImage: "square.3.layers.3d").tag(MainMode.modeling)
                 }
-                .help(isRedis ? tr("Redis 는 스키마 비교를 지원하지 않아요.") : tr("쿼리 / 스키마 비교"))
+                .help(isRedis ? tr("Redis 는 스키마 비교를 지원하지 않아요.") : tr("쿼리 / 스키마 비교 / 모델링"))
                 .pickerStyle(.segmented)
                 .labelStyle(.titleAndIcon)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { app.assistant.visible.toggle() }
+                } label: {
+                    Label(tr("AI 어시스턴트"), systemImage: "sparkles")
+                        .foregroundStyle(app.assistant.visible ? Color.purple : Color.primary)
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+                .help(tr("AI 어시스턴트 열기/닫기 (⇧⌘I) · 테이블 정보·특이사항·SQL 을 로컬 Ollama 와 대화"))
             }
         }
         .onChange(of: app.selectedProfileID) {
@@ -84,6 +107,9 @@ struct ContentView: View {
         }
         .sheet(item: $app.importRequest) { request in
             ImportConnectionsSheet(request: request)
+        }
+        .sheet(item: $app.groupPrompt) { prompt in
+            GroupPromptView(prompt: prompt)
         }
     }
 }

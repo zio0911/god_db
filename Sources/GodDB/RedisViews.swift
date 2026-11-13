@@ -369,6 +369,14 @@ struct RedisWorkspaceView: View {
                 .labelsHidden()
                 .fixedSize()
                 Spacer()
+                if !ws.topologyText.isEmpty {
+                    Text(ws.topologyText)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.12), in: Capsule())
+                        .foregroundStyle(.purple)
+                        .help(ws.nodes.joined(separator: "\n"))
+                }
                 Text("\(ws.name) · db\(ws.db)").foregroundStyle(.secondary)
                 if ws.readOnly {
                     Label(tr("읽기전용"), systemImage: "lock").font(.caption).foregroundStyle(.orange)
@@ -1181,16 +1189,24 @@ struct RedisInfoView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                ForEach(Self.highlights.prefix(8), id: \.self) { k in
+                ForEach(Self.highlights.prefix(ws.nodes.count > 1 ? 6 : 8), id: \.self) { k in
                     if let v = value(k) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(k).font(.caption2).foregroundStyle(.secondary)
-                            Text(v).font(.callout.weight(.semibold))
+                            Text(k).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            Text(v).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
                         }
+                        .fixedSize(horizontal: k != "os", vertical: false)
                         .padding(.trailing, 10)
                     }
                 }
                 Spacer()
+                if ws.nodes.count > 1 {
+                    Picker(tr("노드"), selection: Binding(get: { ws.infoNode ?? ws.nodes.first ?? "" },
+                                                        set: { ws.infoNode = $0; Task { await ws.loadInfo() } })) {
+                        ForEach(ws.nodes, id: \.self) { Text($0).tag($0) }
+                    }
+                    .fixedSize()
+                }
                 TextField(tr("찾기"), text: $filter).textFieldStyle(.roundedBorder).frame(width: 160)
                 Button { Task { await ws.loadInfo() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.hover)
             }

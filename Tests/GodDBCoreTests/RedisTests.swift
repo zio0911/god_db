@@ -233,3 +233,114 @@ struct RedisKeyTreeTests {
         #expect(RedisKeyTree.pattern(forFolder: "a*b") == "a\\*b:*")
     }
 }
+
+@Suite("Redis cluster math")
+struct RedisClusterMathTests {
+    @Test func crcAndSlots() {
+        #expect(RedisCluster.crc16(Array("123456789".utf8)) == 0x31C3)
+        #expect(RedisCluster.slot("foo") == 12182)
+        #expect(RedisCluster.slot("bar") == 5061)
+        #expect(RedisCluster.slot("{user1000}.following") == RedisCluster.slot("{user1000}.followers"))
+        #expect(RedisCluster.slot("{}x") == RedisCluster.slot("{}x"))   // 빈 태그는 키 전체
+    }
+
+    @Test func routingKeys() {
+        #expect(RedisCluster.routingKey(["GET", "k"]) == "k")
+        #expect(RedisCluster.routingKey(["INFO"]) == nil)
+        #expect(RedisCluster.routingKey(["MEMORY", "USAGE", "k"]) == "k")
+        #expect(RedisCluster.routingKey(["XINFO", "GROUPS", "s"]) == "s")
+        #expect(RedisCluster.routingKey(["XREAD", "COUNT", "1", "BLOCK", "0", "STREAMS", "s", "$"]) == "s")
+        #expect(RedisCluster.routingKey(["EVAL", "return 1", "1", "k"]) == "k")
+        #expect(RedisCluster.routingKey(["SCAN", "0"]) == nil)
+    }
+
+    @Test func slotsAndRedirects() {
+        let v = RESPValue.array([
+            .array([.integer(5461), .integer(10922), .array([.bulk(Array("10.0.0.2".utf8)), .integer(6379)])]),
+            .array([.integer(0), .integer(5460), .array([.bulk(Array("".utf8)), .integer(7000)]),
+                    .array([.bulk(Array("10.0.0.9".utf8)), .integer(7003)])]),
+        ])
+        let s = RedisCluster.parseSlots(v, seedHost: "seed")
+        #expect(s.map(\.master) == ["seed:7000", "10.0.0.2:6379"])
+        #expect(s[0].replicas == ["10.0.0.9:7003"])
+        #expect(RedisCluster.redirect("MOVED 3999 127.0.0.1:6381") == .moved(slot: 3999, address: "127.0.0.1:6381"))
+        #expect(RedisCluster.redirect("ASK 1 h:1") == .ask(slot: 1, address: "h:1"))
+        #expect(RedisCluster.redirect("ERR x y") == nil)
+        #expect(RedisCluster.split("[::1]:6379")! == ("::1", 6379))
+        #expect(RedisCluster.sentinelAddresses("a:26380, b", defaultPort: 26379).map { "\($0.host):\($0.port)" } == ["a:26380", "b:26379"])
+    }
+}
+
+/// 실제 Redis Cluster (./scripts/test-dbs.sh up → 127.0.0.1:37000~37002) / Sentinel (36381 → mymaster)
+@Suite("Redis cluster & sentinel", .serialized)
+struct RedisClusterIntegrationTests {
+    static let env = ProcessInfo.processInfo.environment
+
+    func profile(_ mode: RedisMode, port: Int) -> ConnectionProfile {
+        var p = ConnectionProfile(kind: .redis, name: "it", host: "127.0.0.1", port: port, username: "", database: "", useTLS: false)
+        p.redisMode = mode
+        p.sentinelMaster = "mymaster"
+        return p
+    }
+
+    @Test(.enabled(if: env["GODDB_REDIS_CLUSTER_PORT"] != nil))
+    func clusterRoutesScansAndFollowsMoved() async throws {
+        let port = Int(Self.env["GODDB_REDIS_CLUSTER_PORT"]!)!
+        // "단일"로 설정해도 자동으로 Cluster 를 알아챈다
+        let s = try await RedisSession.connect(profile: profile(.standalone, port: port), password: "goddbtest")
+        #expect(await s.isCluster)
+        #expect(await s.masterNodes.count == 3)
+        // 여러 노드에 흩어지는 키들
+        let keys = (0..<60).map { "it:cluster:\($0)" }
+        for k in keys { try await s.command(["SET", k, "v-\(k)"]) }
+        try await s.command(["HSET", "it:cluster:h", "f", "1"])
+        for k in keys { #expect(try await s.string(k) == "v-\(k)") }
+        let found = try await s.scanKeys(pattern: "it:cluster:*", limit: 10_000)
+        #expect(Set(found.keys) == Set(keys + ["it:cluster:h"]))
+        #expect(try await s.dbSize() >= 61)
+        #expect(try await s.databases().map(\.index) == [0])
+        let meta = try await s.keyMeta(["it:cluster:1", "it:cluster:h", "nope"])
+        #expect(meta["it:cluster:h"]?.type == "hash" && meta["nope"]?.type == "none")
+        #expect(try await s.keyInfo("it:cluster:h").type == "hash")
+        // 콘솔: 다른 노드의 키도 MOVED 없이
+        for k in keys.prefix(10) {
+            let v = try await s.console(["GET", k])
+            #expect(v == .bulk(Array("v-\(k)".utf8)))
+        }
+        await #expect(throws: RedisCommandError.clusterSingleDB) { try await s.console(["SELECT", "1"]) }
+        // 노드별 INFO
+        for n in await s.masterNodes {
+            #expect(try await s.info("server", node: n).first?.1.contains { $0.0 == "tcp_port" } == true)
+        }
+        // Pub/Sub 은 아무 노드에서
+        let sub = try await s.subscriber()
+        sub.subscribe(["it:news"])
+        let got = Task { () -> String? in
+            for await m in sub.messages where m.kind == "message" { return m.payload }
+            return nil
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        _ = try await s.publish("it:news", "hello")
+        #expect(await got.value == "hello")
+        await sub.close()
+        for k in keys { try await s.command(["DEL", k]) }
+        try await s.command(["DEL", "it:cluster:h"])
+        await s.close()
+    }
+
+    @Test(.enabled(if: env["GODDB_REDIS_SENTINEL_PORT"] != nil))
+    func sentinelResolvesMaster() async throws {
+        let port = Int(Self.env["GODDB_REDIS_SENTINEL_PORT"]!)!
+        let s = try await RedisSession.connect(profile: profile(.sentinel, port: port), password: "goddbtest")
+        #expect(await s.topology == .sentinel(master: "mymaster", address: "127.0.0.1:36380"))
+        try await s.command(["SET", "it:sentinel", "ok"])
+        #expect(try await s.string("it:sentinel") == "ok")
+        await s.close()
+
+        var bad = profile(.sentinel, port: port)
+        bad.sentinelMaster = "nope"
+        await #expect(throws: RedisCommandError.sentinelMasterNotFound("nope")) {
+            _ = try await RedisSession.connect(profile: bad, password: "goddbtest")
+        }
+    }
+}

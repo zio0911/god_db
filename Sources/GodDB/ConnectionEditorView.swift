@@ -42,6 +42,19 @@ struct ConnectionEditorView: View {
                     }
                     .pickerStyle(.segmented)
                     TextField(tr("이름"), text: $profile.name)
+                    HStack {
+                        TextField(tr("그룹"), text: $profile.group, prompt: Text(tr("비우면 그룹 없음")))
+                        if !app.profileGroups.isEmpty {
+                            Menu {
+                                ForEach(app.profileGroups, id: \.self) { g in Button(g) { profile.group = g } }
+                                Divider()
+                                Button(tr("그룹 없음")) { profile.group = "" }
+                            } label: { Image(systemName: "folder") }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .help(tr("기존 그룹에서 고르기"))
+                        }
+                    }
                     Toggle(profile.kind == .redis ? tr("읽기전용 (조회 명령만 허용)") : tr("읽기전용 (SELECT / SHOW / DESC / EXPLAIN 만 허용)"), isOn: $profile.readOnly)
                     if profile.readOnly && profile.kind == .mssql {
                         Text(tr("SQL Server 는 세션 단위 읽기전용 설정이 없어서 앱에서만 막아요. 운영 DB 는 읽기 전용 계정을 쓰는 걸 권장해요."))
@@ -49,8 +62,25 @@ struct ConnectionEditorView: View {
                     }
                 }
                 Section(profile.kind.title) {
-                    TextField(tr("호스트"), text: $profile.host, prompt: Text("xxx.rds.amazonaws.com"))
+                    if profile.kind == .redis {
+                        Picker(tr("방식"), selection: Binding(get: { profile.redisMode }, set: { mode in
+                            // 센티널 기본 포트 26379 ↔ 6379
+                            if mode == .sentinel, profile.port == 6379 { profile.port = 26379 }
+                            if mode != .sentinel, profile.port == 26379 { profile.port = 6379 }
+                            profile.redisMode = mode
+                        })) {
+                            ForEach(RedisMode.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        Text(redisModeHelp).font(.caption).foregroundStyle(.secondary)
+                    }
+                    TextField(profile.kind == .redis && profile.redisMode == .sentinel ? tr("센티널 호스트") : tr("호스트"),
+                              text: $profile.host,
+                              prompt: Text(profile.kind == .redis && profile.redisMode == .sentinel ? "s1:26379, s2:26379" : "xxx.rds.amazonaws.com"))
                     TextField(tr("포트"), value: $profile.port, format: .number.grouping(.never))
+                    if profile.kind == .redis && profile.redisMode == .sentinel {
+                        TextField(tr("마스터 이름"), text: $profile.sentinelMaster, prompt: Text("mymaster"))
+                    }
                     TextField(profile.kind == .redis ? tr("ACL 사용자 (선택)") : tr("사용자"), text: $profile.username,
                               prompt: profile.kind == .redis ? Text(tr("비우면 비밀번호만으로 AUTH")) : nil)
                     SecureField(tr("비밀번호"), text: $password)
@@ -85,6 +115,8 @@ struct ConnectionEditorView: View {
                         TextField(tr("기본 DB"), text: $profile.database, prompt: Text(tr("비우면 첫 번째 사용자 DB")))
                     case .mysql:
                         TextField(tr("기본 DB"), text: $profile.database, prompt: Text(tr("비우면 첫 번째 DB")))
+                    case .redis where profile.redisMode == .cluster:
+                        EmptyView()
                     case .redis:
                         TextField(tr("DB 번호"), text: $profile.database, prompt: Text("0"))
                         Text(tr("0~15 (서버 설정에 따라 다름). 연결한 뒤 사이드바에서 바꿀 수 있어요. ElastiCache 전송 중 암호화를 쓰면 TLS 를 켜세요."))
@@ -147,6 +179,17 @@ struct ConnectionEditorView: View {
         p.host = p.host.trimmingCharacters(in: .whitespaces)
         p.ssh = useSSH ? ssh : nil
         return p
+    }
+
+    private var redisModeHelp: String {
+        switch profile.redisMode {
+        case .standalone:
+            return tr("서버 하나에 접속해요. 서버가 Cluster 면 자동으로 Cluster 로 동작해요.")
+        case .cluster:
+            return tr("노드 하나(또는 ElastiCache 구성 엔드포인트)만 적으면 나머지 노드를 찾아 키마다 맞는 노드로 보내요. MOVED/ASK 는 자동 처리. DB 는 0 만 써요. SSH 를 쓰면 노드마다 터널을 열어요.")
+        case .sentinel:
+            return tr("센티널 주소(쉼표로 여러 개)와 마스터 이름을 넣으면 현재 마스터를 찾아 접속해요. 장애 조치 뒤에는 다시 연결하면 새 마스터로 붙어요.")
+        }
     }
 
     private func save() {

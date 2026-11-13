@@ -223,6 +223,11 @@ final class RedisWorkspace {
 
     // 서버 정보
     var info: [(String, [(String, String)])] = []
+    /// Cluster / Sentinel 표시 ("Cluster · 마스터 3개")
+    var topologyText = ""
+    /// Cluster 마스터 노드들 (서버 정보에서 노드 고르기)
+    var nodes: [String] = []
+    var infoNode: String?
 
     init(profileID: UUID, session: RedisSession, app: AppState) {
         self.profileID = profileID
@@ -644,8 +649,13 @@ final class RedisWorkspace {
 
     // MARK: - 서버 정보
 
+    func loadTopology() async {
+        topologyText = await session.topologyText
+        nodes = await session.masterNodes
+    }
+
     func loadInfo() async {
-        do { info = try await session.info() } catch {
+        do { info = try await session.info(node: nodes.count > 1 ? (infoNode ?? nodes.first) : nil) } catch {
             app?.logError(error, .schema, context: tr("[%@] INFO 조회 실패", name))
         }
     }
@@ -661,11 +671,14 @@ extension AppState {
         do {
             let s = try await RedisSession.connect(profile: profile, password: password)
             let ws = RedisWorkspace(profileID: id, session: s, app: self)
+            await ws.loadTopology()
             redisWorkspaces[id] = ws
             updateConnection(id) { $0.state = .connected }
             let version = (try? await s.info("server").first?.1.first { $0.0 == "redis_version" }?.1) ?? ""
             log(.success, .connection, tr("%@ 연결됨", "\(profile.name)") + " · Redis \(version) · db\(await s.db)"
-                + (profile.readOnly ? tr(" (읽기전용)") : ""))
+                + (ws.topologyText.isEmpty ? "" : " · " + ws.topologyText)
+                + (profile.readOnly ? tr(" (읽기전용)") : ""),
+                detail: ws.nodes.count > 1 ? "nodes: " + ws.nodes.joined(separator: ", ") : nil)
             await ws.loadDatabases()
             await ws.reloadKeys()
         } catch {

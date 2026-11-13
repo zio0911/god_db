@@ -35,6 +35,7 @@ enum RedisSample {
                 try await s.command(["XGROUP", "CREATE", "orders", "billing", "0"])
                 try await s.command(["XREADGROUP", "GROUP", "billing", "worker-1", "COUNT", "3", "STREAMS", "orders", ">"])
                 let w = RedisWorkspace(profileID: profile.id, session: s, app: app)
+                await w.loadTopology()
                 await w.loadDatabases()
                 await w.reloadKeys()
                 await w.open("user:1001")

@@ -91,8 +91,22 @@ final class DiagramChat {
         created = Date()
     }
 
-    /// 질문을 보내고 답을 스트리밍으로 받는다.
+    /// 다이어그램: 질문을 보내고 답을 스트리밍으로 받는다.
     func ask(_ question: String, doc: DiagramDoc, app: AppState) {
+        ask(question, app: app, logMessage: { model, first in
+            first ? tr("다이어그램 AI 분석 · %@ · 테이블 %@개", model, "\(doc.tables.count)") : nil
+        }, failureContext: tr("다이어그램 AI 분석 실패")) { history in
+            let schema = DiagramAI.schemaText(doc.tables, inferred: doc.inferred)
+            return DiagramAI.messages(kind: doc.kind, schema: schema, history: history, english: L10n.isEnglish)
+        }
+    }
+
+    /// 공통: 질문을 보내고 답을 스트리밍으로 받는다. build 는 대화 기록으로 보낼 메시지를 만든다 (문맥 수집 포함).
+    func ask(_ question: String, app: AppState,
+             logMessage: @escaping (_ model: String, _ first: Bool) -> String?,
+             failureContext: String,
+             temperature: Double = 0.3,
+             build: @escaping @MainActor ([(role: String, content: String)]) async throws -> [OllamaClient.Message]) {
         let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, !running else { return }
         messages.append(.init(role: "user", text: q))
@@ -108,15 +122,12 @@ final class DiagramChat {
                 guard case .running(let models) = await client.status() else { throw OllamaError.notRunning }
                 let model = TuningSettings.model.isEmpty ? (models.first?.name ?? "") : TuningSettings.model
                 guard !model.isEmpty else { throw OllamaError.noModel }
-                let schema = DiagramAI.schemaText(doc.tables, inferred: doc.inferred)
-                let msgs = DiagramAI.messages(kind: doc.kind, schema: schema, history: Array(history),
-                                              english: L10n.isEnglish)
-                if history.count == 1 {
-                    app.log(.info, .schema, tr("다이어그램 AI 분석 · %@ · 테이블 %@개", model, "\(doc.tables.count)"),
-                            detail: q)
+                let msgs = try await build(Array(history))
+                if let line = logMessage(model, history.count == 1) {
+                    app.log(.info, .schema, line, detail: q)
                 }
                 var raw = ""
-                for try await chunk in client.chat(model: model, messages: msgs, temperature: 0.3) {
+                for try await chunk in client.chat(model: model, messages: msgs, temperature: temperature) {
                     try Task.checkCancellation()
                     switch chunk {
                     case .thinking(let t): thinkingChars += t.count
@@ -130,7 +141,7 @@ final class DiagramChat {
                 messages[answerIndex].text += (messages[answerIndex].text.isEmpty ? "" : "\n\n") + tr("(취소했어요)")
             } catch {
                 messages[answerIndex].failed = true
-                messages[answerIndex].text = app.logError(error, .schema, context: tr("다이어그램 AI 분석 실패"))
+                messages[answerIndex].text = app.logError(error, .schema, context: failureContext)
             }
             running = false
             task = nil
@@ -194,33 +205,7 @@ struct DiagramAIPanel: View {
             .padding(10)
             Divider()
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if chat.messages.isEmpty {
-                            intro
-                        }
-                        ForEach(chat.messages) { m in
-                            bubble(m).id(m.id)
-                        }
-                        if chat.running {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.small)
-                                Text(chat.thinkingChars > 0 && chat.messages.last?.text.isEmpty == true
-                                     ? tr("모델이 생각하는 중… (%@자)", "\(chat.thinkingChars)")
-                                     : tr("답변을 쓰는 중…"))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            .id("progress")
-                        }
-                    }
-                    .padding(10)
-                }
-                .onChange(of: chat.messages.last?.text) {
-                    if let id = chat.messages.last?.id { proxy.scrollTo(id, anchor: .bottom) }
-                }
-            }
-
+            AIChatTranscript(chat: chat, sqlLabel: tr("AI 관계 분석")) { intro }
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 if let unavailable {
@@ -291,6 +276,46 @@ struct DiagramAIPanel: View {
         inputFocused = true
     }
 
+}
+
+/// AI 대화 내용 (말풍선 + 진행 표시). 비어 있으면 intro 를 보여준다.
+struct AIChatTranscript<Intro: View, Extra: View>: View {
+    @Environment(AppState.self) private var app
+    @Bindable var chat: DiagramChat
+    let sqlLabel: String
+    @ViewBuilder var intro: () -> Intro
+    /// 답변 아래 추가 버튼 (예: 물리명 적용)
+    @ViewBuilder var extra: (DiagramChat.Message) -> Extra
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if chat.messages.isEmpty {
+                        intro()
+                    }
+                    ForEach(chat.messages) { m in
+                        bubble(m).id(m.id)
+                    }
+                    if chat.running {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(chat.thinkingChars > 0 && chat.messages.last?.text.isEmpty == true
+                                 ? tr("모델이 생각하는 중… (%@자)", "\(chat.thinkingChars)")
+                                 : tr("답변을 쓰는 중…"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .id("progress")
+                    }
+                }
+                .padding(10)
+            }
+            .onChange(of: chat.messages.last?.text) {
+                if let id = chat.messages.last?.id { proxy.scrollTo(id, anchor: .bottom) }
+            }
+        }
+    }
+
     @ViewBuilder
     private func bubble(_ m: DiagramChat.Message) -> some View {
         let isUser = m.role == "user"
@@ -313,15 +338,17 @@ struct DiagramAIPanel: View {
             if !isUser, !m.text.isEmpty, !(chat.running && chat.messages.last?.id == m.id) {
                 HStack(spacing: 8) {
                     CopyButton(title: tr("복사")) { m.text }
-                    if let sql = firstSQL(m.text) {
+                    if let sql = Self.firstSQL(m.text) {
                         Button {
                             if let tabID = app.selectedTab?.id ?? app.tabs.last?.id {
-                                app.insertIntoTab(tabID, sql: sql, label: tr("AI 관계 분석"))
+                                if app.mode != .query { app.mode = .query }
+                                app.insertIntoTab(tabID, sql: sql, label: sqlLabel)
                             }
                         } label: { Label(tr("SQL 편집기에 넣기"), systemImage: "text.insert") }
                             .buttonStyle(.hover)
                             .disabled(app.tabs.isEmpty)
                     }
+                    extra(m)
                 }
                 .font(.caption)
             }
@@ -329,13 +356,19 @@ struct DiagramAIPanel: View {
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
     }
 
-    private func firstSQL(_ text: String) -> String? {
+    static func firstSQL(_ text: String) -> String? {
         guard let r = text.range(of: "```(?:sql|SQL)\\s*\\n([\\s\\S]*?)```", options: .regularExpression) else { return nil }
         var block = String(text[r])
         block = block.replacingOccurrences(of: "^```(?:sql|SQL)\\s*\\n", with: "", options: .regularExpression)
         block = block.replacingOccurrences(of: "```$", with: "", options: .regularExpression)
         let s = block.trimmingCharacters(in: .whitespacesAndNewlines)
         return s.isEmpty ? nil : s
+    }
+}
+
+extension AIChatTranscript where Extra == EmptyView {
+    init(chat: DiagramChat, sqlLabel: String, @ViewBuilder intro: @escaping () -> Intro) {
+        self.init(chat: chat, sqlLabel: sqlLabel, intro: intro, extra: { _ in EmptyView() })
     }
 }
 

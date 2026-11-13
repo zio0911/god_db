@@ -29,6 +29,9 @@ public struct EditableColumn: Identifiable, Hashable, Sendable {
                   defaultValue: c.defaultValue, extra: c.extra, comment: c.comment)
     }
 
+    /// 화면에서 바뀜 표시용
+    public var metaForCompare: ColumnMeta { meta }
+
     var meta: ColumnMeta {
         ColumnMeta(name: name, columnType: columnType, nullable: nullable, defaultValue: defaultValue,
                    extra: extra, comment: comment)
@@ -166,6 +169,47 @@ public enum TableAlter {
             for col in i.columns where !seen.contains(col.lowercased()) {
                 throw TableAlterError.unknownIndexColumn(index: i.name, column: col)
             }
+        }
+    }
+}
+
+/// 컬럼 Extra 를 화면 항목(자동 증가, ON UPDATE, 나머지)으로 나누고 다시 합친다.
+/// 값을 고칠 때만 합치므로, 손대지 않으면 원래 Extra 그대로 남는다.
+public struct ColumnExtraParts: Equatable, Sendable {
+    public var autoIncrement: Bool
+    public var onUpdate: String
+    public var rest: String
+
+    public init(_ extra: String, kind: DatabaseKind) {
+        var s = extra
+        switch kind {
+        case .mysql, .redis:
+            autoIncrement = s.range(of: "auto_increment", options: .caseInsensitive) != nil
+            s = s.replacingOccurrences(of: "auto_increment", with: "", options: .caseInsensitive)
+            if let r = s.range(of: "on update\\s+(\\S+(?:\\(\\d*\\))?)", options: [.regularExpression, .caseInsensitive]) {
+                onUpdate = String(s[r]).replacingOccurrences(of: "^on update\\s+", with: "", options: [.regularExpression, .caseInsensitive])
+                s.removeSubrange(r)
+            } else {
+                onUpdate = ""
+            }
+        case .postgres, .mssql:
+            autoIncrement = s.lowercased().contains("identity")
+            onUpdate = ""
+        }
+        rest = s.split(separator: " ").joined(separator: " ")
+        if kind == .postgres || kind == .mssql, autoIncrement { rest = "" }
+    }
+
+    public func compose(kind: DatabaseKind) -> String {
+        switch kind {
+        case .mysql, .redis:
+            var parts: [String] = []
+            if !rest.isEmpty { parts.append(rest) }
+            if autoIncrement { parts.append("auto_increment") }
+            if !onUpdate.trimmingCharacters(in: .whitespaces).isEmpty { parts.append("on update \(onUpdate.trimmingCharacters(in: .whitespaces))") }
+            return parts.joined(separator: " ")
+        case .postgres, .mssql:
+            return autoIncrement ? "identity" : rest
         }
     }
 }
