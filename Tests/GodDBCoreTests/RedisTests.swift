@@ -344,3 +344,22 @@ struct RedisClusterIntegrationTests {
         }
     }
 }
+
+@Suite("Redis key tree rows")
+struct RedisKeyTreeRowsTests {
+    @Test func visibleRowsFollowExpandedFolders() {
+        let tree = RedisKeyTree.build(["user:1:name", "user:1:age", "user:2:name", "session:x", "plain"])
+        // 접힌 상태: 최상위만
+        let top = RedisKeyTree.visibleRows(tree, expanded: [])
+        #expect(top.map(\.id) == ["f:session", "f:user", "k:plain"])
+        #expect(top.allSatisfy { $0.depth == 0 })
+        // user, user:1 펼침
+        let open = RedisKeyTree.visibleRows(tree, expanded: ["f:user", "f:user:1"])
+        #expect(open.map(\.id) == ["f:session", "f:user", "f:user:1", "k:user:1:age", "k:user:1:name", "f:user:2", "k:plain"])
+        #expect(open.first { $0.id == "k:user:1:age" }?.depth == 2)
+        // 행 id 는 겹치지 않는다
+        #expect(Set(open.map(\.id)).count == open.count)
+        // 없어진 폴더가 펼침 목록에 남아 있어도 문제없다
+        #expect(RedisKeyTree.visibleRows(tree, expanded: ["f:gone"]).count == 3)
+    }
+}

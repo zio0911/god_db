@@ -217,37 +217,54 @@ extension RedisKeyRow {
 }
 
 /// 키 트리 (폴더는 펼치기/접기, 하위 키 개수 표시)
+/// 중첩 DisclosureGroup 은 자동 새로고침과 겹치면 SwiftUI 목록이 assertion 으로 종료돼서(#6),
+/// 보이는 행만 평평하게 그리고 들여쓰기로 깊이를 표시한다.
 struct RedisTreeRows: View {
     let nodes: [RedisKeyNode]
     @Bindable var ws: RedisWorkspace
 
+    private static let indent: CGFloat = 14
+
     var body: some View {
-        ForEach(nodes) { node in
-            if let children = node.children {
-                DisclosureGroup(isExpanded: Binding(
-                    get: { ws.expanded.contains(node.id) },
-                    set: { if $0 { ws.expanded.insert(node.id) } else { ws.expanded.remove(node.id) } })) {
-                    RedisTreeRows(nodes: children, ws: ws)
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: ws.expanded.contains(node.id) ? "folder.fill" : "folder")
-                            .font(.caption).foregroundStyle(Color.accentColor)
-                        Text(node.name.isEmpty ? "(empty)" : node.name).lineLimit(1)
-                        Spacer()
-                        Text("\(node.count)").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
-                    .help(node.path + ws.delimiter + "*")
-                    .contextMenu {
-                        Button(tr("이 폴더만 검색 (%@)", RedisKeyTree.pattern(forFolder: node.path, delimiter: ws.delimiter))) {
-                            Task { await ws.searchFolder(node.path) }
-                        }
-                        Button(tr("접두어 복사")) { Pasteboard.copy(node.path + ws.delimiter) }
-                    }
-                }
+        ForEach(RedisKeyTree.visibleRows(nodes, expanded: ws.expanded)) { row in
+            let node = row.node
+            if node.children != nil {
+                folderRow(node)
+                    .padding(.leading, CGFloat(row.depth) * Self.indent)
             } else if let key = node.key {
                 RedisKeyRow(ws: ws, key: key, label: node.name)
+                    .padding(.leading, CGFloat(row.depth) * Self.indent + Self.indent)
             }
+        }
+    }
+
+    private func folderRow(_ node: RedisKeyNode) -> some View {
+        let open = ws.expanded.contains(node.id)
+        return HStack(spacing: 6) {
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(open ? 90 : 0))
+                .frame(width: 8)
+            Image(systemName: open ? "folder.fill" : "folder")
+                .font(.caption).foregroundStyle(Color.accentColor)
+            Text(node.name.isEmpty ? "(empty)" : node.name).lineLimit(1)
+            Spacer()
+            Text("\(node.count)").font(.caption).foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if open { ws.expanded.remove(node.id) } else { ws.expanded.insert(node.id) }
+        }
+        .help(node.path + ws.delimiter + "*")
+        .contextMenu {
+            Button(open ? tr("접기") : tr("펼치기")) {
+                if open { ws.expanded.remove(node.id) } else { ws.expanded.insert(node.id) }
+            }
+            Button(tr("이 폴더만 검색 (%@)", RedisKeyTree.pattern(forFolder: node.path, delimiter: ws.delimiter))) {
+                Task { await ws.searchFolder(node.path) }
+            }
+            Button(tr("접두어 복사")) { Pasteboard.copy(node.path + ws.delimiter) }
         }
     }
 }
