@@ -148,7 +148,9 @@ final class AppState {
         Task.detached(priority: .utility) {
             let identity = ClientInfo.identity, summary = ClientInfo.summary()
             await MainActor.run { [weak self] in
-                self?.log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, identity), detail: summary)
+                self?.log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, identity), detail: summary,
+                          audit: AuditRecord(.appStart, result: "GodDB \(version)",
+                                             statement: summary.components(separatedBy: "\n").joined(separator: " · ")))
             }
         }
         // 90일 지난 다이어그램 AI 대화 정리
@@ -208,8 +210,8 @@ final class AppState {
     var lastLog: LogEntry? { logs.last }
 
     func log(_ level: LogEntry.Level, _ source: LogEntry.Source, _ message: String,
-             detail: String? = nil, hint: String? = nil) {
-        let entry = LogEntry(level: level, source: source, message: message, detail: detail, hint: hint)
+             detail: String? = nil, hint: String? = nil, audit: AuditRecord? = nil) {
+        let entry = LogEntry(level: level, source: source, message: message, detail: detail, hint: hint, audit: audit)
         logs.append(entry)
         LogFile.shared.append(entry)
         if logs.count > 1000 { logs.removeFirst(logs.count - 1000) }
@@ -224,15 +226,25 @@ final class AppState {
 
     /// 오류를 상태창에 남기고, 화면에 보여줄 메시지를 돌려준다.
     @discardableResult
-    func logError(_ error: any Error, _ source: LogEntry.Source, context: String, sql: String? = nil) -> String {
+    func logError(_ error: any Error, _ source: LogEntry.Source, context: String, sql: String? = nil,
+                  audit: AuditRecord? = nil) -> String {
         let d = ErrorText.describe(error)
         var detail = tr("원본 오류: %@", "\(d.raw)")
         if let sql { detail = tr("실행한 SQL:\n%@\n\n", "\(sql)") + detail }
-        log(.error, source, "\(context): \(d.message)", detail: detail, hint: d.hint)
+        // 감사 로그: 같은 구분으로, 결과 칸에 실패 사유
+        var record = audit
+        record?.result = "실패: " + d.message
+        log(.error, source, "\(context): \(d.message)", detail: detail, hint: d.hint, audit: record)
         return d.hint.map { tr("%@\n\n해결 방법: %@", "\(d.message)", "\($0)") } ?? d.message
     }
 
     func toggleLog() { showLog.toggle() }
+
+    /// 감사 로그의 대상 칸: "접속이름/DB"
+    func auditTarget(_ tab: QueryTab) -> String {
+        let name = profiles.first(where: { $0.id == tab.profileID })?.name ?? "?"
+        return tab.database.isEmpty ? name : "\(name)/\(tab.database)"
+    }
 
     func clearLogs() {
         logs.removeAll()
@@ -271,7 +283,8 @@ final class AppState {
         }
         persist()
         editingProfile = nil
-        log(.info, .app, tr("%@ 접속 정보 저장", "\(profile.name)") + (profile.savePassword ? tr(" (비밀번호 키체인 저장)") : tr(" (비밀번호 저장 안 함)")))
+        log(.info, .app, tr("%@ 접속 정보 저장", "\(profile.name)") + (profile.savePassword ? tr(" (비밀번호 키체인 저장)") : tr(" (비밀번호 저장 안 함)")),
+            audit: AuditRecord(.settings, target: profile.name, result: "접속 정보 저장"))
         // 열려 있던 접속이면 바뀐 설정으로 다시 연결
         if connectionState(profile.id) == .connected {
             Task {
@@ -367,7 +380,7 @@ final class AppState {
         let note = await Task.detached { ClientInfo.connectionNote(host: profile.host, port: profile.port, ssh: profile.ssh) }.value
         log(.info, .connection, tr("%@ 연결 중… %@", "\(profile.name)", "\(target)"), detail: note + "\nuser: " + ClientInfo.identity)
         if profile.kind == .redis {
-            await connectRedis(profile, password: password)
+            await connectRedis(profile, password: password, route: target + " · " + note)
             return
         }
         do {
@@ -377,7 +390,9 @@ final class AppState {
                 $0.state = .connected
             }
             log(.success, .connection, tr("%@ 연결됨", "\(profile.name)") + (profile.readOnly ? tr(" (읽기전용)") : "")
-                + (connectedCount > 1 ? tr(" · 열린 접속 %@개", "\(connectedCount)") : ""))
+                + (connectedCount > 1 ? tr(" · 열린 접속 %@개", "\(connectedCount)") : ""),
+                audit: AuditRecord(.connect, target: profile.name, result: profile.readOnly ? "성공 (읽기전용)" : "성공",
+                                   statement: target + " · " + note))
             do {
                 let dbs = try await s.databases()
                 updateConnection(id) { $0.databases = dbs }
@@ -393,7 +408,8 @@ final class AppState {
                 selectTab(tab.id)
             }
         } catch {
-            let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"))
+            let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"),
+                                   audit: AuditRecord(.connect, target: profile.name, statement: target + " · " + note))
             updateConnection(id) { $0.state = .failed(message); $0.session = nil }
             // 비밀번호가 틀렸으면 다시 입력받는다.
             if ErrorText.isAuthFailure(error) {
@@ -408,7 +424,8 @@ final class AppState {
         if redisWorkspaces[id] != nil { await disconnectRedis(id) }
         if let session = connections[id]?.session {
             await session.close()
-            log(.info, .connection, tr("%@ 연결 끊음", "\(session.profile.name)"))
+            log(.info, .connection, tr("%@ 연결 끊음", "\(session.profile.name)"),
+                audit: AuditRecord(.disconnect, target: session.profile.name))
         }
         connections[id] = ConnectionInfo()
     }
@@ -604,18 +621,23 @@ final class AppState {
                 let warnings = PlanAnalyzer.warnings(result)
                 log(warnings.isEmpty ? .success : .warning, .query,
                     label + tr("실행 계획 · 주의 %@건 · %@", "\(warnings.count)", "\(Self.oneLine(trimmed))"),
-                    detail: ([finalSQL] + warnings.map { "[\($0.table)] \($0.message)" }).joined(separator: "\n"))
+                    detail: ([finalSQL] + warnings.map { "[\($0.table)] \($0.message)" }).joined(separator: "\n"),
+                    audit: AuditRecord(.read, target: auditTarget(tab), result: "실행 계획 · \(ms)ms", statement: finalSQL))
             } else {
                 let summary = result.columns.isEmpty ? (result.message ?? tr("실행 완료"))
                     : tr("%@행", "\(result.rows.count)") + (result.hasMore ? "+" : "")
-                log(.success, .query, label + "\(summary) · \(ms)ms · \(Self.oneLine(trimmed))", detail: trimmed)
+                log(.success, .query, label + "\(summary) · \(ms)ms · \(Self.oneLine(trimmed))", detail: trimmed,
+                    audit: AuditRecord(AuditRecord.classify(sql: trimmed), target: auditTarget(tab),
+                                       result: "\(summary) · \(ms)ms", statement: trimmed))
             }
             let kw = SQLText.firstKeyword(trimmed)
             await afterStatements(session: session, tabID: tabID,
                                   schemaChanged: !explain && ["CREATE", "ALTER", "DROP", "RENAME", "TRUNCATE"].contains(kw),
                                   usedUse: kw == "USE")
         } catch {
-            let message = logError(error, .query, context: explain ? tr("실행 계획 실패") : tr("쿼리 실패"), sql: trimmed)
+            let message = logError(error, .query, context: explain ? tr("실행 계획 실패") : tr("쿼리 실패"), sql: trimmed,
+                                   audit: AuditRecord(explain ? .read : AuditRecord.classify(sql: trimmed),
+                                                      target: auditTarget(tab), statement: trimmed))
             update(tabID) { $0.error = message; $0.running = false }
         }
     }
@@ -669,11 +691,16 @@ final class AppState {
                 var r = try await session.execute(statement, limit: limit)
                 r.sql = statement
                 results.append(r)
+                let summary = r.columns.isEmpty ? (r.message ?? tr("실행 완료")) : tr("%@행", "\(r.rows.count)") + (r.hasMore ? "+" : "")
+                LogFile.shared.append(LogEntry(level: .success, source: .query, message: "",
+                    audit: AuditRecord(AuditRecord.classify(sql: statement), target: auditTarget(tab),
+                                       result: "\(n + 1)/\(list.count) · \(summary) · \(Int(r.elapsed * 1000))ms", statement: statement)))
                 let kw = SQLText.firstKeyword(statement)
                 if ["CREATE", "ALTER", "DROP", "RENAME", "TRUNCATE"].contains(kw) { schemaChanged = true }
                 if kw == "USE" { usedUse = true }
             } catch {
-                let message = logError(error, .query, context: tr("%@/%@번째 문장 실패", "\(n + 1)", "\(list.count)"), sql: statement)
+                let message = logError(error, .query, context: tr("%@/%@번째 문장 실패", "\(n + 1)", "\(list.count)"), sql: statement,
+                                       audit: AuditRecord(AuditRecord.classify(sql: statement), target: auditTarget(tab), statement: statement))
                 finish(error: tr("%@번째 문장에서 멈췄어요. (앞의 %@개는 실행됨)\n\n%@", "\(n + 1)", "\(n)", "\(message)"))
                 await afterStatements(session: session, tabID: tabID, schemaChanged: schemaChanged, usedUse: usedUse)
                 return
@@ -851,18 +878,23 @@ final class AppState {
         do {
             _ = try await session.execute(sql, limit: 0)
         } catch {
-            logError(error, .schema, context: request.kind == .rename ? tr("테이블 이름 변경 실패") : tr("테이블 삭제 실패"), sql: sql)
+            let dbTarget = (profiles.first { $0.id == request.profileID }?.name ?? "?") + (db.isEmpty ? "" : "/\(db)")
+            logError(error, .schema, context: request.kind == .rename ? tr("테이블 이름 변경 실패") : tr("테이블 삭제 실패"), sql: sql,
+                     audit: AuditRecord(.ddl, target: dbTarget, statement: sql))
             throw error
         }
+        let dbTarget = (profiles.first { $0.id == request.profileID }?.name ?? "?") + (db.isEmpty ? "" : "/\(db)")
         switch request.kind {
         case .rename:
-            log(.success, .schema, tr("테이블 이름 변경: %@ → %@", request.table, newName), detail: sql)
+            log(.success, .schema, tr("테이블 이름 변경: %@ → %@", request.table, newName), detail: sql,
+                audit: AuditRecord(.ddl, target: dbTarget, result: "테이블 이름 변경", statement: sql))
             for i in tabs.indices where tabs[i].profileID == request.profileID && tabs[i].source == .table(request.table) {
                 tabs[i].source = .table(newName)
                 tabs[i].customTitle = "DDL · \(newName)"
             }
         case .drop:
-            log(.success, .schema, tr("테이블 삭제: %@", request.table), detail: sql)
+            log(.success, .schema, tr("테이블 삭제: %@", request.table), detail: sql,
+                audit: AuditRecord(.ddl, target: dbTarget, result: "테이블 삭제", statement: sql))
         }
         await refreshSchema(for: request.profileID)
     }
@@ -892,15 +924,18 @@ final class AppState {
 
     func executeAlter(_ sql: String, table: String) async throws {
         guard let session else { throw DBError.notConnected }
+        let alterTarget = session.profile.name + (currentDatabase.isEmpty ? "" : "/\(currentDatabase)")
         do {
             if !currentDatabase.isEmpty, await session.current != currentDatabase {
                 try await session.use(currentDatabase)
             }
             _ = try await session.execute(sql, limit: 0)
-            log(.success, .schema, tr("%@ 테이블 수정 완료", "\(table)"), detail: sql)
+            log(.success, .schema, tr("%@ 테이블 수정 완료", "\(table)"), detail: sql,
+                audit: AuditRecord(.ddl, target: alterTarget, result: "테이블 수정", statement: sql))
             await refreshSchema()
         } catch {
-            logError(error, .schema, context: tr("%@ 테이블 수정 실패", "\(table)"), sql: sql)
+            logError(error, .schema, context: tr("%@ 테이블 수정 실패", "\(table)"), sql: sql,
+                     audit: AuditRecord(.ddl, target: alterTarget, statement: sql))
             throw error
         }
     }

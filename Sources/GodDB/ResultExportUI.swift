@@ -260,6 +260,7 @@ extension AppState {
             exportTasks[tabID] = nil
         }
         let started = Date()
+        let exportTarget = tabs.first(where: { $0.id == tabID }).map(auditTarget) ?? ""
         var writer: ResultExportWriter?
         do {
             let w = try ResultExportWriter(format: format, columns: result.columns.map(\.name), url: url,
@@ -291,6 +292,13 @@ extension AppState {
             let secs = String(format: "%.1f", Date().timeIntervalSince(started))
             let written = w.rowsWritten
             lastExportURL = url
+            let scopeText = fetchAll ? "전체" : "보이는 행"
+            let auditStatement = (result.sql ?? "") + " → " + url.path
+            let verdict = truncated ? "Excel 최대 행에서 자름" : (fetchAll && total != nil && total != written ? "COUNT \(total!)행과 다름" : (fetchAll ? "COUNT 일치" : ""))
+            LogFile.shared.append(LogEntry(level: .success, source: .query, message: "",
+                audit: AuditRecord(.export, target: exportTarget,
+                                   result: "\(format.title) · \(scopeText) \(written)행" + (verdict.isEmpty ? "" : " · " + verdict),
+                                   statement: auditStatement)))
             if truncated {
                 log(.warning, .query, tr("%@ 저장 · Excel 시트 최대 행 수를 넘어 %@행까지만 저장했어요 · %@", format.title,
                                          written.formatted(), url.lastPathComponent), detail: url.path)
@@ -309,7 +317,8 @@ extension AppState {
             log(.info, .query, tr("내보내기를 취소했어요 (파일 삭제)"))
         } catch {
             writer?.cancel()
-            logError(error, .query, context: tr("내보내기 실패"))
+            logError(error, .query, context: tr("내보내기 실패"),
+                     audit: AuditRecord(.export, target: exportTarget, statement: (result.sql ?? "") + " → " + url.path))
         }
     }
 }

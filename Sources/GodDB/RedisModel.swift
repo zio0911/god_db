@@ -278,11 +278,15 @@ final class RedisWorkspace {
         do {
             let start = Date()
             try await session.command(args)
-            app?.log(.success, .query, "[\(name) db\(db)] \(label) · \(Int(Date().timeIntervalSince(start) * 1000))ms",
-                     detail: Self.display(args))
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            app?.log(.success, .query, "[\(name) db\(db)] \(label) · \(ms)ms", detail: Self.display(args),
+                     audit: AuditRecord(AuditRecord.classify(redis: args), target: auditTarget, result: "\(label) · \(ms)ms",
+                                        statement: Self.display(args)))
             return nil
         } catch {
-            return app?.logError(error, .query, context: "[\(name)] \(label)", sql: Self.display(args)) ?? error.localizedDescription
+            return app?.logError(error, .query, context: "[\(name)] \(label)", sql: Self.display(args),
+                                 audit: AuditRecord(AuditRecord.classify(redis: args), target: auditTarget,
+                                                    statement: Self.display(args))) ?? error.localizedDescription
         }
     }
 
@@ -348,7 +352,15 @@ final class RedisWorkspace {
         selectedKey = key
         tab = .keys
         await reloadValue()
+        // 감사 로그: 키 값을 열어 본 것 (자동 새로고침으로 다시 읽는 건 남기지 않음)
+        if valueError == nil {
+            LogFile.shared.append(LogEntry(level: .info, source: .query, message: "",
+                audit: AuditRecord(.read, target: auditTarget, result: "키 열기 · \(keyInfo?.type ?? "?")", statement: "GET " + key)))
+        }
     }
+
+    /// 감사 로그 대상 칸
+    var auditTarget: String { "\(name) db\(db)" }
 
     func reloadValue() async {
         guard let key = selectedKey else { return }
@@ -471,14 +483,18 @@ final class RedisWorkspace {
             if case .error = v { isError = true }
             console.append(.init(command: trimmed, output: v.formatted(), isError: isError, millis: ms, db: usedDB))
             db = await session.db
+            let record = AuditRecord(AuditRecord.classify(redis: args), target: "\(name) db\(usedDB)",
+                                     result: isError ? "실패: " + v.formatted().prefix(200) : "Workbench · \(ms)ms", statement: trimmed)
             if isError {
-                app?.log(.warning, .query, "[\(name) db\(usedDB)] \(trimmed.prefix(120))", detail: v.formatted())
+                app?.log(.warning, .query, "[\(name) db\(usedDB)] \(trimmed.prefix(120))", detail: v.formatted(), audit: record)
             } else {
-                app?.log(.success, .query, "[\(name) db\(usedDB)] \(trimmed.prefix(120)) · \(ms)ms", detail: trimmed)
+                app?.log(.success, .query, "[\(name) db\(usedDB)] \(trimmed.prefix(120)) · \(ms)ms", detail: trimmed, audit: record)
             }
             if !RedisCommands.isReadOnly(args), let key = selectedKey, args.contains(key) { await reloadValue() }
         } catch {
-            let msg = app?.logError(error, .query, context: "[\(name)] \(args[0].uppercased())", sql: trimmed) ?? error.localizedDescription
+            let msg = app?.logError(error, .query, context: "[\(name)] \(args[0].uppercased())", sql: trimmed,
+                                    audit: AuditRecord(AuditRecord.classify(redis: args), target: "\(name) db\(usedDB)",
+                                                       statement: trimmed)) ?? error.localizedDescription
             console.append(.init(command: trimmed, output: msg, isError: true, millis: 0, db: usedDB))
         }
         if console.count > 1000 { console.removeFirst(console.count - 1000) }
@@ -520,7 +536,8 @@ final class RedisWorkspace {
             s.psubscribe(pats.filter { !patterns.contains($0) })
             channels += chans.filter { !channels.contains($0) }
             patterns += pats.filter { !patterns.contains($0) }
-            app?.log(.info, .query, tr("[%@] 구독 · %@", name, items.joined(separator: ", ")))
+            app?.log(.info, .query, tr("[%@] 구독 · %@", name, items.joined(separator: ", ")),
+                     audit: AuditRecord(.read, target: auditTarget, result: "구독", statement: "SUBSCRIBE " + items.joined(separator: " ")))
         } catch {
             app?.logError(error, .query, context: tr("[%@] 구독 실패", name))
         }
@@ -548,7 +565,9 @@ final class RedisWorkspace {
         do {
             let n = try await session.publish(channel, message)
             app?.log(.success, .query, tr("[%@] PUBLISH %@ · 받은 구독자 %@명", name, channel, "\(n)"),
-                     detail: Self.display(["PUBLISH", channel, message]))
+                     detail: Self.display(["PUBLISH", channel, message]),
+                     audit: AuditRecord(.execute, target: auditTarget, result: "구독자 \(n)명",
+                                        statement: Self.display(["PUBLISH", channel, message])))
             return nil
         } catch {
             return app?.logError(error, .query, context: tr("[%@] PUBLISH 실패", name), sql: Self.display(["PUBLISH", channel, message]))
@@ -666,7 +685,7 @@ extension AppState {
         selectedProfileID.flatMap { redisWorkspaces[$0] }
     }
 
-    func connectRedis(_ profile: ConnectionProfile, password: String?) async {
+    func connectRedis(_ profile: ConnectionProfile, password: String?, route: String = "") async {
         let id = profile.id
         do {
             let s = try await RedisSession.connect(profile: profile, password: password)
@@ -678,11 +697,16 @@ extension AppState {
             log(.success, .connection, tr("%@ 연결됨", "\(profile.name)") + " · Redis \(version) · db\(await s.db)"
                 + (ws.topologyText.isEmpty ? "" : " · " + ws.topologyText)
                 + (profile.readOnly ? tr(" (읽기전용)") : ""),
-                detail: ws.nodes.count > 1 ? "nodes: " + ws.nodes.joined(separator: ", ") : nil)
+                detail: ws.nodes.count > 1 ? "nodes: " + ws.nodes.joined(separator: ", ") : nil,
+                audit: AuditRecord(.connect, target: profile.name,
+                                   result: "성공 · Redis \(version)" + (ws.topologyText.isEmpty ? "" : " · " + ws.topologyText)
+                                       + (profile.readOnly ? " (읽기전용)" : ""),
+                                   statement: route))
             await ws.loadDatabases()
             await ws.reloadKeys()
         } catch {
-            let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"))
+            let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"),
+                                   audit: AuditRecord(.connect, target: profile.name, statement: route))
             updateConnection(id) { $0.state = .failed(message) }
             if ErrorText.isAuthFailure(error) {
                 sessionPasswords[id] = nil
@@ -696,6 +720,6 @@ extension AppState {
         await ws.close()
         await ws.session.close()
         redisWorkspaces[id] = nil
-        log(.info, .connection, tr("%@ 연결 끊음", ws.name))
+        log(.info, .connection, tr("%@ 연결 끊음", ws.name), audit: AuditRecord(.disconnect, target: ws.name))
     }
 }

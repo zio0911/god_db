@@ -132,11 +132,19 @@ extension AppState {
         do {
             try await session.executeInTransaction(request.statements)
         } catch {
-            logError(error, .query, context: tr("데이터 변경 실패 (모두 되돌림)"), sql: request.statements.joined(separator: "\n"))
+            logError(error, .query, context: tr("데이터 변경 실패 (모두 되돌림)"), sql: request.statements.joined(separator: "\n"),
+                     audit: AuditRecord(AuditRecord.classify(sql: request.statements[0]), target: auditTarget(tab),
+                                        statement: request.statements.joined(separator: " ; ")))
             throw error
         }
         log(.success, .query, tr("데이터 변경 %@건 적용", "\(request.statements.count)"),
             detail: request.statements.joined(separator: "\n"))
+        // 감사 로그: 문장마다 한 줄 (추가/수정/삭제 구분)
+        for (n, st) in request.statements.enumerated() {
+            LogFile.shared.append(LogEntry(level: .success, source: .query, message: "",
+                audit: AuditRecord(AuditRecord.classify(sql: st), target: auditTarget(tab),
+                                   result: "결과 편집 \(n + 1)/\(request.statements.count) (한 트랜잭션)", statement: st)))
+        }
         revertEdits(request.tabID)
         if let page = tab.result?.page, tab.result?.isPaged == true {
             await loadPage(page, in: request.tabID)
