@@ -120,12 +120,14 @@ extension AppState {
             }
             job.phase = .done
             job.finished = Date()
-            log(.success, .query, tr("쿼리 튜닝 완료 · %@초", "\(Int(Date().timeIntervalSince(job.started)))"),
-                detail: job.streamed)
+            let secs = Int(Date().timeIntervalSince(job.started))
+            log(.success, .query, tr("쿼리 튜닝 완료 · %@초", "\(secs)"), detail: job.streamed,
+                audit: AuditRecord(.ai, target: auditTarget(tab), result: "튜닝 완료 · \(secs)초 · \(model)"))
         } catch is CancellationError {
             job.phase = .failed(tr("취소했어요."))
         } catch {
-            job.phase = .failed(logError(error, .query, context: tr("쿼리 튜닝 실패")))
+            job.phase = .failed(logError(error, .query, context: tr("쿼리 튜닝 실패"),
+                                         audit: AuditRecord(.ai, target: auditTarget(tab), statement: "쿼리 튜닝")))
         }
     }
 }

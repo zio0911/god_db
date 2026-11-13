@@ -25,9 +25,12 @@ public struct LogEntry: Identifiable, Sendable, Hashable {
     public let detail: String?
     /// 해결 방법 안내
     public let hint: String?
+    /// 감사 로그 파일에 남길 내용 (없으면 화면 상태창에만)
+    public let audit: AuditRecord?
 
     public init(date: Date = Date(), level: Level, source: Source, message: String,
-                detail: String? = nil, hint: String? = nil) {
+                detail: String? = nil, hint: String? = nil, audit: AuditRecord? = nil) {
+        self.audit = audit
         self.date = date
         self.level = level
         self.source = source

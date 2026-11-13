@@ -167,7 +167,9 @@ struct CompareView: View {
             report = result
             selection = nil
             app.log(.success, .compare,
-                    tr("%@/%@ → %@/%@ 비교 완료 · 누락 %@, 다름 %@", "\(s.name)", "\(sdb)", "\(t.name)", "\(tdb)", "\(result.missingCount)", "\(result.differentCount)"))
+                    tr("%@/%@ → %@/%@ 비교 완료 · 누락 %@, 다름 %@", "\(s.name)", "\(sdb)", "\(t.name)", "\(tdb)", "\(result.missingCount)", "\(result.differentCount)"),
+                    audit: AuditRecord(.compare, target: "\(s.name)/\(sdb) → \(t.name)/\(tdb)",
+                                       result: "누락 \(result.missingCount), 다름 \(result.differentCount)"))
         } catch {
             self.error = app.logError(error, .compare, context: tr("스키마 비교 실패"))
         }

@@ -367,7 +367,7 @@ extension L10nEnglish {
         "로그": "Log",
         "로그 파일 남기기": "Save log files",
         "로그 폴더": "Log folder",
-        "날짜별 로그 파일이 있는 폴더를 열어요 (~/Library/Logs/GodDB)": "Open the folder with the daily log files (~/Library/Logs/GodDB)",
+        "날짜별 감사 로그(goddb-audit-날짜.tsv) 폴더를 열어요 (~/Library/Logs/GodDB)": "Open the folder with the daily audit logs (goddb-audit-date.tsv, ~/Library/Logs/GodDB)",
         "상태창에 나오는 기록(접속, 실행한 SQL, 데이터 변경, 오류)을 날짜별 파일로 남겨요. 조회 결과 행은 남기지 않아요. 파일은 지우지 않고 영구 보관해요.": "Writes what the status panel shows (connections, executed SQL, data changes, errors) to a file per day. Query result rows are not saved. Files are kept permanently.",
         "대상": "Target",
         "대상 DB에 없는 테이블·컬럼·인덱스를 기준에 맞추는 SQL을 만들어요. 삭제(DROP)는 만들지 않아요.": "Generates SQL that brings tables, columns and indexes in the target up to the source. It never generates DROP.",

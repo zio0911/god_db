@@ -67,7 +67,7 @@ struct LogPanelView: View {
                         try? FileManager.default.createDirectory(at: LogFile.shared.directory, withIntermediateDirectories: true)
                         NSWorkspace.shared.open(LogFile.shared.directory)
                     } label: { Label(tr("로그 폴더"), systemImage: "folder") }
-                        .help(tr("날짜별 로그 파일이 있는 폴더를 열어요 (~/Library/Logs/GodDB)"))
+                        .help(tr("날짜별 감사 로그(goddb-audit-날짜.tsv) 폴더를 열어요 (~/Library/Logs/GodDB)"))
                 }
                 Button {
                     app.clearLogs()

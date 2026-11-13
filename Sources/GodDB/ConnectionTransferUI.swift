@@ -65,7 +65,9 @@ extension AppState {
         persist()
         log(.success, .app, tr("접속 정보 %@개 가져옴 · %@", "\(incoming.count)", fileName)
             + (saved > 0 ? tr(" · 비밀번호 %@개", "\(saved)") : ""),
-            detail: incoming.map { "\($0.name) (\($0.kind.title) \($0.host):\($0.port))" }.joined(separator: "\n"))
+            detail: incoming.map { "\($0.name) (\($0.kind.title) \($0.host):\($0.port))" }.joined(separator: "\n"),
+            audit: AuditRecord(.settings, result: "접속 정보 \(incoming.count)개 가져옴" + (saved > 0 ? " · 비밀번호 \(saved)개" : ""),
+                               statement: fileName + " · " + incoming.map(\.name).joined(separator: ", ")))
     }
 
     /// 내보내기: 저장 위치를 고르고 파일을 쓴다.
@@ -90,7 +92,9 @@ extension AppState {
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
             log(.success, .app, tr("접속 정보 %@개 내보냄 · %@", "\(list.count)", url.lastPathComponent)
                 + (passwords.map { tr(" · 비밀번호 %@개 (암호화)", "\($0.count)") } ?? ""),
-                detail: url.path + "\n" + list.map(\.name).joined(separator: "\n"))
+                detail: url.path + "\n" + list.map(\.name).joined(separator: "\n"),
+                audit: AuditRecord(.export, result: "접속 정보 \(list.count)개 내보냄" + (passwords.map { " · 비밀번호 \($0.count)개 (암호화)" } ?? ""),
+                                   statement: url.path + " · " + list.map(\.name).joined(separator: ", ")))
             NSWorkspace.shared.activateFileViewerSelecting([url])
             return true
         } catch {

@@ -1,7 +1,9 @@
 import Foundation
 
-/// 상태창 로그를 날짜별 파일로 남긴다. (나중에 무엇을 했는지 확인하는 용도)
-///   ~/Library/Logs/GodDB/goddb-2026-11-12.log
+/// 감사 로그를 날짜별 파일로 남긴다. (나중에 누가 언제 어느 DB 에 무엇을 했는지 분석하는 용도)
+///   ~/Library/Logs/GodDB/goddb-audit-2026-11-13.tsv
+/// 한 줄 = 한 행위, 탭으로 나눈 열: 시각 · 사용자@PC · 구분 · 대상 · 결과 · 내용 (엑셀로 바로 열 수 있다)
+/// 감사 대상(AuditRecord)이 있는 항목만 쓴다. 화면 이동·AI 내용 같은 건 상태창에만 남는다.
 /// 파일 쓰기는 별도 큐에서 하므로 화면을 막지 않는다. 사내 감사 요구로 기본은 영구 보관 (지우지 않음).
 public final class LogFile: @unchecked Sendable {
     public static let shared = LogFile(directory: defaultDirectory)
@@ -24,7 +26,7 @@ public final class LogFile: @unchecked Sendable {
 
     /// 그 날짜의 로그 파일 경로
     public func url(for date: Date) -> URL {
-        directory.appendingPathComponent("goddb-\(Self.dayFormatter.string(from: date)).log")
+        directory.appendingPathComponent("goddb-audit-\(Self.dayFormatter.string(from: date)).tsv")
     }
 
     /// 설정 > 일반 > 로그 파일 남기기 (기본 켜짐)
@@ -37,7 +39,7 @@ public final class LogFile: @unchecked Sendable {
     public static let suspended = CommandLine.arguments.contains { $0.hasPrefix("--render-") }
 
     public func append(_ entry: LogEntry) {
-        guard Self.enabled, !Self.suspended else { return }
+        guard Self.enabled, !Self.suspended, entry.audit != nil else { return }
         let text = Self.format(entry)
         queue.async { [self] in write(text, date: entry.date) }
     }
@@ -47,17 +49,11 @@ public final class LogFile: @unchecked Sendable {
         queue.sync {}
     }
 
-    /// 한 항목을 파일용 텍스트로. 첫 줄은 시간·수준·종류·메시지, 나머지(SQL, 오류 원문)는 들여쓴다.
-    /// 한 줄 형식: 시각 수준 [사용자@컴퓨터] [종류] 메시지
+    /// 한 항목을 파일 한 줄로 (탭 구분). 실패한 행위는 결과 칸이 "실패: …".
     public static func format(_ e: LogEntry, identity: String = ClientInfo.identity) -> String {
-        var line = "\(timeFormatter.string(from: e.date)) \(e.level.rawValue.uppercased().padding(toLength: 7, withPad: " ", startingAt: 0)) [\(identity)] [\(e.source.title)] \(e.message)"
-        var extra: [String] = []
-        if let hint = e.hint { extra.append(tr("해결 방법: %@", hint)) }
-        if let detail = e.detail, !detail.isEmpty { extra.append(detail) }
-        for block in extra {
-            for l in block.components(separatedBy: "\n") { line += "\n    " + l }
-        }
-        return line + "\n"
+        guard let a = e.audit else { return "" }
+        let cols = [timeFormatter.string(from: e.date), identity, a.action.rawValue, a.target, a.result, a.statement]
+        return cols.map { AuditRecord.cell($0) }.joined(separator: "\t") + "\n"
     }
 
     private func write(_ text: String, date: Date) {
@@ -65,7 +61,11 @@ public final class LogFile: @unchecked Sendable {
         try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
         if !cleaned { cleaned = true; removeOld() }
         let url = url(for: date)
-        guard let data = text.data(using: .utf8) else { return }
+        guard var data = text.data(using: .utf8) else { return }
+        // 새 파일이면 머리글 (엑셀 한글 깨짐 방지 BOM 포함)
+        if !fm.fileExists(atPath: url.path) {
+            data = Data(("\u{FEFF}" + AuditRecord.header.joined(separator: "\t") + "\n").utf8) + data
+        }
         if let handle = try? FileHandle(forWritingTo: url) {
             defer { try? handle.close() }
             _ = try? handle.seekToEnd()
@@ -82,8 +82,9 @@ public final class LogFile: @unchecked Sendable {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
         let cutoff = Calendar.current.date(byAdding: .day, value: -keepDays, to: Date()) ?? .distantPast
-        for f in files where f.lastPathComponent.hasPrefix("goddb-") && f.pathExtension == "log" {
-            let day = f.deletingPathExtension().lastPathComponent.dropFirst("goddb-".count)
+        for f in files where f.lastPathComponent.hasPrefix("goddb-") && ["log", "tsv"].contains(f.pathExtension) {
+            let name = f.deletingPathExtension().lastPathComponent
+            let day = name.hasPrefix("goddb-audit-") ? name.dropFirst("goddb-audit-".count) : name.dropFirst("goddb-".count)
             if let d = Self.dayFormatter.date(from: String(day)), d < cutoff {
                 try? fm.removeItem(at: f)
             }

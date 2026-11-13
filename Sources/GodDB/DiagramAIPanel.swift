@@ -92,6 +92,11 @@ final class DiagramChat {
     }
 
     /// 다이어그램: 질문을 보내고 답을 스트리밍으로 받는다.
+    /// "AI 어시스턴트 실패" → "AI 어시스턴트" (감사 로그 요약용)
+    static func featureName(_ failureContext: String) -> String {
+        failureContext.replacingOccurrences(of: " 실패", with: "").replacingOccurrences(of: " failed", with: "")
+    }
+
     func ask(_ question: String, doc: DiagramDoc, app: AppState) {
         ask(question, app: app, logMessage: { model, first in
             first ? tr("다이어그램 AI 분석 · %@ · 테이블 %@개", model, "\(doc.tables.count)") : nil
@@ -118,6 +123,7 @@ final class DiagramChat {
         task = Task { [weak self] in
             guard let self else { return }
             let client = TuningSettings.client
+            let started = Date()
             do {
                 guard case .running(let models) = await client.status() else { throw OllamaError.notRunning }
                 let model = TuningSettings.model.isEmpty ? (models.first?.name ?? "") : TuningSettings.model
@@ -137,11 +143,15 @@ final class DiagramChat {
                     }
                 }
                 if messages[answerIndex].text.isEmpty { messages[answerIndex].text = tr("(답변 없음)") }
+                // 감사 로그에는 질문·답변 내용 없이 한 줄 요약만
+                LogFile.shared.append(LogEntry(level: .success, source: .schema, message: "",
+                    audit: AuditRecord(.ai, result: "\(Self.featureName(failureContext)) 답변 · \(Int(Date().timeIntervalSince(started)))초 · \(model)")))
             } catch is CancellationError {
                 messages[answerIndex].text += (messages[answerIndex].text.isEmpty ? "" : "\n\n") + tr("(취소했어요)")
             } catch {
                 messages[answerIndex].failed = true
-                messages[answerIndex].text = app.logError(error, .schema, context: failureContext)
+                messages[answerIndex].text = app.logError(error, .schema, context: failureContext,
+                                                          audit: AuditRecord(.ai, statement: Self.featureName(failureContext)))
             }
             running = false
             task = nil
