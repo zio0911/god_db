@@ -3,6 +3,8 @@ import Foundation
 // 결과 내보내기 번역
 extension L10nEnglish {
     static let export: [String: String] = [
+        "쿼리 전체 데이터 (%@행)": "Whole query result (%@ rows)",
+        "화면에 보이는 페이지가 아니라 전체를 5,000행씩 다시 조회하며 바로 저장": "Not just the visible page: everything is fetched 5,000 rows at a time and written straight to the file",
         "%@ · 보이는 %@행": "%@ · %@ visible rows",
         "%@ · 쿼리 전체 데이터": "%@ · whole query result",
         "COUNT 로 전체 행 수 확인 후 5,000행씩 다시 조회하며 바로 저장": "Counts all rows first, then fetches 5,000 rows at a time and writes them straight to the file",
