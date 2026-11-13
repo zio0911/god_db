@@ -89,10 +89,10 @@ enum ModelingSample {
         sample.sql = "SELECT * FROM tb_member"; sample.pageSize = 500; sample.hasMore = true
         let req = ExportRequest(tabID: UUID(), result: sample, kind: .mysql, visibleRows: 500, canFetchAll: true,
                                 knownTotal: 12_345, stable: true, sort: nil, defaultTable: "tb_member", baseName: "tb_member")
-        shot("export-sheet", ExportSheet(request: req), size: NSSize(width: 540, height: 640))
+        shot("export-sheet", ExportSheet(request: req), size: NSSize(width: 560, height: 330))
         let req2 = ExportRequest(tabID: UUID(), result: sample, kind: .mysql, visibleRows: 500, canFetchAll: true,
                                  knownTotal: nil, stable: false, sort: nil, defaultTable: "table", baseName: "query")
-        shot("export-sheet-unstable", ExportSheet(request: req2), size: NSSize(width: 540, height: 680))
+        shot("export-sheet-unstable", ExportSheet(request: req2), size: NSSize(width: 560, height: 380))
         shot("sidebar-groups", List { Section(tr("접속")) { ProfileList() } }.listStyle(.sidebar), size: NSSize(width: 300, height: 320))
     }
 }
