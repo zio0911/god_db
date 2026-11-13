@@ -305,7 +305,9 @@ struct ResultPane: View {
                 }
                 Divider()
                 StatusBar(result: result, selectedCount: selection.count, loading: tab.pageLoading || !tab.edits.isEmpty,
-                          onPage: onPage, onCount: onCount, onExport: { app.exportCSV(tab.id) })
+                          exportProgress: tab.exportProgress,
+                          onPage: onPage, onCount: onCount, onExport: { app.exportResult(tab.id) },
+                          onCancelExport: { app.cancelExport(tab.id) })
             } else {
                 Text(tr("쿼리를 실행하면 결과가 여기 나와요."))
                     .foregroundStyle(.secondary)
@@ -654,9 +656,11 @@ struct StatusBar: View {
     var selectedCount = 0
     /// 페이지 이동/행 수 세기 중 (표는 그대로 두고 여기만 표시)
     var loading = false
+    var exportProgress: ExportProgress?
     var onPage: (Int) -> Void = { _ in }
     var onCount: () -> Void = {}
     var onExport: () -> Void = {}
+    var onCancelExport: () -> Void = {}
 
     private var lastPage: Int? {
         guard let total = result.totalCount, result.pageSize > 0 else { return nil }
@@ -678,15 +682,23 @@ struct StatusBar: View {
                 Text(tr("행을 클릭하면 상세가 나와요")).foregroundStyle(.tertiary)
             }
             Spacer()
-            if !result.columns.isEmpty {
+            if let p = exportProgress {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(p.total.map { tr("%@ 내보내는 중 %@ / %@행", p.format.title, p.written.formatted(), $0.formatted()) }
+                         ?? tr("%@ 내보내는 중 %@행", p.format.title, p.written.formatted()))
+                        .monospacedDigit()
+                    Button(tr("취소")) { onCancelExport() }.buttonStyle(.hover)
+                }
+            } else if !result.columns.isEmpty {
                 Button {
                     onExport()
                 } label: {
-                    Label(tr("CSV 다운로드"), systemImage: "square.and.arrow.down")
+                    Label(tr("내보내기"), systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(.hover)
                 .disabled(loading)
-                .help(tr("결과를 CSV 파일로 저장 (쿼리 전체 결과 또는 보이는 행)"))
+                .help(tr("결과를 파일로 저장: CSV · TSV · Excel · JSON · SQL INSERT · Markdown (보이는 행 또는 쿼리 전체 데이터)"))
             }
         }
         .font(.callout)

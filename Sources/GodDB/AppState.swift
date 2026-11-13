@@ -41,6 +41,8 @@ struct QueryTab: Identifiable {
     var running = false
     /// 페이지 이동 / 전체 행 수 세기 중 (결과 표는 그대로 보여준다)
     var pageLoading = false
+    /// 파일로 내보내는 중
+    var exportProgress: ExportProgress?
     /// 결과 편집 대기 중인 변경 (보고 있는 결과 기준)
     var edits = PendingEdits()
     var lastSQL: String?
@@ -126,6 +128,8 @@ final class AppState {
     var diagrams: [UUID: DiagramDoc] = [:]
     /// 마지막으로 저장한 CSV (Finder 에서 보기)
     var lastExportURL: URL?
+    /// 탭별 내보내기 작업 (취소용)
+    @ObservationIgnored var exportTasks: [UUID: Task<Void, Never>] = [:]
 
     // 상태창 (로그 패널)
     var logs: [LogEntry] = []
