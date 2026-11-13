@@ -53,6 +53,17 @@ struct ExportSheet: View {
         _choice = State(initialValue: ExportChoice(format: saved ?? .csv, fetchAll: request.canFetchAll, tableName: request.defaultTable))
     }
 
+    private static func icon(_ f: ExportFormat) -> String {
+        switch f {
+        case .csv: return "doc.text"
+        case .tsv: return "tablecells"
+        case .xlsx: return "tablecells.fill"
+        case .json: return "curlybraces"
+        case .sql: return "chevron.left.forwardslash.chevron.right"
+        case .markdown: return "text.alignleft"
+        }
+    }
+
     private static func note(_ f: ExportFormat) -> String {
         switch f {
         case .csv: return tr("쉼표 구분 · 엑셀 호환")
@@ -72,47 +83,38 @@ struct ExportSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 12) {
-                GridRow {
-                    Text(tr("형식")).gridColumnAlignment(.trailing)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Picker("", selection: $choice.format) {
-                            ForEach(ExportFormat.allCases) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                        hint(Self.note(choice.format))
-                    }
-                    .frame(width: 420, alignment: .leading)
-                }
-                GridRow {
-                    Text(tr("범위"))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Picker("", selection: $choice.fetchAll) {
-                            Text(request.knownTotal.map { tr("쿼리 전체 데이터 (%@행)", $0.formatted()) } ?? tr("쿼리 전체 데이터"))
-                                .tag(true)
-                            Text(tr("지금 보이는 행만 (%@행)", request.visibleRows.formatted())).tag(false)
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                        .disabled(!request.canFetchAll)
-                        hint(!request.canFetchAll ? tr("결과가 한 페이지뿐이라 보이는 행이 전체예요")
-                             : choice.fetchAll ? (request.knownTotal == nil
-                                                  ? tr("COUNT 로 전체 행 수 확인 후 5,000행씩 다시 조회하며 바로 저장")
-                                                  : tr("화면에 보이는 페이지가 아니라 전체를 5,000행씩 다시 조회하며 바로 저장"))
-                             : tr("화면의 %@행 그대로", request.visibleRows.formatted()))
-                        if choice.fetchAll && !request.stable {
-                            Label(tr("정렬 기준(ORDER BY 또는 결과에 포함된 기본 키)이 없어 페이지 사이에 행이 빠지거나 겹칠 수 있어요. ORDER BY 를 넣고 다시 실행하는 걸 권장해요."),
-                                  systemImage: "exclamationmark.triangle.fill")
-                                .font(.callout).foregroundStyle(.orange)
-                                .fixedSize(horizontal: false, vertical: true)
+            section(tr("형식")) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                    ForEach(ExportFormat.allCases) { f in
+                        card(selected: choice.format == f, icon: Self.icon(f), title: f.title, note: Self.note(f)) {
+                            choice.format = f
                         }
                     }
-                    .frame(width: 420, alignment: .leading)
                 }
-                optionRow
             }
 
+            section(tr("범위")) {
+                VStack(spacing: 8) {
+                    card(selected: choice.fetchAll, icon: "square.stack.3d.down.right",
+                         title: tr("쿼리 전체 데이터"),
+                         note: request.canFetchAll
+                            ? (request.knownTotal.map { tr("전체 %@행 · 5,000행씩 다시 조회하며 바로 저장", $0.formatted()) }
+                               ?? tr("COUNT 로 전체 행 수 확인 후 5,000행씩 다시 조회하며 바로 저장"))
+                            : tr("결과가 한 페이지뿐이라 보이는 행이 전체예요"),
+                         disabled: !request.canFetchAll) { choice.fetchAll = true }
+                    card(selected: !choice.fetchAll, icon: "rectangle.on.rectangle",
+                         title: tr("지금 보이는 행만"),
+                         note: tr("화면의 %@행 그대로", request.visibleRows.formatted())) { choice.fetchAll = false }
+                }
+                if choice.fetchAll && !request.stable {
+                    Label(tr("정렬 기준(ORDER BY 또는 결과에 포함된 기본 키)이 없어 페이지 사이에 행이 빠지거나 겹칠 수 있어요. ORDER BY 를 넣고 다시 실행하는 걸 권장해요."),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            options
 
             HStack {
                 Spacer()
@@ -127,32 +129,38 @@ struct ExportSheet: View {
             }
         }
         .padding(22)
-        .frame(width: 560)
+        .frame(width: 540)
     }
 
     @ViewBuilder
-    private var optionRow: some View {
+    private var options: some View {
         switch choice.format {
         case .csv, .tsv:
-            GridRow {
-                Text(tr("옵션"))
-                Toggle(tr("엑셀 호환 (UTF-8 BOM, 한글 깨짐 방지)"), isOn: $choice.excelBOM).toggleStyle(.checkbox)
+            section(tr("옵션")) {
+                Toggle(tr("엑셀 호환 (UTF-8 BOM, 한글 깨짐 방지)"), isOn: $choice.excelBOM)
+                    .toggleStyle(.checkbox)
             }
         case .sql:
-            GridRow {
-                Text(tr("대상 테이블"))
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("", text: $choice.tableName).textFieldStyle(.roundedBorder).frame(width: 220)
-                    hint(tr("INSERT 문 하나에 100행씩. 값은 모두 문자열 리터럴로 써요 (NULL 은 NULL)."))
+            section(tr("옵션")) {
+                HStack {
+                    Text(tr("대상 테이블"))
+                    TextField("", text: $choice.tableName).textFieldStyle(.roundedBorder)
                 }
+                hint(tr("INSERT 문 하나에 100행씩. 값은 모두 문자열 리터럴로 써요 (NULL 은 NULL)."))
             }
         case .xlsx:
-            GridRow {
-                Text(tr("옵션"))
-                hint(tr("시트 하나에 최대 1,048,575행. 넘으면 그 앞까지만 저장하고 알려줘요. 숫자로 바꿔도 값이 그대로인 것만 숫자 셀로 써요 (앞자리 0 은 문자)."))
-            }
-        case .json, .markdown:
-            EmptyView()
+            hint(tr("시트 하나에 최대 1,048,575행. 넘으면 그 앞까지만 저장하고 알려줘요. 숫자로 바꿔도 값이 그대로인 것만 숫자 셀로 써요 (앞자리 0 은 문자)."))
+        case .json:
+            hint(tr("행마다 {컬럼: 값} 객체. NULL 은 null."))
+        case .markdown:
+            hint(tr("Confluence · Jira · 슬랙에 붙여 넣기 좋은 표. 큰 결과에는 맞지 않아요."))
+        }
+    }
+
+    private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            content()
         }
     }
 
@@ -160,6 +168,36 @@ struct ExportSheet: View {
         Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
+    /// 고를 수 있는 카드 한 칸 (선택 표시 + 아이콘 + 제목 + 설명)
+    private func card(selected: Bool, icon: String, title: String, note: String, disabled: Bool = false,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                    .frame(width: 16)
+                Image(systemName: icon)
+                    .frame(width: 20)
+                    .foregroundStyle(selected ? Color.accentColor : .primary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).fontWeight(.medium)
+                    Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(selected ? Color.accentColor.opacity(0.10) : Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: selected ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.45 : 1)
+    }
 }
 
 extension AppState {
