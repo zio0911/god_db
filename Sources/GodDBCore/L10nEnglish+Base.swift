@@ -150,6 +150,8 @@ extension L10nEnglish {
         "자동 새로고침 간격 (초, 1~3600)": "Auto refresh interval (seconds, 1–3600)",
         "자동 새로고침 켜기/끄기": "Toggle auto refresh",
         "접두어 복사": "Copy prefix",
+        "접기": "Collapse",
+        "펼치기": "Expand",
         "쿼리 / 스키마 비교": "Query / Schema compare",
         "트리": "Tree",
         "트리 / 목록 보기": "Tree / list view",

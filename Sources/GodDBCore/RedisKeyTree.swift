@@ -19,6 +19,26 @@ public struct RedisKeyNode: Identifiable, Equatable, Sendable {
 }
 
 public enum RedisKeyTree {
+    /// 화면에 보이는 한 줄 (펼친 폴더의 하위만 포함). 중첩 DisclosureGroup 대신 평평한 목록으로 그려
+    /// SwiftUI(NSOutlineView) 의 펼치기/접기 diff 가 키 목록 갱신과 겹쳐 종료되던 문제를 피한다.
+    public struct VisibleRow: Identifiable, Equatable, Sendable {
+        public let node: RedisKeyNode
+        public let depth: Int
+        public var id: String { node.id }
+    }
+
+    public static func visibleRows(_ nodes: [RedisKeyNode], expanded: Set<String>, depth: Int = 0) -> [VisibleRow] {
+        var out: [VisibleRow] = []
+        func walk(_ nodes: [RedisKeyNode], _ depth: Int) {
+            for n in nodes {
+                out.append(VisibleRow(node: n, depth: depth))
+                if let c = n.children, expanded.contains(n.id) { walk(c, depth + 1) }
+            }
+        }
+        walk(nodes, depth)
+        return out
+    }
+
     private final class Builder {
         var folders: [String: Builder] = [:]
         var keys: [(name: String, key: String)] = []
