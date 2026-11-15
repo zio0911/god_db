@@ -142,9 +142,9 @@ struct GeneralSettingsView: View {
         showDotZero = false
         tapWork?.cancel()
         guard versionTaps < 40 else { versionTaps = 0; return }
-        // 누르기를 멈추고 2초 뒤 횟수가 맞으면 10초 동안만 보인다
+        // 누르기를 멈추고 2초 뒤 횟수가 맞으면 10초 동안만 보인다 (나눠서 눌러도 횟수는 이어진다)
         let work = DispatchWorkItem {
-            guard (30..<40).contains(versionTaps) else { versionTaps = 0; return }
+            guard (30..<40).contains(versionTaps) else { return }
             showDotZero = true
             let hide = DispatchWorkItem { showDotZero = false; versionTaps = 0 }
             tapWork = hide
