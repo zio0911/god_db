@@ -30,6 +30,12 @@ public enum ReleaseNotes {
         return out.filter { !$0.lines.isEmpty }
     }
 
+    /// 지금 앱 버전 이하만 (아직 릴리스 안 한 "개발 중" 이력은 숨긴다). 버전을 모르면(dev) 그대로.
+    public static func released(_ entries: [Entry], upTo current: String) -> [Entry] {
+        guard current.first?.isNumber == true else { return entries }
+        return entries.filter { compare($0.version, current) != .orderedDescending }
+    }
+
     /// a 보다 새롭고 b 이하인 버전들 (예: 1.0.0 → 1.1.0 사이 변경)
     public static func between(_ entries: [Entry], after old: String, upTo new: String) -> [Entry] {
         entries.filter { compare($0.version, old) == .orderedDescending && compare($0.version, new) != .orderedDescending }

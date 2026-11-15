@@ -39,7 +39,7 @@ struct SettingsView: View {
             GeneralSettingsView()
                 .tabItem { Label(tr("일반"), systemImage: "gearshape") }
             TuningSettingsView()
-                .tabItem { Label(tr("쿼리 튜닝"), systemImage: "sparkles") }
+                .tabItem { Label(tr("AI"), systemImage: "sparkles") }
             UpdateSettingsView()
                 .tabItem { Label(tr("업데이트"), systemImage: "arrow.down.circle") }
             LicenseSettingsView()
@@ -233,7 +233,7 @@ struct LicenseSettingsView: View {
     }
 }
 
-/// 설정 > 쿼리 튜닝: 로컬 Ollama 연결과 모델
+/// 설정 > AI: 로컬 Ollama 연결과 모델, AI 어시스턴트·쿼리 튜닝 각각 켜기
 struct TuningSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @State private var status: OllamaStatus?

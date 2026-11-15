@@ -118,7 +118,8 @@ final class StartupState {
                 return nil
             }),
             (tr("AI(Ollama) 연결 확인 중"), {
-                guard TuningSettings.enabled else { return tr("꺼짐") }
+                let assistantOn = UserDefaults.standard.object(forKey: AppSettings.assistantKey) as? Bool ?? true
+                guard TuningSettings.enabled || assistantOn else { return tr("꺼짐") }
                 let status = await Self.withTimeout(2.5) { await TuningSettings.client.status() }
                 switch status {
                 case .running(let models)?: return tr("모델 %@개", "\(models.count)")
@@ -216,7 +217,10 @@ struct SplashView: View {
 // MARK: - 릴리스 노트
 
 extension AppState {
-    static var releaseNotes: [ReleaseNotes.Entry] { appGuide?.releaseNotes ?? [] }
+    static var releaseNotes: [ReleaseNotes.Entry] {
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        return ReleaseNotes.released(appGuide?.releaseNotes ?? [], upTo: current)
+    }
 
     /// 새 버전을 처음 켰으면 그 사이 변경 내용을 한 번 보여준다
     func showReleaseNotesIfUpdated() {

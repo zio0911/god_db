@@ -3,6 +3,7 @@ import Foundation
 // 설정 정리 번역
 extension L10nEnglish {
     static let settings: [String: String] = [
+        "AI": "AI",
         "검사": "Check",
         "검사할 감사 로그 폴더를 고르세요 (다른 사람에게 받은 로그도 가능)": "Choose an audit log folder to check (logs from others work too)",
         "결과 복사": "Copy Results",

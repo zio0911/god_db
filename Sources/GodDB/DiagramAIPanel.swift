@@ -168,9 +168,8 @@ struct DiagramAIPanel: View {
     @State private var input = ""
     @FocusState private var inputFocused: Bool
 
-    private var unavailable: String? {
-        TuningSettings.enabled ? nil : tr("설정 > 쿼리 튜닝에서 Ollama 를 켜 주세요. (같은 모델을 써요)")
-    }
+    /// 다이어그램 AI 는 쿼리 튜닝 설정과 무관 (Ollama 연결만 쓴다)
+    private var unavailable: String? { nil }
 
     var body: some View {
         VStack(spacing: 0) {

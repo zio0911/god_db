@@ -253,6 +253,8 @@ struct AssistantAITests {
         #expect(e[0].lines == ["- **트랜잭션** 자동/수동 커밋", "- 문제 보고"])
         #expect(ReleaseNotes.between(e, after: "0.9.1", upTo: "1.1.0").map(\.version) == ["1.1.0", "1.0.0"])
         #expect(ReleaseNotes.compare("1.10.0", "1.9.2") == .orderedDescending)
+        #expect(ReleaseNotes.released(e, upTo: "1.0.0").map(\.version) == ["1.0.0", "0.9.1"])
+        #expect(ReleaseNotes.released(e, upTo: "dev").count == 3)
         #expect(ReleaseNotes.html(e[0]).contains("<b>트랜잭션</b>"))
     }
 
