@@ -66,9 +66,19 @@ final class UpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     /// 시작할 때 조용히 확인 (설정이 수동이면 안 함)
+    /// 시작할 때 조용히 확인 (설정이 수동이면 안 함). 업데이터는 시작 직후 잠깐 확인할 수 없는 상태라
+    /// 준비될 때까지(최대 10초) 기다렸다가 확인한다. 새 버전이 있으면 업데이트 창이 뜬다.
     func checkInBackground() {
-        guard UpdateMode.current != .manual, let u = controller?.updater, u.canCheckForUpdates else { return }
-        u.checkForUpdatesInBackground()
+        guard UpdateMode.current != .manual else { return }
+        Task { @MainActor [weak self] in
+            for _ in 0..<40 {
+                if let u = self?.controller?.updater, u.canCheckForUpdates, !u.sessionInProgress {
+                    u.checkForUpdatesInBackground()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
     }
 
     var canCheck: Bool { controller?.updater.canCheckForUpdates ?? available }
