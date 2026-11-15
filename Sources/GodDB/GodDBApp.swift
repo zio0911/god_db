@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct GodDBApp: App {
+    @NSApplicationDelegateAdaptor(GodDBAppDelegate.self) private var appDelegate
     @State private var app = AppState()
     @State private var settings = AppSettings()
 
