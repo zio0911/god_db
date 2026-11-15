@@ -41,6 +41,8 @@ struct QueryTab: Identifiable {
     var running = false
     /// 페이지 이동 / 전체 행 수 세기 중 (결과 표는 그대로 보여준다)
     var pageLoading = false
+    /// "제한 없음" 결과가 메모리 상한에 닿음
+    var appendCapped = false
     /// 파일로 내보내는 중
     var exportProgress: ExportProgress?
     /// 결과 편집 대기 중인 변경 (보고 있는 결과 기준)
@@ -104,6 +106,9 @@ final class AppState {
     var tabs: [QueryTab] = []
     var selectedTabID: UUID?
     var rowLimit = 500
+    /// "제한 없음" 일 때 보이지 않게 나눠 받는 크기와 메모리에 둘 최대 행 수
+    static let streamPageSize = 1_000
+    static let maxRowsInMemory = 200_000
 
     var editingProfile: ConnectionProfile?
     var editingIsNew = false
@@ -597,7 +602,8 @@ final class AppState {
         }
         tabs[i].running = true
         tabs[i].error = nil
-        let limit = rowLimit
+        let streaming = rowLimit == 0
+        let limit = streaming ? Self.streamPageSize : rowLimit
         do {
             guard let session = try await session(for: tab) else {
                 update(tabID) { $0.error = notConnectedMessage(tab); $0.running = false }
@@ -615,6 +621,7 @@ final class AppState {
             }
             var shown = result
             shown.sql = trimmed
+            if streaming && shown.isPaged { shown.appendMode = true }
             update(tabID) {
                 $0.edits = PendingEdits()
                 $0.result = shown
@@ -622,6 +629,7 @@ final class AppState {
                 $0.resultIndex = 0
                 $0.running = false
                 $0.isPlan = explain
+                $0.appendCapped = false
                 $0.planTree = tree
             }
             let ms = Int(result.elapsed * 1000)
@@ -665,7 +673,8 @@ final class AppState {
         tabs[i].isPlan = false
         tabs[i].planTree = nil
         tabs[i].lastSQL = list.joined(separator: ";\n")
-        let limit = rowLimit
+        let streaming = rowLimit == 0
+        let limit = streaming ? Self.streamPageSize : rowLimit
         let started = Date()
         var results: [QueryResult] = []
         var schemaChanged = false
@@ -700,6 +709,7 @@ final class AppState {
             do {
                 var r = try await session.execute(statement, limit: limit)
                 r.sql = statement
+                if streaming && r.isPaged { r.appendMode = true }
                 results.append(r)
                 let summary = r.columns.isEmpty ? (r.message ?? tr("실행 완료")) : tr("%@행", "\(r.rows.count)") + (r.hasMore ? "+" : "")
                 LogFile.shared.append(LogEntry(level: .success, source: .query, message: "",
@@ -740,6 +750,40 @@ final class AppState {
     }
 
     /// 보고 있는 결과의 다른 페이지를 가져온다. (같은 쿼리를 OFFSET 만 바꿔 다시 실행)
+    /// "제한 없음" 결과: 스크롤이 끝에 닿으면 다음 페이지를 받아 이어 붙인다 (메모리 상한까지)
+    func loadMore(in tabID: UUID) async {
+        guard let t = tabs.first(where: { $0.id == tabID }), let current = t.result, current.appendMode,
+              current.hasMore, !t.pageLoading, let sql = current.sql else { return }
+        if current.rows.count >= Self.maxRowsInMemory {
+            if !t.appendCapped {
+                update(tabID) { $0.appendCapped = true }
+                log(.warning, .query, tr("화면에는 %@행까지만 보여요. 전체 데이터는 [내보내기] 로 저장하세요.", Self.maxRowsInMemory.formatted()))
+            }
+            return
+        }
+        let index = t.resultIndex
+        update(tabID) { $0.pageLoading = true }
+        defer { update(tabID) { $0.pageLoading = false } }
+        do {
+            guard let session = try await session(for: t) else { return }
+            let next = current.page + 1
+            let r = try await session.execute(sql, limit: current.pageSize, page: next, sort: current.serverSort)
+            update(tabID) {
+                guard var res = $0.result, res.id == current.id else { return }
+                let base = res.rows.count
+                res.rows += r.rows.enumerated().map { QueryResult.Row(id: base + $0.offset, values: $0.element.values) }
+                res.page = next
+                res.hasMore = r.hasMore
+                res.truncatedCells += r.truncatedCells
+                $0.result = res
+                if $0.results.indices.contains(index) { $0.results[index] = res }
+            }
+        } catch {
+            let message = logError(error, .query, context: tr("다음 행 불러오기 실패"), sql: sql)
+            update(tabID) { $0.error = message }
+        }
+    }
+
     func loadPage(_ page: Int, in tabID: UUID) async {
         guard let t = tabs.first(where: { $0.id == tabID }),
               let current = t.result, current.isPaged, let sql = current.sql, page >= 0 else { return }
@@ -802,6 +846,7 @@ final class AppState {
             let size = current.pageSize > 0 ? current.pageSize : rowLimit
             var r = try await session.execute(sql, limit: size, page: 0, sort: sort)
             r.sql = sql
+            r.appendMode = current.appendMode && r.isPaged
             r.totalCount = current.totalCount
             update(tabID) {
                 $0.result = r

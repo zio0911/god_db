@@ -91,6 +91,10 @@ public struct QueryResult: Sendable {
     public var page = 0
     public var pageSize = 0
     public var hasMore = false
+    /// "제한 없음": 보이지 않게 페이지를 나눠 받아 스크롤할 때마다 이어 붙인다 (행 번호는 0부터 계속)
+    public var appendMode = false
+    /// 값이 너무 커서 앞부분만 담은 칸 수 (메모리 보호). 0 이 아니면 결과 편집을 막는다.
+    public var truncatedCells = 0
     public var totalCount: Int?
     /// DB 에서 정렬해 가져온 경우 (페이지를 넘겨도 유지)
     public var serverSort: ResultSort?
@@ -102,7 +106,7 @@ public struct QueryResult: Sendable {
 
     public var isPaged: Bool { pageSize > 0 }
     /// 이 페이지 첫 행의 전체 기준 번호 (0부터)
-    public var rowOffset: Int { page * pageSize }
+    public var rowOffset: Int { appendMode ? 0 : page * pageSize }
 
     public init(columns: [String], rows: [[String?]], elapsed: TimeInterval, message: String? = nil) {
         self.columns = columns.enumerated().map { Column(id: $0.offset, name: $0.element) }

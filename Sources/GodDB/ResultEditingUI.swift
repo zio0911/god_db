@@ -48,6 +48,7 @@ extension AppState {
     func editTarget(for tab: QueryTab) -> Result<EditTarget, Error>? {
         guard let result = tab.result, !result.columns.isEmpty, !tab.isPlan, let sql = result.sql else { return nil }
         if profile(tab.profileID)?.readOnly == true { return .failure(DBError.readOnlyBlocked) }
+        if result.truncatedCells > 0 { return .failure(ResultEditingError.valuesTruncated) }
         let tables = connections[tab.profileID]?.tables ?? []
         return Result { try ResultEditing.target(sql: sql, columns: result.columns.map(\.name), tables: tables) }
     }
@@ -147,7 +148,11 @@ extension AppState {
         }
         await refreshTx(tab.profileID)
         revertEdits(request.tabID)
-        if let page = tab.result?.page, tab.result?.isPaged == true {
+        if tab.result?.appendMode == true, let sql = tab.result?.sql {
+            // 이어 붙인 결과는 처음부터 다시 읽는다
+            selectTab(request.tabID)
+            await run(sql: sql)
+        } else if let page = tab.result?.page, tab.result?.isPaged == true {
             await loadPage(page, in: request.tabID)
         } else if let sql = tab.result?.sql {
             selectTab(request.tabID)

@@ -183,6 +183,8 @@ final class RedisWorkspace {
     var value: Value?
     var loadingValue = false
     var valueError: String?
+    /// 문자열 값이 커서 앞부분만 받았으면 전체 바이트 수 (편집 막음)
+    var valueTruncatedTotal: Int?
     var listPageSize = 500
 
     // 콘솔
@@ -366,13 +368,17 @@ final class RedisWorkspace {
         guard let key = selectedKey else { return }
         loadingValue = true
         valueError = nil
+        valueTruncatedTotal = nil
         defer { loadingValue = false }
         do {
             let info = try await session.keyInfo(key)
             keyInfo = info
             meta[key] = KeyMeta(type: info.type, ttlMillis: info.ttlMillis, fetched: Date())
             switch info.type {
-            case "string": value = .string(try await session.string(key) ?? "")
+            case "string":
+                let r = try await session.stringPrefix(key)
+                valueTruncatedTotal = r.truncated ? r.total : nil
+                value = .string(r.value)
             case "hash": value = .hash(try await session.hash(key).sorted { $0.0 < $1.0 })
             case "list": value = .list(try await session.list(key, start: 0, count: listPageSize), total: info.length ?? 0)
             case "set": value = .set(try await session.set(key).sorted())

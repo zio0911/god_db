@@ -108,7 +108,11 @@ public actor DBSession {
     ///   - limit: 페이지 크기 (0 이면 전부). SELECT 는 이 크기로 페이지 단위로 가져온다.
     ///   - page: 0부터 시작하는 페이지 번호
     ///   - sort: DB 에서 정렬할 컬럼 (원래 쿼리를 감싸 ORDER BY)
-    public func execute(_ sql: String, limit: Int, page: Int = 0, sort: ResultSort? = nil) async throws -> QueryResult {
+    /// 결과 표에 담을 한 칸의 최대 글자 수 (긴 TEXT/BLOB 로 메모리가 넘치지 않게). 내보내기는 자르지 않는다.
+    public static let maxCellCharacters = 1_000_000
+
+    public func execute(_ sql: String, limit: Int, page: Int = 0, sort: ResultSort? = nil,
+                        capCells: Bool = true) async throws -> QueryResult {
         if profile.readOnly && !SQLText.isReadOnly(sql) { throw DBError.readOnlyBlocked }
         try await beginIfNeeded(for: sql)
         let source = sort.flatMap { dialect.sortedSQL(sql, sort: $0) } ?? sql
@@ -127,7 +131,20 @@ public actor DBSession {
             ? (["SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "WITH"].contains(kw) ? tr("결과 없음") : tr("실행 완료"))
             : nil
         if kw == "USE" { current = (try? await currentContainer()) ?? current }
+        var truncated = 0
+        if capCells {
+            let cap = Self.maxCellCharacters
+            for r in rows.indices {
+                for c in rows[r].indices {
+                    if let v = rows[r][c], v.utf8.count > cap, v.count > cap {
+                        rows[r][c] = String(v.prefix(cap)) + "…"
+                        truncated += 1
+                    }
+                }
+            }
+        }
         var result = QueryResult(columns: columns, rows: rows, elapsed: elapsed, message: message)
+        result.truncatedCells = truncated
         if paged != nil {
             result.page = max(0, page)
             result.pageSize = limit

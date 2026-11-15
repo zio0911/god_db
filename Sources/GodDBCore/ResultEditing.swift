@@ -62,6 +62,7 @@ public enum ResultEditingError: LocalizedError, Equatable {
     case tableNotFound(String)
     case noPrimaryKey(String)
     case primaryKeyNotSelected(String)
+    case valuesTruncated
 
     public var errorDescription: String? {
         switch self {
@@ -73,6 +74,8 @@ public enum ResultEditingError: LocalizedError, Equatable {
             return tr("테이블 %@ 에 기본 키가 없어서 행을 정확히 고를 수 없어요.", t)
         case .primaryKeyNotSelected(let cols):
             return tr("결과에 기본 키 컬럼(%@)이 있어야 고칠 수 있어요. SELECT 에 넣어 주세요.", cols)
+        case .valuesTruncated:
+            return tr("값이 너무 커서 앞부분만 불러온 칸이 있어 이 결과는 표에서 고칠 수 없어요. UPDATE 문으로 수정하세요.")
         }
     }
 }

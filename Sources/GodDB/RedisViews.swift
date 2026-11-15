@@ -665,6 +665,13 @@ struct RedisKeyView: View {
     private func stringEditor(_ key: String, _ s: String) -> some View {
         let json = Self.prettyJSON(s)
         return VStack(spacing: 0) {
+            if let total = ws.valueTruncatedTotal {
+                Label(tr("값이 커서 앞 1MB 만 보여요 (전체 %@). 이 화면에서는 편집할 수 없어요.",
+                         ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file)),
+                      systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
             if prettyJSON, let json {
                 ScrollView {
                     Text(json).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
@@ -689,7 +696,7 @@ struct RedisKeyView: View {
                 Button(tr("저장 (SET, TTL 유지)")) {
                     run(["SET", key, draft, "KEEPTTL"], "SET \(key)")
                 }
-                .disabled(draft == s || ws.readOnly || prettyJSON)
+                .disabled(draft == s || ws.readOnly || prettyJSON || ws.valueTruncatedTotal != nil)
                 .keyboardShortcut("s", modifiers: .command)
             }
             .buttonStyle(.hover)

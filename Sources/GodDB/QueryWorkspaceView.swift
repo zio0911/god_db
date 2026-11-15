@@ -300,7 +300,8 @@ struct ResultPane: View {
                                        onSort: { column, ascending in onSort(column, ascending) },
                                        editable: { if case .success = target { return true } else { return false } }(),
                                        onAddRow: { if let id = app.addRow(tab.id) { selection = [id] } },
-                                       onDeleteRows: { ids in app.toggleDelete(tab.id, rows: ids) })
+                                       onDeleteRows: { ids in app.toggleDelete(tab.id, rows: ids) },
+                                       onReachEnd: result.appendMode ? { Task { await app.loadMore(in: tab.id) } } : nil)
                             if let row = selectedRow(rows) {
                                 ResizeHandle(axis: .vertical, size: $detailWidth,
                                              range: 240...max(240, geo.size.width - 200))
@@ -314,7 +315,7 @@ struct ResultPane: View {
                 }
                 Divider()
                 StatusBar(result: result, selectedCount: selection.count, loading: tab.pageLoading || !tab.edits.isEmpty,
-                          exportProgress: tab.exportProgress,
+                          exportProgress: tab.exportProgress, appendCapped: tab.appendCapped,
                           onPage: onPage, onCount: onCount, onExport: { app.exportResult(tab.id) },
                           onCancelExport: { app.cancelExport(tab.id) })
             } else {
@@ -417,6 +418,8 @@ struct ResultGrid: View {
     var editable = false
     var onAddRow: (() -> Void)?
     var onDeleteRows: ((Set<Int>) -> Void)?
+    /// 끝 근처 행이 보이면 (보이지 않는 페이징: 다음 행 이어 붙이기)
+    var onReachEnd: (() -> Void)?
     @State private var sortOrder: [ColumnSortComparator] = []
     @State private var hoveredRow: Int?
 
@@ -430,6 +433,9 @@ struct ResultGrid: View {
                         .background(hoveredRow == row.id ? Color.accentColor.opacity(0.12) : Color.clear)
                         .onHover { inside in
                             if inside { hoveredRow = row.id } else if hoveredRow == row.id { hoveredRow = nil }
+                        }
+                        .onAppear {
+                            if let onReachEnd, column.id == 0, row.id < newRowBase, row.id >= result.rows.count - 40 { onReachEnd() }
                         }
                 }
                 .width(min: 50, ideal: 140)
@@ -666,6 +672,7 @@ struct StatusBar: View {
     /// 페이지 이동/행 수 세기 중 (표는 그대로 두고 여기만 표시)
     var loading = false
     var exportProgress: ExportProgress?
+    var appendCapped = false
     var onPage: (Int) -> Void = { _ in }
     var onCount: () -> Void = {}
     var onExport: () -> Void = {}
@@ -679,7 +686,15 @@ struct StatusBar: View {
     var body: some View {
         HStack(spacing: 12) {
             if !result.columns.isEmpty {
-                if result.isPaged {
+                if result.appendMode {
+                    HStack(spacing: 6) {
+                        Text(tr("%@행", "\(result.rows.count.formatted())")).monospacedDigit().foregroundStyle(.primary)
+                        if loading { ProgressView().controlSize(.small) }
+                        Text(!result.hasMore ? tr("· 끝")
+                             : appendCapped ? tr("· 화면 최대 %@행 — 전체는 [내보내기]", AppState.maxRowsInMemory.formatted())
+                             : tr("· 스크롤하면 더 불러와요"))
+                    }
+                } else if result.isPaged {
                     pager
                 } else {
                     Text(tr("%@행", "\(result.rows.count.formatted())"))

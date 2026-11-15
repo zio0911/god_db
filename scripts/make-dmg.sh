@@ -79,7 +79,8 @@ if [[ "$SIGN_IDENTITY" != "-" && -n "$SIGN_IDENTITY" ]]; then
       else
         SIG=$("$SIGN_UPDATE" "$DMG")
       fi
-      ./scripts/make-appcast.py "$VERSION" "$DMG" "$SIG" build/appcast.xml
+      BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Contents/Info.plist")
+      ./scripts/make-appcast.py "$VERSION" "$DMG" "$SIG" build/appcast.xml "$BUNDLE_VERSION"
     else
       echo "appcast: Sparkle sign_update 가 없어 건너뜀 (swift package resolve 필요)" >&2
     fi
