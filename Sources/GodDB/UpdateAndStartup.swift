@@ -146,15 +146,18 @@ final class StartupState {
         steps = plan.map { Step(title: $0.0) }
         for (i, item) in plan.enumerated() {
             current = item.0
+            let stepStart = Date()
             let note = await item.1()
-            withAnimation(.easeOut(duration: 0.2)) {
+            // 단계가 순서대로 진행되는 게 보이도록 단계마다 최소 0.15초
+            let took = Date().timeIntervalSince(stepStart)
+            if took < 0.15 { try? await Task.sleep(for: .seconds(0.15 - took)) }
+            withAnimation(.easeOut(duration: 0.15)) {
                 steps[i].done = true
                 steps[i].note = note
             }
         }
-        // 너무 빨리 사라지면 깜빡임처럼 보여서 최소 0.8초는 보여준다
-        let elapsed = Date().timeIntervalSince(started)
-        if elapsed < 0.8 { try? await Task.sleep(for: .seconds(0.8 - elapsed)) }
+        _ = started
+        try? await Task.sleep(for: .seconds(0.2))   // 마지막 체크가 보이도록 잠깐
         withAnimation(.easeInOut(duration: 0.35)) { finished = true }
         app.showReleaseNotesIfUpdated()
     }

@@ -18,14 +18,20 @@ public final class LogFile: @unchecked Sendable {
     public let keepDays: Int?
     private let queue = DispatchQueue(label: "goddb.logfile")
     private var cleaned = false
+    /// 파일별 마지막 해시 (체인 이어 쓰기용)
+    private var lastHash: [String: String] = [:]
+    /// 기기 서명 키 (기본: Secure Enclave/키체인). 테스트는 고정 키를 넘긴다.
+    private let signer: @Sendable () -> AuditChain.Signer?
 
     /// 보관 기간 설정을 읽는 곳 (기본: 사용자 설정). 테스트는 고정 값을 넘긴다.
     private let retention: @Sendable () -> Int
 
-    public init(directory: URL, keepDays: Int? = nil, retention: @escaping @Sendable () -> Int = { LogFile.retentionDays }) {
+    public init(directory: URL, keepDays: Int? = nil, retention: @escaping @Sendable () -> Int = { LogFile.retentionDays },
+                signer: @escaping @Sendable () -> AuditChain.Signer? = { AuditChain.deviceSigner() }) {
         self.directory = directory
         self.keepDays = keepDays
         self.retention = retention
+        self.signer = signer
     }
 
     /// 그 날짜의 로그 파일 경로
@@ -57,7 +63,8 @@ public final class LogFile: @unchecked Sendable {
     public func append(_ entry: LogEntry) {
         guard Self.enabled, !Self.suspended, entry.audit != nil else { return }
         let text = Self.format(entry)
-        queue.async { [self] in write(text, date: entry.date) }
+        let identity = ClientInfo.identity
+        queue.async { [self] in write(text, date: entry.date, identity: identity) }
     }
 
     /// 쌓인 쓰기를 모두 끝낼 때까지 기다린다. (테스트·종료용)
@@ -72,14 +79,50 @@ public final class LogFile: @unchecked Sendable {
         return cols.map { AuditRecord.cell($0) }.joined(separator: "\t") + "\n"
     }
 
-    private func write(_ text: String, date: Date) {
+    private func write(_ text: String, date: Date, identity: String) {
         let fm = FileManager.default
         try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
         if !cleaned { cleaned = true; removeOld() }
         let url = url(for: date)
-        guard var data = text.data(using: .utf8) else { return }
-        // 새 파일이면 머리글 (엑셀 한글 깨짐 방지 BOM 포함)
+        let name = url.lastPathComponent
+        guard let signer = signer() else {
+            // 기기 키를 못 쓰면 무결성 칸 없이 쓴다 (검사에서 예전 형식으로 보인다)
+            append(Data(text.utf8), to: url, header: true)
+            return
+        }
+        var out = ""
         if !fm.fileExists(atPath: url.path) {
+            // 새 날짜 파일: 머리글 + 공개 키·이전 파일 연결 "체인" 줄. 이전 파일 마지막 값은 시스템 로그에도 봉인
+            let (prevName, prevHash) = previousFileTail(before: name)
+            if let prevName { AuditChain.sealToSystemLog(file: prevName, lastHash: prevHash) }
+            out += "\u{FEFF}" + (AuditRecord.header + AuditChain.columns).joined(separator: "\t") + "\n"
+            let link = AuditChain.linkLine(time: Self.timeFormatter.string(from: date), identity: identity,
+                                           previousFile: prevName, previousHash: prevHash, signer: signer)
+            let sealed = AuditChain.seal(prev: AuditChain.seed(fileName: name), line: link, signer: signer)
+            out += link + "\t" + sealed.suffix + "\n"
+            lastHash[name] = sealed.hash
+        } else if lastHash[name] == nil {
+            // 무결성 칸이 없는 예전 형식 파일(업데이트한 날)은 그날은 예전 형식 그대로 이어 쓴다
+            if !Self.hasIntegrityColumns(url) {
+                append(Data(text.utf8), to: url, header: false)
+                return
+            }
+            lastHash[name] = Self.lastHash(in: url) ?? AuditChain.seed(fileName: name)
+        }
+        var prev = lastHash[name]!
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            let sealed = AuditChain.seal(prev: prev, line: String(line), signer: signer)
+            out += line + "\t" + sealed.suffix + "\n"
+            prev = sealed.hash
+        }
+        lastHash[name] = prev
+        append(Data(out.utf8), to: url, header: false)
+    }
+
+    private func append(_ data: Data, to url: URL, header: Bool) {
+        let fm = FileManager.default
+        var data = data
+        if header && !fm.fileExists(atPath: url.path) {
             data = Data(("\u{FEFF}" + AuditRecord.header.joined(separator: "\t") + "\n").utf8) + data
         }
         if let handle = try? FileHandle(forWritingTo: url) {
@@ -91,6 +134,32 @@ public final class LogFile: @unchecked Sendable {
             // 다른 사용자가 못 읽게
             try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         }
+    }
+
+    static func hasIntegrityColumns(_ url: URL) -> Bool {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? h.close() }
+        let head = String(decoding: (try? h.read(upToCount: 512)) ?? Data(), as: UTF8.self)
+        return head.components(separatedBy: "\n").first?.hasSuffix("\t" + AuditChain.columns.joined(separator: "\t")) ?? false
+    }
+
+    /// 파일 마지막 줄의 무결성 값 (끝에서 두 번째 칸)
+    static func lastHash(in url: URL) -> String? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let last = text.split(separator: "\n").last.map(String.init) ?? ""
+        let cols = last.components(separatedBy: "\t")
+        guard cols.count >= 2 else { return nil }
+        let h = cols[cols.count - 2]
+        return h.count == 64 && h.allSatisfy(\.isHexDigit) ? h : nil
+    }
+
+    /// 이 파일보다 앞 날짜의 가장 최근 감사 로그와 그 마지막 해시
+    private func previousFileTail(before name: String) -> (String?, String) {
+        let files = ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.lastPathComponent.hasPrefix("goddb-audit-") && $0.pathExtension == "tsv" && $0.lastPathComponent < name }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard let prev = files.last else { return (nil, AuditChain.zero) }
+        return (prev.lastPathComponent, Self.lastHash(in: prev) ?? AuditChain.zero)
     }
 
     private func removeOld() {

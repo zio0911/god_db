@@ -4,6 +4,11 @@ import Foundation
 extension L10nEnglish {
     static let settings: [String: String] = [
         "AI": "AI",
+        "검사": "Check",
+        "검사할 감사 로그 폴더를 고르세요 (다른 사람에게 받은 로그도 가능)": "Choose an audit log folder to check (logs from others work too)",
+        "결과 복사": "Copy Results",
+        "로그 파일 검사": "Check Log Files",
+        "폴더 선택…": "Choose Folder…",
         "1년 (365일)": "1 year (365 days)",
         "3개월 (90일)": "3 months (90 days)",
         "6개월 (180일)": "6 months (180 days)",
