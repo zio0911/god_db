@@ -78,6 +78,10 @@ if otool -L "$BIN" "$FW"/*.dylib(N) | grep -q '/opt/homebrew/'; then
 fi
 # 앱 버전: 저장소 맨 위 VERSION 파일 (자동 업데이트는 CFBundleVersion 으로 새 버전인지 판단)
 APP_VERSION="${APP_VERSION:-$(cat VERSION)}"
+# 같은 표시 버전을 다시 배포할 때 올리는 내부 빌드 번호 (저장소 맨 위 BUILD 파일, 없으면 없음)
+# 자동 업데이트는 CFBundleVersion(= 버전.빌드) 으로 새 것인지 판단한다
+APP_BUILD="${APP_BUILD:-$(cat BUILD 2>/dev/null)}"
+BUNDLE_VERSION="$APP_VERSION${APP_BUILD:+.$APP_BUILD}"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -90,7 +94,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${APP_VERSION}</string>
-  <key>CFBundleVersion</key><string>${APP_VERSION}</string>
+  <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>

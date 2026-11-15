@@ -384,7 +384,7 @@ extension DBSession {
         var page = 0
         while true {
             try Task.checkCancellation()
-            let r = try await execute(sql, limit: chunk, page: page, sort: sort)
+            let r = try await execute(sql, limit: chunk, page: page, sort: sort, capCells: false)
             var rows = r.rows.map(\.values)
             var truncated = false
             if let max = writer.format.maxRows, writer.rowsWritten + rows.count > max {

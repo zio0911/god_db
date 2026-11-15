@@ -458,6 +458,14 @@ public actor RedisSession {
         try await exec(["GET", key]).string
     }
 
+    /// 큰 문자열은 앞부분만 (메모리 보호). total 은 전체 바이트 수, 잘렸으면 truncated.
+    public func stringPrefix(_ key: String, maxBytes: Int = 1_048_576) async throws -> (value: String, total: Int, truncated: Bool) {
+        let total = try await exec(["STRLEN", key]).int ?? 0
+        if total <= maxBytes { return (try await exec(["GET", key]).string ?? "", total, false) }
+        let part = try await exec(["GETRANGE", key, "0", String(maxBytes - 1)]).string ?? ""
+        return (part, total, true)
+    }
+
     /// HSCAN 으로 limit 개까지
     public func hash(_ key: String, pattern: String = "*", limit: Int = 1000) async throws -> [(String, String)] {
         var cur = "0"

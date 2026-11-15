@@ -6,6 +6,8 @@ import html, re, sys
 from datetime import datetime, timezone
 
 version, dmg, sig, out = sys.argv[1:5]
+# 앱의 CFBundleVersion (같은 표시 버전을 다시 배포할 때 빌드 번호가 붙음). 업데이트 판단은 이 값으로 한다
+bundle_version = sys.argv[5] if len(sys.argv) > 5 else version
 repo = "zio0911/god_db"
 url = f"https://github.com/{repo}/releases/download/v{version}/{dmg.split('/')[-1]}"
 
@@ -40,7 +42,7 @@ xml = f"""<?xml version="1.0" encoding="utf-8"?>
     <item>
       <title>GodDB {version}</title>
       <pubDate>{pub}</pubDate>
-      <sparkle:version>{version}</sparkle:version>
+      <sparkle:version>{bundle_version}</sparkle:version>
       <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>https://github.com/{repo}/releases/tag/v{version}</sparkle:releaseNotesLink>
