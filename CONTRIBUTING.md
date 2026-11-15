@@ -6,18 +6,7 @@
 2. **브랜치** — `main` 에서 `feature/<이슈번호>-<짧은-이름>` (버그는 `fix/…`, 설정은 `chore/…`).
 3. **PR** — 본문에 `Closes #<이슈번호>`. 템플릿의 테스트 · 공개 저장소 점검 항목을 채운다. CI(빌드 + 단위 테스트)가 통과해야 머지한다.
 4. **머지** — squash merge. 브랜치는 머지 후 자동 삭제.
-5. **릴리스** — 마일스톤의 이슈·PR 이 모두 머지되면 (기능은 이미 PR 로 검사했으니 버전 커밋은 main 에 바로):
-   ```bash
-   git switch main && git pull
-   # 저장소 맨 위 VERSION 파일, docs/FEATURES.md 버전·변경 이력(### X.Y.Z) 수정
-   git commit -am "X.Y.Z 릴리스 준비: 버전·변경 이력" && git push
-   git tag vX.Y.Z
-   ./scripts/make-dmg.sh      # Developer ID 서명 → DMG → Apple 공증 → stapler → build/appcast.xml (업데이트 서명)
-   git push origin vX.Y.Z
-   gh release create vX.Y.Z build/GodDB-X.Y.Z.dmg build/appcast.xml --verify-tag --generate-notes
-   ```
-   릴리스 노트는 PR 라벨로 자동 분류된다 (`.github/release.yml`). 서명 인증서·공증 암호·업데이트 서명 키(Sparkle EdDSA)는 빌드하는 Mac 키체인에만 있다.
-   **appcast.xml 을 꼭 같이 첨부**해야 설치된 앱들이 새 버전을 알아챈다.
+5. **릴리스** — 마일스톤의 이슈·PR 이 모두 머지되면 `VERSION` · 변경 이력을 main 에 바로 커밋하고 `vX.Y.Z` 태그를 푸시한다. GitHub Actions 가 서명·공증·업데이트 목록·릴리스까지 한다 (승인 필요). 자세한 절차와 Secrets 등록은 [docs/RELEASING.md](docs/RELEASING.md).
 
 ## 로컬 개발
 

@@ -1,0 +1,120 @@
+name: Release
+
+# v1.2.3 태그를 푸시하면: 빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler
+#   → 업데이트 서명(appcast.xml) → GitHub 릴리스 생성 + DMG/appcast 첨부
+# 비밀 값은 `release` 환경의 Secrets 에만 있고, 환경 승인(사용자 확인) 후에만 실행된다.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "다시 만들 태그 (예: v1.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    environment: release
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: 버전 확인 (태그 = VERSION 파일)
+        run: |
+          V="${TAG#v}"
+          F="$(cat VERSION)"
+          if [[ "$V" != "$F" ]]; then echo "태그 $TAG 와 VERSION 파일($F)이 달라요"; exit 1; fi
+          echo "APP_VERSION=$V" >> "$GITHUB_ENV"
+
+      - name: FreeTDS 설치 (SQL Server 드라이버)
+        run: brew install freetds
+
+      - name: 단위 테스트
+        run: ./scripts/test.sh
+
+      - name: 서명 인증서 · 공증 정보를 임시 키체인에
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          KC="$RUNNER_TEMP/release.keychain-db"
+          KC_PASS="$(openssl rand -hex 24)"
+          security create-keychain -p "$KC_PASS" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PASS" "$KC"
+          echo "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASS" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          xcrun notarytool store-credentials goddb --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --keychain "$KC"
+          echo "NOTARY_KEYCHAIN=$KC" >> "$GITHUB_ENV"
+          security find-identity -v -p codesigning "$KC" | grep -c "Developer ID Application"
+
+      - name: 빌드 · 서명 · DMG · 공증 · appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          swift package resolve
+          ./scripts/make-dmg.sh
+          test -f "build/GodDB-$APP_VERSION.dmg"
+          test -f build/appcast.xml
+
+      - name: 확인 (공증 · Homebrew 참조 · 회사 정보)
+        run: |
+          DMG="build/GodDB-$APP_VERSION.dmg"
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
+          M=$(mktemp -d); hdiutil attach -nobrowse -readonly -mountpoint "$M" "$DMG" >/dev/null
+          A="$M/GodDB.app"
+          codesign --verify --deep --strict "$A"
+          spctl -a -vv "$A"
+          if (otool -L "$A/Contents/MacOS/GodDB"; find "$A/Contents/Frameworks" -name "*.dylib" -exec otool -L {} \;) | grep -q /opt/homebrew/; then
+            echo "Homebrew 경로 참조가 남아 있어요"; exit 1
+          fi
+          if [[ -n "${{ secrets.FORBIDDEN_WORDS_REGEX }}" ]] && strings "$A/Contents/MacOS/GodDB" | grep -qiE "${{ secrets.FORBIDDEN_WORDS_REGEX }}"; then
+            echo "금지 단어가 앱에 들어 있어요"; exit 1
+          fi
+          hdiutil detach "$M" >/dev/null
+
+      - name: GitHub 릴리스
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG="build/GodDB-$APP_VERSION.dmg"
+          NOTES=$(cat <<'MD'
+          ## 설치
+          `GodDB-*.dmg` 를 열고 GodDB 를 Applications 로 끌어다 놓은 뒤 실행하세요. Apple 공증을 받은 앱이라 바로 열려요.
+          이미 1.1.0 이상을 쓰고 있으면 앱이 자동으로 업데이트를 알려줘요.
+          MD
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" build/appcast.xml --clobber
+          else
+            gh release create "$TAG" "$DMG" build/appcast.xml --verify-tag --title "GodDB $APP_VERSION" \
+              --generate-notes --notes "$NOTES"
+          fi
+
+      - name: 임시 키체인 정리
+        if: always()
+        run: |
+          [[ -n "$NOTARY_KEYCHAIN" ]] && security delete-keychain "$NOTARY_KEYCHAIN" || true
