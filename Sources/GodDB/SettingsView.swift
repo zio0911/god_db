@@ -110,18 +110,22 @@ struct GeneralSettingsView: View {
             }
             Section {
                 HStack {
-                    Text(tr("버전"))
-                    Spacer()
-                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
-                        .foregroundStyle(.secondary)
+                    Button { versionTapped() } label: {
+                        HStack {
+                            Text(tr("버전"))
+                            Spacer()
+                            Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     if showDotZero {
                         Button(".0") { auditToolUnlocked = true; showDotZero = false }
                             .buttonStyle(.plain)
                             .foregroundStyle(.secondary)
                     }
                 }
-                .contentShape(Rectangle())
-                .onTapGesture { versionTapped() }
                 LabeledContent(tr("소스 코드")) {
                     Link("github.com/zio0911/god_db", destination: URL(string: Licenses.goddbURL)!)
                 }
