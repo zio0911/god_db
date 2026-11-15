@@ -1,9 +1,8 @@
 name: CI
 
+# PR 에서만 검사한다. main 에 머지된 뒤에는 다시 돌리지 않는다 (PR 에서 이미 통과한 코드).
 on:
   pull_request:
-  push:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
