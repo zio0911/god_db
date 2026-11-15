@@ -3,6 +3,7 @@ name: Release
 # v1.2.3 태그를 푸시하면: 빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler
 #   → 업데이트 서명(appcast.xml) → GitHub 릴리스 생성 + DMG/appcast 첨부
 # 비밀 값은 `release` 환경의 Secrets 에만 있고, 환경 승인(사용자 확인) 후에만 실행된다.
+# 테스트는 다시 돌리지 않는다 — 태그에 들어간 코드는 PR 에서 이미 CI 를 통과했다.
 on:
   push:
     tags: ["v*"]
@@ -44,9 +45,6 @@ jobs:
 
       - name: FreeTDS 설치 (SQL Server 드라이버)
         run: brew install freetds
-
-      - name: 단위 테스트
-        run: ./scripts/test.sh
 
       - name: 서명 인증서 · 공증 정보를 임시 키체인에
         env:
