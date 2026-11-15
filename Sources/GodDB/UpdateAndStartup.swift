@@ -217,7 +217,10 @@ struct SplashView: View {
 // MARK: - 릴리스 노트
 
 extension AppState {
-    static var releaseNotes: [ReleaseNotes.Entry] { appGuide?.releaseNotes ?? [] }
+    static var releaseNotes: [ReleaseNotes.Entry] {
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        return ReleaseNotes.released(appGuide?.releaseNotes ?? [], upTo: current)
+    }
 
     /// 새 버전을 처음 켰으면 그 사이 변경 내용을 한 번 보여준다
     func showReleaseNotesIfUpdated() {

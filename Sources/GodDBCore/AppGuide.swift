@@ -22,7 +22,8 @@ public struct AppGuide: Sendable {
 
     public init(markdown: String) {
         sections = Self.parse(markdown)
-        releaseNotes = ReleaseNotes.parse(markdown)
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        releaseNotes = ReleaseNotes.released(ReleaseNotes.parse(markdown), upTo: current)
     }
 
     /// 버전·업데이트·변경 내용을 묻는 질문인지
