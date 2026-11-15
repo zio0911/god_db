@@ -85,6 +85,15 @@ struct GodDBApp: App {
             }
         }
 
+        // 새로운 기능 (버전별 변경 내용)
+        Window(tr("새로운 기능"), id: "release-notes") {
+            ReleaseNotesView()
+                .environment(app)
+                .environment(settings)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
+
         // ER 다이어그램 창 (여러 개 열 수 있음)
         WindowGroup(tr("ER 다이어그램"), id: "diagram", for: UUID.self) { $id in
             DiagramWindow(id: id)
