@@ -93,6 +93,7 @@ enum ModelingSample {
         let req2 = ExportRequest(tabID: UUID(), result: sample, kind: .mysql, visibleRows: 500, canFetchAll: true,
                                  knownTotal: nil, stable: false, sort: nil, defaultTable: "table", baseName: "query")
         shot("export-sheet-unstable", ExportSheet(request: req2), size: NSSize(width: 540, height: 680))
+        shot("problem-report", ProblemReportView(), size: NSSize(width: 640, height: 620))
         shot("sidebar-groups", List { Section(tr("접속")) { ProfileList() } }.listStyle(.sidebar), size: NSSize(width: 300, height: 320))
     }
 }

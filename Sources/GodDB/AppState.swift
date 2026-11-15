@@ -111,6 +111,8 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    /// 문제 보고 창
+    var showProblemReport = false
     /// 결과 내보내기 설정 창
     var exportRequest: ExportRequest?
     var showExportConnections = false

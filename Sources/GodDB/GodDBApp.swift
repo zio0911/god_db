@@ -59,6 +59,9 @@ struct GodDBApp: App {
                 Button(tr("새 접속…")) { app.newProfile() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .help) {
+                Button(tr("문제 보고…")) { app.showProblemReport = true }
+            }
             CommandMenu(tr("데이터베이스")) {
                 Button(tr("스키마 새로고침")) { Task { await app.refreshSchema() } }
                     .keyboardShortcut("r", modifiers: [.command, .shift])

@@ -90,6 +90,7 @@ struct ContentView: View {
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
+        .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
         .sheet(item: $app.exportRequest) { request in
             ExportSheet(request: request, onCancel: { app.exportRequest = nil },
                         onContinue: { app.continueExport(request, $0) })
