@@ -3,11 +3,13 @@ import Foundation
 public enum DBError: LocalizedError {
     case readOnlyBlocked
     case notConnected
+    case transactionOpen
 
     public var errorDescription: String? {
         switch self {
         case .readOnlyBlocked: return tr("읽기전용 접속이라 이 쿼리는 실행할 수 없어요. (SELECT / SHOW / DESC / EXPLAIN 만 허용)")
         case .notConnected: return tr("DB 연결이 끊어졌어요. 다시 연결해 주세요.")
+        case .transactionOpen: return tr("커밋하지 않은 트랜잭션이 있어요. 먼저 커밋하거나 롤백해 주세요.")
         }
     }
 }
@@ -20,6 +22,29 @@ public actor DBSession {
     private var driver: (any DBDriver)?
     /// 현재 선택된 DB(MySQL/SQL Server) 또는 스키마(PostgreSQL)
     public private(set) var current: String = ""
+
+    // MARK: 트랜잭션 (자동 커밋 / 수동 커밋)
+    /// 자동 커밋. 끄면 쓰기 문장을 실행할 때 트랜잭션을 열고, 커밋/롤백할 때까지 반영하지 않는다.
+    public private(set) var autoCommit = true
+    /// 열린 트랜잭션이 있는지
+    public private(set) var inTransaction = false
+    /// 열린 트랜잭션 안에서 실행한 쓰기 문장 수
+    public private(set) var pendingChanges = 0
+
+    public struct TransactionState: Sendable, Equatable {
+        public var autoCommit: Bool
+        public var open: Bool
+        public var changes: Int
+
+        public init(autoCommit: Bool = true, open: Bool = false, changes: Int = 0) {
+            self.autoCommit = autoCommit
+            self.open = open
+            self.changes = changes
+        }
+    }
+    public var transactionState: TransactionState {
+        TransactionState(autoCommit: autoCommit, open: inTransaction, changes: pendingChanges)
+    }
 
     public init(profile: ConnectionProfile) {
         self.profile = profile
@@ -85,6 +110,7 @@ public actor DBSession {
     ///   - sort: DB 에서 정렬할 컬럼 (원래 쿼리를 감싸 ORDER BY)
     public func execute(_ sql: String, limit: Int, page: Int = 0, sort: ResultSort? = nil) async throws -> QueryResult {
         if profile.readOnly && !SQLText.isReadOnly(sql) { throw DBError.readOnlyBlocked }
+        try await beginIfNeeded(for: sql)
         let source = sort.flatMap { dialect.sortedSQL(sql, sort: $0) } ?? sql
         let paged = dialect.pagedSQL(source, limit: limit, offset: max(0, page) * limit)
         let started = Date()
@@ -108,7 +134,66 @@ public actor DBSession {
             result.hasMore = hasMore
         }
         if source != sql { result.serverSort = sort }
+        noteExecuted(sql)
         return result
+    }
+
+    /// 수동 커밋 모드에서 쓰기 문장이면 먼저 트랜잭션을 연다
+    private func beginIfNeeded(for sql: String) async throws {
+        guard !autoCommit, !inTransaction else { return }
+        let kw = SQLText.firstKeyword(SQLText.stripComments(sql))
+        guard !SQLText.isReadOnly(sql), !Self.transactionControl.contains(kw) else { return }
+        // MySQL 의 DDL 은 어차피 자동 커밋되므로 트랜잭션을 열지 않는다
+        if dialect.kind == .mysql, Self.ddl.contains(kw) { return }
+        _ = try await raw(dialect.beginSQL)
+        inTransaction = true
+        pendingChanges = 0
+    }
+
+    private static let transactionControl: Set<String> = ["BEGIN", "START", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE", "SET", "USE"]
+    private static let ddl: Set<String> = ["CREATE", "ALTER", "DROP", "RENAME", "TRUNCATE"]
+
+    /// 실행 뒤 트랜잭션 상태 갱신 (사용자가 직접 COMMIT/ROLLBACK/BEGIN 을 쓴 경우, MySQL DDL 의 암묵적 커밋)
+    private func noteExecuted(_ sql: String) {
+        let kw = SQLText.firstKeyword(SQLText.stripComments(sql))
+        switch kw {
+        case "COMMIT", "ROLLBACK", "END":
+            if !sql.uppercased().contains("TO SAVEPOINT") { inTransaction = false; pendingChanges = 0 }
+        case "BEGIN", "START":
+            if dialect.kind != .mssql || sql.uppercased().contains("TRAN") { inTransaction = true; pendingChanges = 0 }
+        default:
+            if dialect.kind == .mysql, Self.ddl.contains(kw) {
+                inTransaction = false; pendingChanges = 0
+            } else if inTransaction, !SQLText.isReadOnly(sql) {
+                pendingChanges += 1
+            }
+        }
+    }
+
+    /// 자동 커밋 켜기/끄기. 열린 트랜잭션이 있으면 먼저 커밋/롤백해야 한다.
+    public func setAutoCommit(_ on: Bool) throws {
+        if on && inTransaction { throw DBError.transactionOpen }
+        autoCommit = on
+    }
+
+    /// 열린 트랜잭션 커밋. 커밋한 변경 수를 돌려준다.
+    @discardableResult
+    public func commit() async throws -> Int {
+        let n = pendingChanges
+        _ = try await raw(dialect.commitSQL)
+        inTransaction = false
+        pendingChanges = 0
+        return n
+    }
+
+    /// 열린 트랜잭션 롤백. 되돌린 변경 수를 돌려준다.
+    @discardableResult
+    public func rollback() async throws -> Int {
+        let n = pendingChanges
+        _ = try await raw(dialect.rollbackSQL)
+        inTransaction = false
+        pendingChanges = 0
+        return n
     }
 
     /// 쿼리 결과의 전체 행 수 (SELECT 만)

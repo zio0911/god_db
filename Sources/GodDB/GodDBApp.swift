@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct GodDBApp: App {
+    @NSApplicationDelegateAdaptor(GodDBAppDelegate.self) private var appDelegate
     @State private var app = AppState()
     @State private var settings = AppSettings()
 
@@ -64,6 +65,7 @@ struct GodDBApp: App {
             }
             CommandGroup(after: .help) {
                 Button(tr("새로운 기능")) { app.releaseNotesSince = nil; app.showReleaseNotes = true }
+                Button(tr("문제 보고…")) { app.showProblemReport = true }
             }
             CommandMenu(tr("데이터베이스")) {
                 Button(tr("스키마 새로고침")) { Task { await app.refreshSchema() } }
