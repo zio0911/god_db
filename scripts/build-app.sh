@@ -101,6 +101,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>SUFeedURL</key><string>https://github.com/zio0911/god_db/releases/latest/download/appcast.xml</string>
   <key>SUPublicEDKey</key><string>46KLz1iiY6mBFtj7RVAMFWd0ablngX2oMK3Nnv+PJSU=</string>
   <key>SUEnableInstallerLauncherService</key><false/>
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUScheduledCheckInterval</key><integer>86400</integer>
   <key>NSLocalNetworkUsageDescription</key><string>사내망/로컬 네트워크의 DB 서버에 접속하기 위해 필요해요.</string>
 </dict>
 </plist>
