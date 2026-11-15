@@ -113,6 +113,11 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    /// 시작 화면 (준비 중 진행 막대)
+    let startup = StartupState()
+    /// 새로운 기능(릴리스 노트) 창, 어느 버전 이후부터 강조할지
+    var showReleaseNotes = false
+    var releaseNotesSince: String?
     /// 문제 보고 창
     var showProblemReport = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
@@ -147,23 +152,12 @@ final class AppState {
     /// 저장하지 않기로 한 비밀번호를 앱 실행 중에만 기억
     var sessionPasswords: [UUID: String] = [:]
 
+    /// 앱 종료 확인·설정 창 등에서 쓰는 현재 인스턴스
     /// 앱 종료 확인 등에서 쓰는 현재 인스턴스
     nonisolated(unsafe) static weak var shared: AppState?
 
     init() {
         profiles = store.load()
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        // PC 상세(IP 등)는 백그라운드에서 모아 기록한다. 시작 화면을 막지 않도록.
-        Task.detached(priority: .utility) {
-            let identity = ClientInfo.identity, summary = ClientInfo.summary()
-            await MainActor.run { [weak self] in
-                self?.log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, identity), detail: summary,
-                          audit: AuditRecord(.appStart, result: "GodDB \(version)",
-                                             statement: summary.components(separatedBy: "\n").joined(separator: " · ")))
-            }
-        }
-        // 90일 지난 다이어그램 AI 대화 정리
-        DispatchQueue.global(qos: .utility).async { DiagramChatStore.shared.pruneAll() }
         modeling.onError = { [weak self] context, error in self?.logError(error, .schema, context: context) }
         AppState.shared = self
     }

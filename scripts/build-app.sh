@@ -58,12 +58,26 @@ for lib in "$FW"/*.dylib(N); do
   install_name_tool -add_rpath "@loader_path" "$lib" 2>/dev/null || true
 done
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$BIN" 2>/dev/null || true
+# 자동 업데이트(Sparkle) 프레임워크
+ditto --norsrc --noextattr .build/release/Sparkle.framework "$FW/Sparkle.framework" 2>/dev/null \
+  || ditto --norsrc --noextattr .build/arm64-apple-macosx/release/Sparkle.framework "$FW/Sparkle.framework"
+# iCloud 폴더에서 복사하면 붙는 확장 속성이 있으면 서명이 거부된다
+xattr -cr "$FW"
 install_name_tool -delete_rpath "/opt/homebrew/opt/freetds/lib" "$BIN" 2>/dev/null || true
 for lib in "$FW"/*.dylib(N); do codesign "${SIGN_ARGS[@]}" "$lib"; done
+# Sparkle 은 안쪽(XPC·도우미)부터 같은 인증서로 서명한다 (Sparkle 문서의 Developer ID 순서)
+SP="$FW/Sparkle.framework/Versions/B"
+codesign "${SIGN_ARGS[@]}" "$SP/XPCServices/Installer.xpc"
+codesign "${SIGN_ARGS[@]}" --preserve-metadata=entitlements "$SP/XPCServices/Downloader.xpc"
+codesign "${SIGN_ARGS[@]}" "$SP/Autoupdate"
+codesign "${SIGN_ARGS[@]}" "$SP/Updater.app"
+codesign "${SIGN_ARGS[@]}" "$FW/Sparkle.framework"
 if otool -L "$BIN" "$FW"/*.dylib(N) | grep -q '/opt/homebrew/'; then
   echo "오류: 아직 Homebrew 경로를 참조하는 라이브러리가 있어요." >&2
   exit 1
 fi
+# 앱 버전: 저장소 맨 위 VERSION 파일 (자동 업데이트는 CFBundleVersion 으로 새 버전인지 판단)
+APP_VERSION="${APP_VERSION:-$(cat VERSION)}"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -75,11 +89,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>GodDB</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>${APP_VERSION}</string>
+  <key>CFBundleVersion</key><string>${APP_VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>SUFeedURL</key><string>https://github.com/zio0911/god_db/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key><string>46KLz1iiY6mBFtj7RVAMFWd0ablngX2oMK3Nnv+PJSU=</string>
+  <key>SUEnableInstallerLauncherService</key><false/>
   <key>NSLocalNetworkUsageDescription</key><string>사내망/로컬 네트워크의 DB 서버에 접속하기 위해 필요해요.</string>
 </dict>
 </plist>

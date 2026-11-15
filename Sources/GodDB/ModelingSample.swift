@@ -93,6 +93,15 @@ enum ModelingSample {
         let req2 = ExportRequest(tabID: UUID(), result: sample, kind: .mysql, visibleRows: 500, canFetchAll: true,
                                  knownTotal: nil, stable: false, sort: nil, defaultTable: "table", baseName: "query")
         shot("export-sheet-unstable", ExportSheet(request: req2), size: NSSize(width: 540, height: 680))
+        let st = StartupState()
+        st.steps = [.init(title: "설정과 접속 목록 불러오는 중", done: true, note: "접속 12개"),
+                    .init(title: "PC · 네트워크 정보 확인 중 (감사 로그)", done: true),
+                    .init(title: "AI(Ollama) 연결 확인 중", done: true, note: "모델 3개"),
+                    .init(title: "모델 · 대화 기록 정리 중"), .init(title: "업데이트 확인 중")]
+        st.current = "모델 · 대화 기록 정리 중"
+        shot("splash", SplashView(startup: st), size: NSSize(width: 900, height: 560))
+        app.releaseNotesSince = "0.9.1"
+        shot("release-notes", ReleaseNotesView(), size: NSSize(width: 620, height: 560))
         shot("problem-report", ProblemReportView(), size: NSSize(width: 640, height: 620))
         let txID = UUID()
         app.connections[txID] = ConnectionInfo(state: .connected, tx: DBSession.TransactionState(autoCommit: false, open: true, changes: 3))

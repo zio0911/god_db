@@ -90,6 +90,13 @@ struct ContentView: View {
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
+        .overlay {
+            if !app.startup.finished {
+                SplashView(startup: app.startup).transition(.opacity)
+            }
+        }
+        .task { await app.startup.run(app: app) }
+        .sheet(isPresented: $app.showReleaseNotes) { ReleaseNotesView() }
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in

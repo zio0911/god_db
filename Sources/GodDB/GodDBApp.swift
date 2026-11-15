@@ -60,7 +60,11 @@ struct GodDBApp: App {
                 Button(tr("새 접속…")) { app.newProfile() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .appInfo) {
+                Button(tr("업데이트 확인…")) { UpdateController.shared.checkNow() }
+            }
             CommandGroup(after: .help) {
+                Button(tr("새로운 기능")) { app.releaseNotesSince = nil; app.showReleaseNotes = true }
                 Button(tr("문제 보고…")) { app.showProblemReport = true }
             }
             CommandMenu(tr("데이터베이스")) {

@@ -68,6 +68,18 @@ if [[ "$SIGN_IDENTITY" != "-" && -n "$SIGN_IDENTITY" ]]; then
     xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
     xcrun stapler staple "$DMG"
     spctl -a -t open --context context:primary-signature -vv "$DMG"
+    # 자동 업데이트 목록: DMG 를 업데이트 서명 키(키체인, CI 에선 SPARKLE_PRIVATE_KEY)로 서명해 appcast.xml 생성
+    SIGN_UPDATE=$(ls .build/artifacts/sparkle/Sparkle/bin/sign_update 2>/dev/null | head -1)
+    if [[ -n "$SIGN_UPDATE" ]]; then
+      if [[ -n "$SPARKLE_PRIVATE_KEY" ]]; then
+        SIG=$(echo "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - "$DMG")
+      else
+        SIG=$("$SIGN_UPDATE" "$DMG")
+      fi
+      ./scripts/make-appcast.py "$VERSION" "$DMG" "$SIG" build/appcast.xml
+    else
+      echo "appcast: Sparkle sign_update 가 없어 건너뜀 (swift package resolve 필요)" >&2
+    fi
   else
     echo "공증: 키체인 프로필 '$NOTARY_PROFILE' 이 없어 건너뜀 — xcrun notarytool store-credentials $NOTARY_PROFILE 로 먼저 저장하세요" >&2
   fi
