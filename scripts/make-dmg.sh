@@ -59,13 +59,16 @@ rm -rf "$STAGE"
 # 정식 서명이면 DMG 도 서명하고 Apple 공증 → 공증 결과를 DMG 에 붙인다(stapler).
 # 공증 암호는 키체인 프로필에만 둔다: xcrun notarytool store-credentials goddb --apple-id <ID> --team-id <팀ID>
 NOTARY_PROFILE="${NOTARY_PROFILE:-goddb}"
+# CI 처럼 공증 프로필을 임시 키체인에 둔 경우 그 키체인 경로 (NOTARY_KEYCHAIN)
+NOTARY_KC=()
+[[ -n "$NOTARY_KEYCHAIN" ]] && NOTARY_KC=(--keychain "$NOTARY_KEYCHAIN")
 if [[ "$SIGN_IDENTITY" != "-" && -n "$SIGN_IDENTITY" ]]; then
   codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
   if [[ "$SKIP_NOTARIZE" == "1" ]]; then
     echo "공증: 건너뜀 (SKIP_NOTARIZE=1)"
-  elif xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+  elif xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" "${NOTARY_KC[@]}" >/dev/null 2>&1; then
     echo "공증: Apple 에 제출하고 결과를 기다려요 (보통 몇 분)…"
-    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" "${NOTARY_KC[@]}" --wait
     xcrun stapler staple "$DMG"
     spctl -a -t open --context context:primary-signature -vv "$DMG"
     # 자동 업데이트 목록: DMG 를 업데이트 서명 키(키체인, CI 에선 SPARKLE_PRIVATE_KEY)로 서명해 appcast.xml 생성
