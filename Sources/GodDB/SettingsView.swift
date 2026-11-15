@@ -109,23 +109,16 @@ struct GeneralSettingsView: View {
                 Text(tr("로그"))
             }
             Section {
-                HStack {
-                    Button { versionTapped() } label: {
-                        HStack {
-                            Text(tr("버전"))
-                            Spacer()
-                            Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
-                                .foregroundStyle(.secondary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    if showDotZero {
-                        Button(".0") { auditToolUnlocked = true; showDotZero = false }
-                            .buttonStyle(.plain)
+                Button { versionTapped() } label: {
+                    HStack {
+                        Text(tr("버전"))
+                        Spacer()
+                        Text((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev") + (showDotZero ? ".0" : ""))
                             .foregroundStyle(.secondary)
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 LabeledContent(tr("소스 코드")) {
                     Link("github.com/zio0911/god_db", destination: URL(string: Licenses.goddbURL)!)
                 }
@@ -138,6 +131,13 @@ struct GeneralSettingsView: View {
     }
 
     private func versionTapped() {
+        if showDotZero {
+            auditToolUnlocked = true
+            showDotZero = false
+            tapWork?.cancel()
+            versionTaps = 0
+            return
+        }
         versionTaps += 1
         showDotZero = false
         tapWork?.cancel()
