@@ -56,6 +56,7 @@ struct GeneralSettingsView: View {
     @State private var versionTaps = 0
     @State private var showDotZero = false
     @State private var auditToolUnlocked = false
+    @State private var tapWork: DispatchWorkItem?
 
     var body: some View {
         @Bindable var settings = settings
@@ -112,14 +113,9 @@ struct GeneralSettingsView: View {
                     HStack(spacing: 2) {
                         Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
                             .contentShape(Rectangle())
-                            .onTapGesture {
-                                versionTaps += 1
-                                if versionTaps == 30 {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 120) { showDotZero = true }
-                                }
-                            }
+                            .onTapGesture { versionTapped() }
                         if showDotZero {
-                            Button(".0") { auditToolUnlocked = true }
+                            Button(".0") { auditToolUnlocked = true; showDotZero = false }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.secondary)
                         }
@@ -133,6 +129,24 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { versionTaps = 0; showDotZero = false; tapWork?.cancel() }
+    }
+
+    private func versionTapped() {
+        versionTaps += 1
+        showDotZero = false
+        tapWork?.cancel()
+        guard versionTaps < 40 else { versionTaps = 0; return }
+        // 누르기를 멈추고 2초 뒤 횟수가 맞으면 10초 동안만 보인다
+        let work = DispatchWorkItem {
+            guard (30..<40).contains(versionTaps) else { versionTaps = 0; return }
+            showDotZero = true
+            let hide = DispatchWorkItem { showDotZero = false; versionTaps = 0 }
+            tapWork = hide
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: hide)
+        }
+        tapWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
 }
 
