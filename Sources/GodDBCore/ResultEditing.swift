@@ -202,6 +202,11 @@ extension DBSession {
             _ = s
             throw DBError.readOnlyBlocked
         }
+        // 수동 커밋 모드면 열린 트랜잭션에 합류하고 커밋하지 않는다 (사용자가 커밋/롤백)
+        if !autoCommit || inTransaction {
+            for s in statements { _ = try await execute(s, limit: 0) }
+            return
+        }
         _ = try await raw(dialect.beginSQL)
         do {
             for s in statements { _ = try await raw(s) }
