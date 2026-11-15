@@ -102,6 +102,11 @@ public final class LogFile: @unchecked Sendable {
             out += link + "\t" + sealed.suffix + "\n"
             lastHash[name] = sealed.hash
         } else if lastHash[name] == nil {
+            // 무결성 칸이 없는 예전 형식 파일(업데이트한 날)은 그날은 예전 형식 그대로 이어 쓴다
+            if !Self.hasIntegrityColumns(url) {
+                append(Data(text.utf8), to: url, header: false)
+                return
+            }
             lastHash[name] = Self.lastHash(in: url) ?? AuditChain.seed(fileName: name)
         }
         var prev = lastHash[name]!
@@ -129,6 +134,13 @@ public final class LogFile: @unchecked Sendable {
             // 다른 사용자가 못 읽게
             try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         }
+    }
+
+    static func hasIntegrityColumns(_ url: URL) -> Bool {
+        guard let h = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? h.close() }
+        let head = String(decoding: (try? h.read(upToCount: 512)) ?? Data(), as: UTF8.self)
+        return head.components(separatedBy: "\n").first?.hasSuffix("\t" + AuditChain.columns.joined(separator: "\t")) ?? false
     }
 
     /// 파일 마지막 줄의 무결성 값 (끝에서 두 번째 칸)
