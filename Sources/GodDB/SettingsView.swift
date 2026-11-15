@@ -109,18 +109,19 @@ struct GeneralSettingsView: View {
                 Text(tr("로그"))
             }
             Section {
-                LabeledContent(tr("버전")) {
-                    HStack(spacing: 2) {
-                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
-                            .contentShape(Rectangle())
-                            .onTapGesture { versionTapped() }
-                        if showDotZero {
-                            Button(".0") { auditToolUnlocked = true; showDotZero = false }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.secondary)
-                        }
+                HStack {
+                    Text(tr("버전"))
+                    Spacer()
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+                        .foregroundStyle(.secondary)
+                    if showDotZero {
+                        Button(".0") { auditToolUnlocked = true; showDotZero = false }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { versionTapped() }
                 LabeledContent(tr("소스 코드")) {
                     Link("github.com/zio0911/god_db", destination: URL(string: Licenses.goddbURL)!)
                 }
