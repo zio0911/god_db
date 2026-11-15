@@ -1,5 +1,5 @@
 {
-  "originHash" : "0b0394b7cd31b4f0fc34102b04b247474d720310877cde6cd667f21e80db220d",
+  "originHash" : "cfd1ff2ed9d72f35b73a8abd10b646171abac00732e146720cc5bf557e578295",
   "pins" : [
     {
       "identity" : "mysql-nio",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "3cd7153792ab259a217507b775c14d9ddba3f79f",
         "version" : "1.9.3"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "ab7d71291238df6e0492143b120c9b696a35f603",
+        "version" : "2.10.1"
       }
     },
     {

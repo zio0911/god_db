@@ -40,6 +40,8 @@ struct SettingsView: View {
                 .tabItem { Label(tr("일반"), systemImage: "gearshape") }
             TuningSettingsView()
                 .tabItem { Label(tr("쿼리 튜닝"), systemImage: "sparkles") }
+            UpdateSettingsView()
+                .tabItem { Label(tr("업데이트"), systemImage: "arrow.down.circle") }
             LicenseSettingsView()
                 .tabItem { Label(tr("라이선스"), systemImage: "doc.text") }
         }

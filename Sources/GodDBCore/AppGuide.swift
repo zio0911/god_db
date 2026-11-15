@@ -17,9 +17,20 @@ public struct AppGuide: Sendable {
     """
 
     public let sections: [Section]
+    /// 버전별 변경 이력 (최신 먼저)
+    public let releaseNotes: [ReleaseNotes.Entry]
 
     public init(markdown: String) {
         sections = Self.parse(markdown)
+        releaseNotes = ReleaseNotes.parse(markdown)
+    }
+
+    /// 버전·업데이트·변경 내용을 묻는 질문인지
+    public static func asksAboutVersions(_ q: String) -> Bool {
+        let l = q.lowercased()
+        if l.range(of: "\\d+\\.\\d+", options: .regularExpression) != nil { return true }
+        return ["버전", "업데이트", "릴리스", "릴리즈", "변경", "바뀐", "달라", "차이", "새로운 기능", "새 기능", "뭐가 생", "언제 생",
+                "version", "release", "changelog", "what's new", "update"].contains { l.contains($0) }
     }
 
     /// `## ` 단위로 자른다. 변경 이력·목차는 빼고, 코드 블록 안의 `##` 는 무시한다.
@@ -103,6 +114,10 @@ public struct AppGuide: Sendable {
     /// 어시스턴트 문맥에 붙일 글
     public func contextText(question: String, appState: String) -> String {
         var s = "About this app:\n" + Self.about + "\nCurrent app state:\n" + appState + "\n"
+        if Self.asksAboutVersions(question), !releaseNotes.isEmpty {
+            s += "\nRelease history (newest first; each version lists what changed in it):\n"
+            for e in releaseNotes.prefix(10) { s += "\n### \(e.version)\n" + e.lines.joined(separator: "\n") + "\n" }
+        }
         let rel = relevant(to: question)
         if rel.isEmpty {
             s += "\n" + overview

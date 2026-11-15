@@ -70,6 +70,10 @@ struct LogPanelView: View {
                         .help(tr("날짜별 감사 로그(goddb-audit-날짜.tsv) 폴더를 열어요 (~/Library/Logs/GodDB)"))
                 }
                 Button {
+                    app.showProblemReport = true
+                } label: { Label(tr("문제 보고"), systemImage: "ladybug") }
+                    .help(tr("오류·크래시 정보를 담아 GitHub 이슈로 보고해요"))
+                Button {
                     app.clearLogs()
                 } label: { Label(tr("지우기"), systemImage: "trash") }
                     .disabled(app.logs.isEmpty)

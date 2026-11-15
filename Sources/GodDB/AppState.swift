@@ -76,6 +76,8 @@ struct ConnectionInfo {
     var tables: [TableMeta] = []
     var routines: [RoutineMeta] = []
     var schemaLoading = false
+    /// 자동 커밋 / 열린 트랜잭션 상태 (세션에서 읽어 둔 값)
+    var tx = DBSession.TransactionState()
 }
 
 /// 비밀번호 입력 요청 (저장 안 함 설정이거나, 저장된 비밀번호가 틀렸을 때)
@@ -111,6 +113,15 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    /// 시작 화면 (준비 중 진행 막대)
+    let startup = StartupState()
+    /// 새로운 기능(릴리스 노트) 창, 어느 버전 이후부터 강조할지
+    var showReleaseNotes = false
+    var releaseNotesSince: String?
+    /// 문제 보고 창
+    var showProblemReport = false
+    /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
+    var txPrompt: TxPrompt?
     /// 결과 내보내기 설정 창
     var exportRequest: ExportRequest?
     var showExportConnections = false
@@ -141,21 +152,14 @@ final class AppState {
     /// 저장하지 않기로 한 비밀번호를 앱 실행 중에만 기억
     var sessionPasswords: [UUID: String] = [:]
 
+    /// 앱 종료 확인·설정 창 등에서 쓰는 현재 인스턴스
+    /// 앱 종료 확인 등에서 쓰는 현재 인스턴스
+    nonisolated(unsafe) static weak var shared: AppState?
+
     init() {
         profiles = store.load()
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        // PC 상세(IP 등)는 백그라운드에서 모아 기록한다. 시작 화면을 막지 않도록.
-        Task.detached(priority: .utility) {
-            let identity = ClientInfo.identity, summary = ClientInfo.summary()
-            await MainActor.run { [weak self] in
-                self?.log(.info, .app, tr("GodDB %@ 시작 · 사용자 %@", version, identity), detail: summary,
-                          audit: AuditRecord(.appStart, result: "GodDB \(version)",
-                                             statement: summary.components(separatedBy: "\n").joined(separator: " · ")))
-            }
-        }
-        // 90일 지난 다이어그램 AI 대화 정리
-        DispatchQueue.global(qos: .utility).async { DiagramChatStore.shared.pruneAll() }
         modeling.onError = { [weak self] context, error in self?.logError(error, .schema, context: context) }
+        AppState.shared = self
     }
 
     // MARK: - 사이드바에서 보고 있는 접속 (기존 화면 코드 호환)
@@ -420,7 +424,12 @@ final class AppState {
     }
 
     /// 접속 하나를 끊는다. 그 접속의 탭은 남겨 두고, 다시 연결하면 이어서 쓸 수 있다.
-    func disconnect(_ id: UUID) async {
+    func disconnect(_ id: UUID, force: Bool = false) async {
+        // 커밋하지 않은 트랜잭션이 있으면 먼저 묻는다
+        if !force, connections[id]?.tx.open == true {
+            txPrompt = TxPrompt(profileID: id, reason: .disconnect)
+            return
+        }
         if redisWorkspaces[id] != nil { await disconnectRedis(id) }
         if let session = connections[id]?.session {
             await session.close()
@@ -635,6 +644,7 @@ final class AppState {
                                   schemaChanged: !explain && ["CREATE", "ALTER", "DROP", "RENAME", "TRUNCATE"].contains(kw),
                                   usedUse: kw == "USE")
         } catch {
+            await refreshTx(tab.profileID)
             let message = logError(error, .query, context: explain ? tr("실행 계획 실패") : tr("쿼리 실패"), sql: trimmed,
                                    audit: AuditRecord(explain ? .read : AuditRecord.classify(sql: trimmed),
                                                       target: auditTarget(tab), statement: trimmed))
@@ -717,6 +727,7 @@ final class AppState {
     /// USE 로 DB 를 바꿨으면 탭의 DB 도 바꾸고, 구조가 바뀌었으면 사이드바 스키마를 새로 읽는다.
     private func afterStatements(session: DBSession, tabID: UUID, schemaChanged: Bool, usedUse: Bool) async {
         let id = session.profile.id
+        await refreshTx(id)
         if usedUse {
             let db = await session.current
             if !db.isEmpty {

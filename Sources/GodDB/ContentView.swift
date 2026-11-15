@@ -93,6 +93,23 @@ struct ContentView: View {
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
+        .overlay {
+            if !app.startup.finished {
+                SplashView(startup: app.startup).transition(.opacity)
+            }
+        }
+        .task { await app.startup.run(app: app) }
+        .sheet(isPresented: $app.showReleaseNotes) { ReleaseNotesView() }
+        .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
+        .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
+               presenting: app.txPrompt) { prompt in
+            Button(tr("커밋")) { Task { await app.resolveTxPrompt(prompt, commit: true) } }
+            Button(tr("롤백"), role: .destructive) { Task { await app.resolveTxPrompt(prompt, commit: false) } }
+            Button(tr("취소"), role: .cancel) { app.txPrompt = nil }
+        } message: { prompt in
+            Text(tr("열린 트랜잭션에 변경 %@건이 있어요. %@ 전에 커밋하거나 롤백해 주세요.", "\(app.txState(prompt.profileID).changes)",
+                    prompt.reason == .disconnect ? tr("연결을 끊기") : tr("자동 커밋을 켜기")))
+        }
         .sheet(item: $app.exportRequest) { request in
             ExportSheet(request: request, onCancel: { app.exportRequest = nil },
                         onContinue: { app.continueExport(request, $0) })

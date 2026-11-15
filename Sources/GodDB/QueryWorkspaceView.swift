@@ -211,6 +211,11 @@ struct QueryTabView: View {
                 Text(tr("제한 없음")).tag(0)
             }
             .fixedSize()
+            if let p = app.profiles.first(where: { $0.id == tab.profileID }), p.kind != .redis, !p.readOnly,
+               app.connections[tab.profileID]?.state == .connected {
+                Divider().frame(height: 18)
+                TransactionControls(profileID: tab.profileID)
+            }
             Spacer()
             Text(tr("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘T 새 탭")).font(.caption).foregroundStyle(.secondary)
         }
