@@ -229,3 +229,38 @@ struct AssistantAITests {
         #expect(ctx.contains("단축키"))
     }
 }
+
+@Suite struct ReleaseNotesTests {
+    static let md = """
+    ## 17. 알려진 제약
+    - 없음
+    ## 18. 변경 이력
+
+    ### 1.1.0 (개발 중)
+    - **트랜잭션** 자동/수동 커밋
+    - 문제 보고
+
+    ### 1.0.0
+    - 서명 + 공증
+
+    ### 0.9.1
+    - 시작 수정
+    """
+
+    @Test func parsesChangelog() {
+        let e = ReleaseNotes.parse(Self.md)
+        #expect(e.map(\.version) == ["1.1.0", "1.0.0", "0.9.1"])
+        #expect(e[0].lines == ["- **트랜잭션** 자동/수동 커밋", "- 문제 보고"])
+        #expect(ReleaseNotes.between(e, after: "0.9.1", upTo: "1.1.0").map(\.version) == ["1.1.0", "1.0.0"])
+        #expect(ReleaseNotes.compare("1.10.0", "1.9.2") == .orderedDescending)
+        #expect(ReleaseNotes.html(e[0]).contains("<b>트랜잭션</b>"))
+    }
+
+    @Test func assistantSeesHistoryForVersionQuestions() {
+        let g = AppGuide(markdown: Self.md)
+        #expect(AppGuide.asksAboutVersions("1.0 이랑 1.1 뭐가 달라?"))
+        #expect(!AppGuide.asksAboutVersions("cm_brand 페이징 쿼리 짜줘"))
+        #expect(g.contextText(question: "새 버전에서 뭐가 바뀌었어", appState: "").contains("### 1.1.0"))
+        #expect(!g.contextText(question: "접속 그룹 만드는 법", appState: "").contains("Release history"))
+    }
+}

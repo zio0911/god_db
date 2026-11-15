@@ -90,6 +90,13 @@ struct ContentView: View {
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
+        .overlay {
+            if !app.startup.finished {
+                SplashView(startup: app.startup).transition(.opacity)
+            }
+        }
+        .task { await app.startup.run(app: app) }
+        .sheet(isPresented: $app.showReleaseNotes) { ReleaseNotesView() }
         .sheet(item: $app.exportRequest) { request in
             ExportSheet(request: request, onCancel: { app.exportRequest = nil },
                         onContinue: { app.continueExport(request, $0) })

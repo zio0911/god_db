@@ -9,14 +9,15 @@
 5. **릴리스** — 마일스톤의 이슈·PR 이 모두 머지되면 (기능은 이미 PR 로 검사했으니 버전 커밋은 main 에 바로):
    ```bash
    git switch main && git pull
-   # scripts/build-app.sh 의 CFBundleShortVersionString, docs/FEATURES.md 버전·변경 이력 수정
+   # 저장소 맨 위 VERSION 파일, docs/FEATURES.md 버전·변경 이력(### X.Y.Z) 수정
    git commit -am "X.Y.Z 릴리스 준비: 버전·변경 이력" && git push
    git tag vX.Y.Z
-   ./scripts/make-dmg.sh      # Developer ID 서명 → DMG → Apple 공증 → stapler (키체인 프로필 goddb)
+   ./scripts/make-dmg.sh      # Developer ID 서명 → DMG → Apple 공증 → stapler → build/appcast.xml (업데이트 서명)
    git push origin vX.Y.Z
-   gh release create vX.Y.Z build/GodDB-X.Y.Z.dmg --verify-tag --generate-notes
+   gh release create vX.Y.Z build/GodDB-X.Y.Z.dmg build/appcast.xml --verify-tag --generate-notes
    ```
-   릴리스 노트는 PR 라벨로 자동 분류된다 (`.github/release.yml`). 서명 인증서·공증 암호는 빌드하는 Mac 키체인에만 있다.
+   릴리스 노트는 PR 라벨로 자동 분류된다 (`.github/release.yml`). 서명 인증서·공증 암호·업데이트 서명 키(Sparkle EdDSA)는 빌드하는 Mac 키체인에만 있다.
+   **appcast.xml 을 꼭 같이 첨부**해야 설치된 앱들이 새 버전을 알아챈다.
 
 ## 로컬 개발
 
