@@ -80,7 +80,7 @@ fi
 APP_VERSION="${APP_VERSION:-$(cat VERSION)}"
 # 같은 표시 버전을 다시 배포할 때 올리는 내부 빌드 번호 (저장소 맨 위 BUILD_NUMBER 파일, 없으면 없음)
 # 자동 업데이트는 CFBundleVersion(= 버전.빌드) 으로 새 것인지 판단한다
-APP_BUILD="${APP_BUILD:-$(cat BUILD_NUMBER 2>/dev/null)}"
+APP_BUILD="${APP_BUILD:-$(cat BUILD_NUMBER 2>/dev/null || true)}"
 BUNDLE_VERSION="$APP_VERSION${APP_BUILD:+.$APP_BUILD}"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
