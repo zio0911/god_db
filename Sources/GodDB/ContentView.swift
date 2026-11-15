@@ -1,8 +1,10 @@
+import AppKit
 import GodDBCore
 import SwiftUI
 
 struct ContentView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(AppSettings.assistantKey) private var assistantEnabled = true
     @State private var logHeight: CGFloat = 220
 
@@ -99,7 +101,13 @@ struct ContentView: View {
             }
         }
         .task { await app.startup.run(app: app) }
-        .sheet(isPresented: $app.showReleaseNotes) { ReleaseNotesView() }
+        // 새로운 기능은 별도 창으로 (설정 창 위에서 눌러도 앞에 보이도록)
+        .onChange(of: app.showReleaseNotes) {
+            guard app.showReleaseNotes else { return }
+            app.showReleaseNotes = false
+            openWindow(id: "release-notes")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in
