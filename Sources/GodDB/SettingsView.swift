@@ -53,6 +53,9 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
+    @State private var versionTaps = 0
+    @State private var showDotZero = false
+    @State private var auditToolUnlocked = false
 
     var body: some View {
         @Bindable var settings = settings
@@ -98,11 +101,30 @@ struct GeneralSettingsView: View {
                         NSWorkspace.shared.open(LogFile.shared.directory)
                     }
                 }
+                if auditToolUnlocked {
+                    AuditCheckRow()
+                }
             } header: {
                 Text(tr("로그"))
             }
             Section {
-                LabeledContent(tr("버전"), value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+                LabeledContent(tr("버전")) {
+                    HStack(spacing: 2) {
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                versionTaps += 1
+                                if versionTaps == 30 {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 120) { showDotZero = true }
+                                }
+                            }
+                        if showDotZero {
+                            Button(".0") { auditToolUnlocked = true }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 LabeledContent(tr("소스 코드")) {
                     Link("github.com/zio0911/god_db", destination: URL(string: Licenses.goddbURL)!)
                 }
