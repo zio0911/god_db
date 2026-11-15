@@ -9,6 +9,14 @@ struct GodDBApp: App {
     @State private var settings = AppSettings()
 
     init() {
+        // 감사 로그 검사: GodDB --verify-audit [폴더] → 결과를 출력하고 문제가 있으면 종료 코드 1
+        if let i = CommandLine.arguments.firstIndex(of: "--verify-audit") {
+            let dir = CommandLine.arguments.count > i + 1 ? URL(fileURLWithPath: CommandLine.arguments[i + 1]) : LogFile.shared.directory
+            let reports = AuditChain.verify(directory: dir)
+            reports.forEach { print(AuditChain.describe($0)) }
+            let bad = reports.contains { if case .broken = $0.status { return true }; if case .unlinked = $0.status { return true }; return false }
+            exit(bad ? 1 : 0)
+        }
         // 개발용: GodDB --render-diagram-sample <out.png> → 샘플 ER 다이어그램을 그려 저장하고 종료
         if let i = CommandLine.arguments.firstIndex(of: "--render-diagram-sample"), CommandLine.arguments.count > i + 1 {
             let mode = CommandLine.arguments.count > i + 2 ? CommandLine.arguments[i + 2] : "physical"

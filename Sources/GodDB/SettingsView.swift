@@ -53,6 +53,10 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
+    @State private var versionTaps = 0
+    @State private var showDotZero = false
+    @State private var auditToolUnlocked = false
+    @State private var tapWork: DispatchWorkItem?
 
     var body: some View {
         @Bindable var settings = settings
@@ -98,11 +102,23 @@ struct GeneralSettingsView: View {
                         NSWorkspace.shared.open(LogFile.shared.directory)
                     }
                 }
+                if auditToolUnlocked {
+                    AuditCheckRow()
+                }
             } header: {
                 Text(tr("로그"))
             }
             Section {
-                LabeledContent(tr("버전"), value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+                Button { versionTapped() } label: {
+                    HStack {
+                        Text(tr("버전"))
+                        Spacer()
+                        Text((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev") + (showDotZero ? ".0" : ""))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 LabeledContent(tr("소스 코드")) {
                     Link("github.com/zio0911/god_db", destination: URL(string: Licenses.goddbURL)!)
                 }
@@ -111,6 +127,31 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { versionTaps = 0; showDotZero = false; tapWork?.cancel() }
+    }
+
+    private func versionTapped() {
+        if showDotZero {
+            auditToolUnlocked = true
+            showDotZero = false
+            tapWork?.cancel()
+            versionTaps = 0
+            return
+        }
+        versionTaps += 1
+        showDotZero = false
+        tapWork?.cancel()
+        guard versionTaps < 40 else { versionTaps = 0; return }
+        // 누르기를 멈추고 2초 뒤 횟수가 맞으면 10초 동안만 보인다 (나눠서 눌러도 횟수는 이어진다)
+        let work = DispatchWorkItem {
+            guard (30..<40).contains(versionTaps) else { return }
+            showDotZero = true
+            let hide = DispatchWorkItem { showDotZero = false; versionTaps = 0 }
+            tapWork = hide
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: hide)
+        }
+        tapWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
 }
 
