@@ -107,6 +107,8 @@ struct TabChip: View {
 }
 
 struct QueryTabView: View {
+    /// 설정 > 쿼리 튜닝 사용 (끄면 버튼을 숨긴다)
+    @AppStorage("GodDB.tuning.enabled") private var tuningEnabled = true
     @Environment(AppState.self) private var app
     @Binding var tab: QueryTab
     @State private var controller = EditorController()
@@ -178,6 +180,7 @@ struct QueryTabView: View {
             .disabled(tab.running)
             .help(tr("EXPLAIN 으로 실행 계획 보기 (⇧⌘↩)"))
 
+            if tuningEnabled {
             Button {
                 guard let sql = controller.sqlToRun() else { return }
                 app.startTuning(sql: sql)
@@ -189,6 +192,7 @@ struct QueryTabView: View {
             .keyboardShortcut("t", modifiers: [.command, .option])
             .disabled(tab.running || app.tuningUnavailableReason != nil)
             .help(app.tuningUnavailableReason ?? tr("로컬 Ollama 로 이 쿼리를 튜닝해요 (⌥⌘T) — 선택 영역 또는 커서가 있는 문장"))
+            }
 
             if tab.source != nil {
                 Button {
@@ -272,7 +276,7 @@ struct ResultPane: View {
                 if tab.isPlan {
                     PlanWarningsView(result: result, tree: tab.planTree,
                                      tuneDisabledReason: app.tuningUnavailableReason,
-                                     onTune: { if let sql = result.sql { app.startTuning(sql: sql) } })
+                                     onTune: TuningSettings.enabled ? { if let sql = result.sql { app.startTuning(sql: sql) } } : nil)
                 }
                 if result.columns.isEmpty {
                     Text(result.message ?? tr("실행 완료"))

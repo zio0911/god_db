@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppState.self) private var app
+    @AppStorage(AppSettings.assistantKey) private var assistantEnabled = true
     @State private var logHeight: CGFloat = 220
 
     var body: some View {
@@ -28,7 +29,7 @@ struct ContentView: View {
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        if app.assistant.visible {
+                        if app.assistant.visible && assistantEnabled {
                             ResizeHandle(axis: .vertical, size: Binding(get: { app.assistant.width }, set: { app.assistant.width = $0 }),
                                          range: 320...max(320, min(760, geo.size.width - 420)))
                             AssistantPanel()
@@ -70,6 +71,7 @@ struct ContentView: View {
             }
         }
         .toolbar {
+            if assistantEnabled {
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { app.assistant.visible.toggle() }
@@ -79,6 +81,7 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .help(tr("AI 어시스턴트 열기/닫기 (⇧⌘I) · 테이블 정보·특이사항·SQL 을 로컬 Ollama 와 대화"))
+            }
             }
         }
         .onChange(of: app.selectedProfileID) {

@@ -121,3 +121,28 @@ struct AuditClassifyTests {
         #expect(AuditRecord.cell(String(repeating: "a", count: 30), limit: 10).hasPrefix("aaaaaaaaaa …(30자"))
     }
 }
+
+@Suite("Log retention", .serialized)
+struct LogRetentionTests {
+    @Test func retentionSettingDeletesOldFilesAndHasMinimum() throws {
+        let saved = UserDefaults.standard.object(forKey: "GodDB.logFile.keepDays")
+        defer { UserDefaults.standard.set(saved, forKey: "GodDB.logFile.keepDays") }
+        LogFile.retentionDays = 30
+        #expect(LogFile.retentionDays == 90)          // 최소 90일
+        LogFile.retentionDays = 0
+        #expect(LogFile.retentionDays == 0)           // 영구
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goddb-ret-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX")
+        let old = dir.appendingPathComponent("goddb-audit-\(f.string(from: Date().addingTimeInterval(-200 * 86400))).tsv")
+        let recent = dir.appendingPathComponent("goddb-audit-\(f.string(from: Date().addingTimeInterval(-100 * 86400))).tsv")
+        for u in [old, recent] { try Data("x".utf8).write(to: u) }
+        LogFile.retentionDays = 180
+        let file = LogFile(directory: dir)
+        file.cleanNow(); file.flush()
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(FileManager.default.fileExists(atPath: recent.path))
+    }
+}
