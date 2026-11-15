@@ -153,7 +153,11 @@ struct ModelEditorView: View {
     var body: some View {
         let issues = model.issues()
         VStack(spacing: 0) {
-            toolbar(issues)
+            // 자리가 모자라면(AI 패널을 연 경우 등) 도구 막대를 가로로 스크롤한다
+            ViewThatFits(in: .horizontal) {
+                toolbar(issues)
+                ScrollView(.horizontal, showsIndicators: false) { toolbar(issues) }
+            }
             Divider()
             GeometryReader { geo in
                 VStack(spacing: 0) {

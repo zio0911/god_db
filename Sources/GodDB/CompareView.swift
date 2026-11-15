@@ -34,12 +34,13 @@ struct CompareView: View {
         }
     }
 
+    /// 기준 / 대상을 두 줄로 둔다. 접속 이름이 길어도 선택 상자가 남은 폭 안에서 줄어 화면 밖으로 밀리지 않는다.
     private var controls: some View {
-        HStack(spacing: 12) {
-            endpointPicker(tr("기준"), id: $sourceID, db: $sourceDB)
-            Image(systemName: "arrow.right").foregroundStyle(.secondary)
-            endpointPicker(tr("대상"), id: $targetID, db: $targetDB)
-            Spacer()
+        HStack(alignment: .center, spacing: 12) {
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                endpointRow(tr("기준"), id: $sourceID, db: $sourceDB)
+                endpointRow(tr("대상"), id: $targetID, db: $targetDB)
+            }
             Button {
                 Task { await compare() }
             } label: {
@@ -51,17 +52,19 @@ struct CompareView: View {
         .padding(10)
     }
 
-    private func endpointPicker(_ title: String, id: Binding<UUID?>, db: Binding<String>) -> some View {
-        HStack(spacing: 6) {
+    private func endpointRow(_ title: String, id: Binding<UUID?>, db: Binding<String>) -> some View {
+        GridRow {
             Text(title).foregroundStyle(.secondary)
+                .gridColumnAlignment(.trailing)
             Picker(title, selection: id) {
                 Text(tr("선택")).tag(UUID?.none)
                 ForEach(app.profiles.filter { $0.kind.isSQL }) { Text($0.name).tag(UUID?.some($0.id)) }
             }
             .labelsHidden()
-            .fixedSize()
+            .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+            .help(app.profiles.first { $0.id == id.wrappedValue }?.name ?? "")
             TextField(tr("DB/스키마 (비우면 기본)"), text: db)
-                .frame(width: 150)
+                .frame(width: 170)
         }
     }
 

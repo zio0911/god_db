@@ -30,7 +30,9 @@ struct ContentView: View {
                             case .modeling: ModelingView()
                             }
                         }
-                        .frame(maxWidth: .infinity)
+                        // 본문이 남은 폭에 맞춰 줄어들어야 AI 패널이 밀리지 않고 너비 조절도 된다
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                        .clipped()
                         if app.assistant.visible && assistantEnabled {
                             ResizeHandle(axis: .vertical, size: Binding(get: { app.assistant.width }, set: { app.assistant.width = $0 }),
                                          range: 320...max(320, min(760, geo.size.width - 420)))
