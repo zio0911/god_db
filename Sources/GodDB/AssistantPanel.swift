@@ -156,9 +156,8 @@ struct AssistantPanel: View {
     @State private var input = ""
     @FocusState private var inputFocused: Bool
 
-    private var unavailable: String? {
-        TuningSettings.enabled ? nil : tr("설정 > 쿼리 튜닝에서 Ollama 를 켜 주세요. (같은 모델을 써요)")
-    }
+    /// AI 어시스턴트는 쿼리 튜닝과 따로 켜고 끈다 (설정 > AI > AI 어시스턴트 사용 — 끄면 패널 자체가 숨겨진다)
+    private var unavailable: String? { nil }
 
     private var isModeling: Bool { app.mode == .modeling && app.modeling.selected != nil }
     private var isSQL: Bool { app.state == .connected && app.selectedProfile?.kind.isSQL == true }

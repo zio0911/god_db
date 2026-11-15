@@ -3,6 +3,7 @@ import Foundation
 // 설정 정리 번역
 extension L10nEnglish {
     static let settings: [String: String] = [
+        "AI": "AI",
         "1년 (365일)": "1 year (365 days)",
         "3개월 (90일)": "3 months (90 days)",
         "6개월 (180일)": "6 months (180 days)",

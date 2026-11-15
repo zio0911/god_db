@@ -26,8 +26,8 @@ public enum OllamaError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .notRunning: return tr("Ollama 가 실행 중이 아니에요. 설정 > 쿼리 튜닝에서 확인해 주세요.")
-        case .noModel: return tr("튜닝에 쓸 모델을 설정 > 쿼리 튜닝에서 골라 주세요.")
+        case .notRunning: return tr("Ollama 가 실행 중이 아니에요. 설정 > AI 에서 확인해 주세요.")
+        case .noModel: return tr("AI 에 쓸 모델을 설정 > AI 에서 골라 주세요.")
         case .http(let code, let body): return tr("Ollama 오류 (HTTP %@): %@", "\(code)", body)
         }
     }
