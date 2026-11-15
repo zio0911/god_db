@@ -19,14 +19,30 @@ public final class LogFile: @unchecked Sendable {
     private let queue = DispatchQueue(label: "goddb.logfile")
     private var cleaned = false
 
-    public init(directory: URL, keepDays: Int? = nil) {
+    /// 보관 기간 설정을 읽는 곳 (기본: 사용자 설정). 테스트는 고정 값을 넘긴다.
+    private let retention: @Sendable () -> Int
+
+    public init(directory: URL, keepDays: Int? = nil, retention: @escaping @Sendable () -> Int = { LogFile.retentionDays }) {
         self.directory = directory
         self.keepDays = keepDays
+        self.retention = retention
     }
 
     /// 그 날짜의 로그 파일 경로
     public func url(for date: Date) -> URL {
         directory.appendingPathComponent("goddb-audit-\(Self.dayFormatter.string(from: date)).tsv")
+    }
+
+    /// 설정 > 일반 > 로그 > 보관 기간 (일). 0 이면 영구 보관 (기본). 최소 90일.
+    public static let retentionChoices = [0, 90, 180, 365]
+    public static var retentionDays: Int {
+        get { UserDefaults.standard.object(forKey: "GodDB.logFile.keepDays") as? Int ?? 0 }
+        set { UserDefaults.standard.set(newValue == 0 ? 0 : max(90, newValue), forKey: "GodDB.logFile.keepDays") }
+    }
+
+    /// 보관 기간이 바뀌었을 때 바로 정리
+    public func cleanNow() {
+        queue.async { [self] in removeOld() }
     }
 
     /// 설정 > 일반 > 로그 파일 남기기 (기본 켜짐)
@@ -78,7 +94,9 @@ public final class LogFile: @unchecked Sendable {
     }
 
     private func removeOld() {
-        guard let keepDays else { return }
+        // 생성할 때 정한 값(테스트) 이 없으면 설정 값. 0 이면 영구 보관
+        let setting = retention()
+        guard let keepDays = keepDays ?? (setting > 0 ? setting : nil) else { return }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
         let cutoff = Calendar.current.date(byAdding: .day, value: -keepDays, to: Date()) ?? .distantPast

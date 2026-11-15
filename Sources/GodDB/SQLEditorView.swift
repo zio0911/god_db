@@ -245,9 +245,8 @@ final class HintTextView: NSTextView {
     static let hintFont = NSFont.systemFont(ofSize: 10, weight: .medium)
     static let showHintsKey = "GodDB.editor.insertHints"
 
-    static var enabled: Bool {
-        UserDefaults.standard.object(forKey: showHintsKey) as? Bool ?? true
-    }
+    /// INSERT 컬럼 이름 표시는 항상 켬 (설정에서 끄는 옵션 제거)
+    static var enabled: Bool { true }
 
     static func width(_ text: String) -> CGFloat {
         (text as NSString).size(withAttributes: [.font: hintFont]).width + 10

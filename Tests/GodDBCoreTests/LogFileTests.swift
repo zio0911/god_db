@@ -7,7 +7,7 @@ struct LogFileTests {
     @Test func writesOneTabSeparatedLinePerAuditedAction() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goddb-log-\(UUID())")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let file = LogFile(directory: dir)
+        let file = LogFile(directory: dir, retention: { 0 })
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         file.append(LogEntry(date: date, level: .success, source: .query, message: "실행 1행", detail: "UPDATE t\nSET a = 1",
                              audit: AuditRecord(.update, target: "dev/shop", result: "1행 · 3ms", statement: "UPDATE t\nSET\ta = 1")))
@@ -51,7 +51,7 @@ struct LogFileTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let old = dir.appendingPathComponent("goddb-2000-01-01.log")
         try Data("x".utf8).write(to: old)
-        let file = LogFile(directory: dir)
+        let file = LogFile(directory: dir, retention: { 0 })
         file.append(LogEntry(level: .info, source: .app, message: "시작", audit: AuditRecord(.appStart)))
         file.flush()
         #expect(FileManager.default.fileExists(atPath: old.path))
@@ -119,5 +119,29 @@ struct AuditClassifyTests {
     @Test func cellIsOneLine() {
         #expect(AuditRecord.cell("SELECT *\n  FROM\tt\r\n WHERE a = 1  ") == "SELECT * FROM t WHERE a = 1")
         #expect(AuditRecord.cell(String(repeating: "a", count: 30), limit: 10).hasPrefix("aaaaaaaaaa …(30자"))
+    }
+}
+
+@Suite("Log retention", .serialized)
+struct LogRetentionTests {
+    @Test func retentionSettingDeletesOldFilesAndHasMinimum() throws {
+        let saved = UserDefaults.standard.object(forKey: "GodDB.logFile.keepDays")
+        defer { UserDefaults.standard.set(saved, forKey: "GodDB.logFile.keepDays") }
+        LogFile.retentionDays = 30
+        #expect(LogFile.retentionDays == 90)          // 최소 90일
+        LogFile.retentionDays = 0
+        #expect(LogFile.retentionDays == 0)           // 영구
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goddb-ret-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX")
+        let old = dir.appendingPathComponent("goddb-audit-\(f.string(from: Date().addingTimeInterval(-200 * 86400))).tsv")
+        let recent = dir.appendingPathComponent("goddb-audit-\(f.string(from: Date().addingTimeInterval(-100 * 86400))).tsv")
+        for u in [old, recent] { try Data("x".utf8).write(to: u) }
+        let file = LogFile(directory: dir, retention: { 180 })
+        file.cleanNow(); file.flush()
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+        #expect(FileManager.default.fileExists(atPath: recent.path))
     }
 }

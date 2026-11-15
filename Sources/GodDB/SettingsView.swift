@@ -15,6 +15,9 @@ final class AppSettings {
     var ollamaURL: String { didSet { TuningSettings.url = ollamaURL } }
     var tuningModel: String { didSet { TuningSettings.model = tuningModel } }
     var logFileEnabled: Bool { didSet { LogFile.enabled = logFileEnabled } }
+    var logRetentionDays: Int { didSet { LogFile.retentionDays = logRetentionDays; LogFile.shared.cleanNow() } }
+    var assistantEnabled: Bool { didSet { UserDefaults.standard.set(assistantEnabled, forKey: Self.assistantKey) } }
+    static let assistantKey = "GodDB.assistant.enabled"
 
     init() {
         language = L10n.language
@@ -22,6 +25,8 @@ final class AppSettings {
         ollamaURL = TuningSettings.url
         tuningModel = TuningSettings.model
         logFileEnabled = LogFile.enabled
+        logRetentionDays = LogFile.retentionDays
+        assistantEnabled = UserDefaults.standard.object(forKey: Self.assistantKey) as? Bool ?? true
     }
 }
 
@@ -48,7 +53,6 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
-    @AppStorage(HintTextView.showHintsKey) private var insertHints = true
 
     var body: some View {
         @Bindable var settings = settings
@@ -70,16 +74,17 @@ struct GeneralSettingsView: View {
                 Text(tr("언어"))
             }
             Section {
-                Toggle(tr("INSERT 값 앞에 컬럼 이름 표시"), isOn: $insertHints)
-                Text(tr("INSERT … VALUES (…) 의 각 값 앞에 어느 컬럼인지 회색으로 보여줘요. 화면 표시만 하고 실행하는 SQL 에는 들어가지 않아요."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text(tr("편집기"))
-            }
-            Section {
                 Toggle(tr("로그 파일 남기기"), isOn: $settings.logFileEnabled)
-                Text(tr("상태창에 나오는 기록(접속, 실행한 SQL, 데이터 변경, 오류)을 날짜별 파일로 남겨요. 조회 결과 행은 남기지 않아요. 파일은 지우지 않고 영구 보관해요."))
+                Picker(tr("보관 기간"), selection: $settings.logRetentionDays) {
+                    Text(tr("영구 보관")).tag(0)
+                    Text(tr("3개월 (90일)")).tag(90)
+                    Text(tr("6개월 (180일)")).tag(180)
+                    Text(tr("1년 (365일)")).tag(365)
+                }
+                .disabled(!settings.logFileEnabled)
+                Text(settings.logRetentionDays == 0
+                     ? tr("감사 로그(접속, 실행한 SQL, 데이터 변경, 오류)를 날짜별 파일로 남겨요. 조회 결과 행은 남기지 않아요. 파일은 지우지 않고 영구 보관해요.")
+                     : tr("감사 로그를 날짜별 파일로 남기고, %@일이 지난 파일은 자동으로 지워요. 조회 결과 행은 남기지 않아요.", "\(settings.logRetentionDays)"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack {
@@ -203,8 +208,11 @@ struct TuningSettingsView: View {
         @Bindable var settings = settings
         Form {
             Section {
+                Toggle(tr("AI 어시스턴트 사용"), isOn: $settings.assistantEnabled)
+                Text(tr("끄면 도구 막대의 ✨ AI 어시스턴트 버튼과 오른쪽 패널이 사라져요."))
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle(tr("쿼리 튜닝 사용"), isOn: $settings.tuningEnabled)
-                Text(tr("쿼리 탭의 튜닝 버튼(⌥⌘T)을 누르면 쿼리·테이블 구조·인덱스·실행 계획을 로컬 Ollama 에 보내 개선 SQL 과 추천 인덱스를 받아요."))
+                Text(tr("쿼리 탭의 튜닝 버튼(⌥⌘T)을 누르면 쿼리·테이블 구조·인덱스·실행 계획을 로컬 Ollama 에 보내 개선 SQL 과 추천 인덱스를 받아요. 끄면 튜닝 버튼이 사라져요."))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
