@@ -93,6 +93,7 @@ enum ModelingSample {
         let req2 = ExportRequest(tabID: UUID(), result: sample, kind: .mysql, visibleRows: 500, canFetchAll: true,
                                  knownTotal: nil, stable: false, sort: nil, defaultTable: "table", baseName: "query")
         shot("export-sheet-unstable", ExportSheet(request: req2), size: NSSize(width: 540, height: 680))
+        shot("problem-report", ProblemReportView(), size: NSSize(width: 640, height: 620))
         let txID = UUID()
         app.connections[txID] = ConnectionInfo(state: .connected, tx: DBSession.TransactionState(autoCommit: false, open: true, changes: 3))
         shot("tx-open", TransactionControls(profileID: txID).padding(8), size: NSSize(width: 480, height: 40))

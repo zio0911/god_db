@@ -113,6 +113,8 @@ final class AppState {
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
+    /// 문제 보고 창
+    var showProblemReport = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
     var txPrompt: TxPrompt?
     /// 결과 내보내기 설정 창

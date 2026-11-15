@@ -90,6 +90,7 @@ struct ContentView: View {
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
+        .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in
             Button(tr("커밋")) { Task { await app.resolveTxPrompt(prompt, commit: true) } }
