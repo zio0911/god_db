@@ -145,6 +145,7 @@ extension AppState {
                 audit: AuditRecord(AuditRecord.classify(sql: st), target: auditTarget(tab),
                                    result: "결과 편집 \(n + 1)/\(request.statements.count) (한 트랜잭션)", statement: st)))
         }
+        await refreshTx(tab.profileID)
         revertEdits(request.tabID)
         if let page = tab.result?.page, tab.result?.isPaged == true {
             await loadPage(page, in: request.tabID)
