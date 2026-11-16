@@ -55,6 +55,11 @@ struct QueryTab: Identifiable {
     var planTree: String?
 
     var title: String { customTitle ?? tr("쿼리 %@", "\(number)") }
+    /// 연 .sql 파일 (저장하면 이 파일에 쓴다)
+    var fileURL: URL?
+    /// 파일에 마지막으로 저장한 내용 (바뀌었는지 표시)
+    var savedText: String?
+    var isDirty: Bool { fileURL != nil && text != savedText }
 }
 
 enum MainMode: String, CaseIterable, Identifiable {

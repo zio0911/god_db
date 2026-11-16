@@ -67,6 +67,22 @@ struct GodDBApp: App {
                     .keyboardShortcut("t", modifiers: .command)
                 Button(tr("새 접속…")) { app.newProfile() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+                Divider()
+                Button(tr("SQL 파일 열기…")) { app.openSQLFilePanel() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+                Menu(tr("최근 SQL 파일")) {
+                    ForEach(app.recentSQLFiles, id: \.self) { url in
+                        Button(url.lastPathComponent) { app.openSQLFile(url) }
+                    }
+                    Divider()
+                    Button(tr("목록 지우기")) { app.clearRecentSQLFiles() }
+                }
+                Button(tr("저장")) { app.saveSelectedTab() }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(!app.canSaveQueryTab)
+                Button(tr("다른 이름으로 저장…")) { app.saveSelectedTab(saveAs: true) }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                    .disabled(!app.canSaveQueryTab)
             }
             CommandGroup(after: .appInfo) {
                 Button(tr("업데이트 확인…")) { UpdateController.shared.checkNow() }

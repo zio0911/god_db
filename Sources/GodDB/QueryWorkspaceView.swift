@@ -16,6 +16,16 @@ struct QueryWorkspaceView: View {
                 emptyState
             }
         }
+        // Finder 에서 .sql 파일을 끌어 놓으면 새 탭으로 연다
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for p in providers {
+                _ = p.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, ["sql", "txt"].contains(url.pathExtension.lowercased()) else { return }
+                    Task { @MainActor in AppState.shared?.openSQLFile(url) }
+                }
+            }
+            return true
+        }
     }
 
     @ViewBuilder
@@ -74,7 +84,8 @@ struct TabChip: View {
             }
             if let profile { KindBadge(kind: profile.kind) }
             VStack(alignment: .leading, spacing: 0) {
-                Text(tab.title).lineLimit(1)
+                Text(tab.isDirty ? "● " + tab.title : tab.title).lineLimit(1)
+                    .help(tab.fileURL?.path ?? "")
                 Text("\(profile?.name ?? tr("삭제된 접속"))\(tab.database.isEmpty ? "" : " / \(tab.database)")")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
