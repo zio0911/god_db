@@ -226,6 +226,11 @@ struct EditApplySheet: View {
             }
             Text(tr("아래 %@개 문장을 한 트랜잭션으로 실행해요. 하나라도 실패하면 모두 되돌려요.", "\(request.statements.count)"))
                 .font(.callout)
+            if let tab, app.profile(tab.profileID)?.environment == .production {
+                Label(tr("운영 접속이에요. 적용하면 운영 데이터가 바뀌어요."), systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.red)
+            }
             ScrollView {
                 Text(request.statements.joined(separator: "\n"))
                     .font(.system(.callout, design: .monospaced))

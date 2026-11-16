@@ -75,6 +75,8 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     public var sentinelMaster: String = ""
     /// 사이드바 그룹 이름 (비우면 그룹 없음). "회사/운영" 처럼 쓰지 않고 한 단계만.
     public var group: String = ""
+    /// 접속 환경 (운영이면 데이터를 바꾸기 전에 항상 확인)
+    public var environment: ConnectionEnvironment = .none
 
     public init(
         id: UUID = UUID(),
@@ -119,6 +121,23 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         redisMode = try c.decodeIfPresent(RedisMode.self, forKey: .redisMode) ?? .standalone
         sentinelMaster = try c.decodeIfPresent(String.self, forKey: .sentinelMaster) ?? ""
         group = try c.decodeIfPresent(String.self, forKey: .group) ?? ""
+        environment = try c.decodeIfPresent(ConnectionEnvironment.self, forKey: .environment) ?? .none
+    }
+}
+
+/// 접속 환경 태그 (사이드바 · 탭 · 도구 막대에 색으로 표시)
+public enum ConnectionEnvironment: String, Codable, CaseIterable, Identifiable, Sendable {
+    case none, development, staging, production
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .none: tr("표시 안 함")
+        case .development: tr("개발")
+        case .staging: tr("스테이징")
+        case .production: tr("운영")
+        }
     }
 }
 
