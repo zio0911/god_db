@@ -85,6 +85,26 @@ final class UpdateController: NSObject, SPUUpdaterDelegate {
 
     // MARK: SPUUpdaterDelegate
 
+    /// 자동 업데이트 모드: 새 버전을 다 받았을 때. 조용히 종료 때 설치하는 대신 지금 다시 시작할지 묻는다.
+    nonisolated func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
+                             immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        let version = item.displayVersionString
+        nonisolated(unsafe) let install = immediateInstallHandler
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                self.app?.log(.info, .app, tr("새 버전 %@ 을 받았어요. 종료할 때 설치돼요.", version))
+                let alert = NSAlert()
+                alert.messageText = tr("GodDB %@ 을 받았어요", version)
+                alert.informativeText = tr("지금 다시 시작해서 설치할까요? 나중에 하면 앱을 종료할 때 설치돼요.")
+                alert.addButton(withTitle: tr("지금 다시 시작"))
+                alert.addButton(withTitle: tr("종료할 때 설치"))
+                NSApp.activate(ignoringOtherApps: true)
+                if alert.runModal() == .alertFirstButtonReturn { install() }
+            }
+        }
+        return true
+    }
+
     nonisolated func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
         let from = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let to = item.displayVersionString
