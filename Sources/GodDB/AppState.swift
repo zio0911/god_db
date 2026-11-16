@@ -110,8 +110,11 @@ final class AppState {
     var tableFilter = ""
 
     /// 처음에는 탭이 없다. 접속하면 그 접속의 쿼리 탭이 생긴다.
-    var tabs: [QueryTab] = []
-    var selectedTabID: UUID?
+    var tabs: [QueryTab] = [] { didSet { scheduleTabSave() } }
+    var selectedTabID: UUID? { didSet { scheduleTabSave() } }
+    /// 쿼리 히스토리 창
+    var showHistory = false
+    @ObservationIgnored var tabSaveWork: DispatchWorkItem?
     var rowLimit = 500
     /// "제한 없음" 일 때 보이지 않게 나눠 받는 크기와 메모리에 둘 최대 행 수
     static let streamPageSize = 1_000
@@ -172,6 +175,7 @@ final class AppState {
 
     init() {
         profiles = store.load()
+        restoreTabs()
         modeling.onError = { [weak self] context, error in self?.logError(error, .schema, context: context) }
         AppState.shared = self
     }
@@ -670,6 +674,7 @@ final class AppState {
             } else {
                 let summary = result.columns.isEmpty ? (result.message ?? tr("실행 완료"))
                     : tr("%@행", "\(result.rows.count)") + (result.hasMore ? "+" : "")
+                recordHistory(tab, trimmed, ms: ms, ok: true, summary: summary)
                 log(.success, .query, label + "\(summary) · \(ms)ms · \(Self.oneLine(trimmed))", detail: trimmed,
                     audit: AuditRecord(AuditRecord.classify(sql: trimmed), target: auditTarget(tab),
                                        result: "\(summary) · \(ms)ms", statement: trimmed))
@@ -680,6 +685,7 @@ final class AppState {
                                   usedUse: kw == "USE")
         } catch {
             await refreshTx(tab.profileID)
+            if !explain { recordHistory(tab, trimmed, ms: 0, ok: false, summary: nil) }
             let message = logError(error, .query, context: explain ? tr("실행 계획 실패") : tr("쿼리 실패"), sql: trimmed,
                                    audit: AuditRecord(explain ? .read : AuditRecord.classify(sql: trimmed),
                                                       target: auditTarget(tab), statement: trimmed))
@@ -740,6 +746,7 @@ final class AppState {
                 if streaming && r.isPaged { r.appendMode = true }
                 results.append(r)
                 let summary = r.columns.isEmpty ? (r.message ?? tr("실행 완료")) : tr("%@행", "\(r.rows.count)") + (r.hasMore ? "+" : "")
+                recordHistory(tab, statement, ms: Int(r.elapsed * 1000), ok: true, summary: summary)
                 LogFile.shared.append(LogEntry(level: .success, source: .query, message: "",
                     audit: AuditRecord(AuditRecord.classify(sql: statement), target: auditTarget(tab),
                                        result: "\(n + 1)/\(list.count) · \(summary) · \(Int(r.elapsed * 1000))ms", statement: statement)))
@@ -747,6 +754,7 @@ final class AppState {
                 if ["CREATE", "ALTER", "DROP", "RENAME", "TRUNCATE"].contains(kw) { schemaChanged = true }
                 if kw == "USE" { usedUse = true }
             } catch {
+                recordHistory(tab, statement, ms: 0, ok: false, summary: nil)
                 let message = logError(error, .query, context: tr("%@/%@번째 문장 실패", "\(n + 1)", "\(list.count)"), sql: statement,
                                        audit: AuditRecord(AuditRecord.classify(sql: statement), target: auditTarget(tab), statement: statement))
                 finish(error: tr("%@번째 문장에서 멈췄어요. (앞의 %@개는 실행됨)\n\n%@", "\(n + 1)", "\(n)", "\(message)"))
@@ -1056,6 +1064,65 @@ extension AppState {
     /// 탭 닫기 (적용하지 않은 편집이 있으면 먼저 묻는다)
     func requestCloseTabs(_ ids: [UUID]) {
         confirmDiscardingEdits(ids) { [weak self] in ids.forEach { self?.closeTab($0) } }
+    }
+}
+
+// MARK: - 쿼리 히스토리 · 탭 자동 저장
+
+extension AppState {
+    func recordHistory(_ tab: QueryTab, _ sql: String, ms: Int, ok: Bool, summary: String?) {
+        let name = profile(tab.profileID)?.name ?? "?"
+        let entry = HistoryEntry(profileID: tab.profileID, profileName: name, database: tab.database,
+                                 sql: sql, elapsedMs: ms, ok: ok, summary: summary)
+        DispatchQueue.global(qos: .utility).async { QueryHistory.shared.append(entry) }
+    }
+
+    /// 히스토리의 SQL 을 편집기로: 보고 있는 탭이 같은 접속이면 끝에 덧붙이고, 아니면 그 접속의 새 탭으로
+    func openFromHistory(_ entry: HistoryEntry) {
+        if let i = selectedTabIndex, tabs[i].profileID == entry.profileID {
+            var text = tabs[i].text
+            if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+            tabs[i].text = text + (text.isEmpty ? "" : "\n") + entry.sql + (entry.sql.hasSuffix(";") ? "" : ";") + "\n"
+            mode = .query
+        } else if connectionState(entry.profileID) == .connected {
+            _ = addTab(text: entry.sql, for: entry.profileID)
+        } else {
+            Pasteboard.copy(entry.sql)
+            log(.info, .app, tr("%@ 접속이 연결되어 있지 않아 SQL 을 클립보드에 복사했어요.", entry.profileName))
+        }
+    }
+
+    /// 탭 내용이 바뀌면 1초 뒤에 저장한다 (앱을 다시 켜도 남게)
+    func scheduleTabSave() {
+        tabSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.saveTabsNow() } }
+        tabSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+    }
+
+    func saveTabsNow() {
+        tabSaveWork?.cancel()
+        let saved = tabs.map {
+            SavedTab(profileID: $0.profileID, database: $0.database, number: $0.number,
+                     title: $0.customTitle, text: $0.text, selected: $0.id == selectedTabID)
+        }
+        TabStore.shared.save(saved)
+    }
+
+    /// 지난번 탭을 되살린다 (연결은 하지 않음 — 접속을 연결하면 그 탭에서 바로 실행할 수 있다)
+    func restoreTabs() {
+        let known = Set(profiles.map(\.id))
+        var restored: [QueryTab] = []
+        var selected: UUID?
+        for t in TabStore.shared.load() where known.contains(t.profileID) {
+            let tab = QueryTab(profileID: t.profileID, database: t.database, number: t.number,
+                               customTitle: t.title, text: t.text)
+            restored.append(tab)
+            if t.selected { selected = tab.id }
+        }
+        tabs = restored
+        selectedTabID = selected ?? restored.last?.id
+        tabSaveWork?.cancel()
     }
 }
 

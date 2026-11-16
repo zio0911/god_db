@@ -293,4 +293,90 @@ final class HintTextView: NSTextView {
     }
 
     override var writablePasteboardTypes: [NSPasteboard.PasteboardType] { [.string] }
+
+    // MARK: 주석 토글 · SQL 정렬 · 실행할 문장 강조
+
+    /// 글자를 바꾼다 (되돌리기 · 하이라이트 · 바인딩이 그대로 동작하도록)
+    private func replace(_ range: NSRange, with text: String, select: NSRange) {
+        guard shouldChangeText(in: range, replacementString: text) else { return }
+        textStorage?.replaceCharacters(in: range, with: text)
+        didChangeText()
+        setSelectedRange(select)
+    }
+
+    @objc func toggleComment(_ sender: Any?) {
+        let r = SQLEditing.toggleLineComment(string, selection: selectedRange())
+        replace(r.range, with: r.replacement, select: r.selection)
+    }
+
+    /// 선택 영역이 있으면 그 부분, 없으면 커서가 있는 문장을 정렬한다
+    @objc func formatSQL(_ sender: Any?) {
+        let ns = string as NSString
+        var range = selectedRange()
+        if range.length == 0 {
+            guard let stmt = SQLText.statements(in: string).first(where: { $0.range.contains(range.location) || $0.range.upperBound == range.location })
+            else { return }
+            range = NSRange(location: stmt.range.lowerBound, length: stmt.range.count)
+        }
+        let original = ns.substring(with: range)
+        let lead = original.prefix { $0.isWhitespace }
+        let trail = String(original.reversed().prefix { $0.isWhitespace }.reversed())
+        let core = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !core.isEmpty else { return }
+        let formatted = String(lead) + SQLEditing.format(core) + trail
+        guard formatted != original else { return }
+        replace(range, with: formatted, select: NSRange(location: range.location, length: (formatted as NSString).length))
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased()
+        if mods == .command, key == "/" { toggleComment(nil); return true }
+        if mods == [.command, .option], key == "l" { formatSQL(nil); return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        menu.insertItem(.separator(), at: 0)
+        let format = NSMenuItem(title: tr("SQL 정렬 (⌥⌘L)"), action: #selector(formatSQL(_:)), keyEquivalent: "")
+        format.target = self
+        menu.insertItem(format, at: 0)
+        let comment = NSMenuItem(title: tr("주석 토글 (⌘/)"), action: #selector(toggleComment(_:)), keyEquivalent: "")
+        comment.target = self
+        menu.insertItem(comment, at: 0)
+        return menu
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        needsDisplay = true
+    }
+
+    /// 선택이 없고 문장이 여러 개면, ⌘↩ 로 실행될 커서 문장을 옅게 칠한다
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        let sel = selectedRange()
+        let length = (string as NSString).length
+        guard sel.length == 0, length > 0, length < 100_000, let lm = layoutManager, let tc = textContainer else { return }
+        let statements = SQLText.statements(in: string)
+        guard statements.count > 1,
+              let stmt = statements.first(where: { $0.range.contains(sel.location) || $0.range.upperBound == sel.location }) else { return }
+        // 앞뒤 공백 줄은 칠하지 않는다
+        let text = string as NSString
+        var start = stmt.range.lowerBound, end = min(stmt.range.upperBound, length)
+        while start < end, let u = UnicodeScalar(text.character(at: start)), CharacterSet.whitespacesAndNewlines.contains(u) { start += 1 }
+        while end > start, let u = UnicodeScalar(text.character(at: end - 1)), CharacterSet.whitespacesAndNewlines.contains(u) { end -= 1 }
+        guard end > start else { return }
+        let glyphs = lm.glyphRange(forCharacterRange: NSRange(location: start, length: end - start), actualCharacterRange: nil)
+        NSColor.controlAccentColor.withAlphaComponent(0.07).setFill()
+        lm.enumerateLineFragments(forGlyphRange: glyphs) { _, used, _, lineGlyphs, _ in
+            let r = lm.boundingRect(forGlyphRange: NSIntersectionRange(lineGlyphs, glyphs), in: tc)
+            var line = NSRect(x: 0, y: used.minY, width: self.bounds.width, height: used.height)
+            line.origin.y = r.minY + self.textContainerOrigin.y
+            line.size.height = r.height
+            line.fill()
+        }
+    }
 }
