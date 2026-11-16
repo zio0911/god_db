@@ -35,5 +35,10 @@ extension L10nEnglish {
         "지금 업데이트 확인…": "Check for Updates Now…",
         "최근 버전들에서 바뀐 점을 정리해줘": "Summarize what changed in recent versions",
         "확인하고 알림 (설치는 직접)": "Check and notify (install yourself)",
+        "GodDB %@ 을 받았어요": "GodDB %@ has been downloaded",
+        "새 버전 %@ 을 받았어요. 종료할 때 설치돼요.": "Downloaded version %@. It will be installed when you quit.",
+        "종료할 때 설치": "Install on Quit",
+        "지금 다시 시작": "Restart Now",
+        "지금 다시 시작해서 설치할까요? 나중에 하면 앱을 종료할 때 설치돼요.": "Restart now to install it? Otherwise it's installed when you quit the app.",
     ]
 }
