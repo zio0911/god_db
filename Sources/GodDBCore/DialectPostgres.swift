@@ -14,6 +14,8 @@ public struct PostgresDialect: SQLDialect {
     }
 
     public var readOnlySessionSQL: String? { "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY" }
+    public var sessionIDSQL: String { "SELECT pg_backend_pid()" }
+    public func cancelSQL(sessionID: Int) -> String { "SELECT pg_cancel_backend(\(sessionID))" }
 
     public var databasesSQL: String {
         """

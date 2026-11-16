@@ -111,6 +111,7 @@ struct ContentView: View {
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
+        .sheet(isPresented: $app.showHistory) { HistoryView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in
             Button(tr("커밋")) { Task { await app.resolveTxPrompt(prompt, commit: true) } }
@@ -171,6 +172,7 @@ struct ConnectionBadge: View {
                     Text("SSH").font(.caption2).padding(.horizontal, 4)
                         .background(.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                 }
+                EnvironmentBadge(environment: app.selectedProfile?.environment ?? .none)
                 if app.selectedProfile?.readOnly == true {
                     Text(tr("읽기전용")).font(.caption2).foregroundStyle(.red).padding(.horizontal, 4)
                         .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))

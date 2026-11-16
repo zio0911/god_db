@@ -82,6 +82,9 @@ struct GodDBApp: App {
                     if let id = app.selectedProfileID { Task { await app.disconnect(id) } }
                 }
                 Button(tr("모든 접속 끊기")) { Task { await app.disconnectAll() } }
+                Divider()
+                Button(tr("쿼리 히스토리…")) { app.showHistory = true }
+                    .keyboardShortcut("y", modifiers: .command)
             }
         }
 
