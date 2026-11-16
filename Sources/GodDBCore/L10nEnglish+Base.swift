@@ -86,7 +86,7 @@ extension L10nEnglish {
         "SSH 포트": "SSH port",
         "TLS 사용": "Use TLS",
         "TLS 연결에 실패했어요.": "TLS connection failed.",
-        "Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘T 새 탭": "Tab autocomplete · ⌘↩ run · ⇧⌘↩ plan · ⌘T new tab",
+        "Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘/ 주석 · ⌥⌘L 정렬": "Tab autocomplete · ⌘↩ run · ⇧⌘↩ plan · ⌘/ comment · ⌥⌘L format",
         "VPN 연결 여부와, 보안 그룹/방화벽에서 이 PC가 허용돼 있는지 확인해 주세요.": "Check your VPN connection and that this computer is allowed by the security group/firewall.",
         "VPN 연결을 확인해 주세요. 사내망 IP라면 시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크에서 GodDB를 허용해야 할 수 있어요.": "Check your VPN connection. For internal network IPs, you may need to allow GodDB in System Settings > Privacy & Security > Local Network.",
         "[%@] %@개 문장 실행 · 결과 %@개 · %@ms": "[%@] Ran %@ statements · %@ results · %@ms",
