@@ -169,12 +169,20 @@ struct DiagramView: View {
     }
 
     private var toolbar: some View {
+        AdaptiveBar { compact in toolbarRow(compact: compact) }
+    }
+
+    private func toolbarRow(compact: Bool) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "point.3.connected.trianglepath.dotted").foregroundStyle(Color.accentColor)
             Text(doc.title).font(.headline).lineLimit(1)
-            Text(tr("테이블 %@개 · 관계 %@개", "\(doc.tables.count)", "\(realRelations.count)"))
-                .foregroundStyle(.secondary)
-            Spacer()
+                .frame(maxWidth: compact ? 160 : nil, alignment: .leading)
+                .help(doc.title)
+            if !compact {
+                Text(tr("테이블 %@개 · 관계 %@개", "\(doc.tables.count)", "\(realRelations.count)"))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
             Picker("", selection: Binding(get: { nameMode }, set: { nameModeRaw = $0.rawValue; relayoutAnimated() })) {
                 ForEach(DiagramNameMode.allCases) { Text($0.title).tag($0) }
             }

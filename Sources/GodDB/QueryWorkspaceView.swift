@@ -159,6 +159,10 @@ struct QueryTabView: View {
     }
 
     private var toolbar: some View {
+        AdaptiveBar { compact in toolbarRow(compact: compact) }
+    }
+
+    private func toolbarRow(compact: Bool) -> some View {
         @Bindable var app = app
         return HStack(spacing: 10) {
             Button {
@@ -216,8 +220,10 @@ struct QueryTabView: View {
                 Divider().frame(height: 18)
                 TransactionControls(profileID: tab.profileID)
             }
-            Spacer()
-            Text(tr("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘T 새 탭")).font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            if !compact {
+                Text(tr("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘T 새 탭")).font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(8)
     }
