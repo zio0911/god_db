@@ -1118,6 +1118,9 @@ extension AppState {
         tabs = restored
         selectedTabID = selected ?? restored.last?.id
         tabSaveWork?.cancel()
+    }
+}
+
 // MARK: - 쿼리 취소 · 실행 시간 제한
 
 extension AppState {
