@@ -203,6 +203,11 @@ struct QueryTabView: View {
                 .help(tr("DB 에서 생성문(정의)을 다시 읽어 편집기 내용을 바꿔요"))
             }
 
+            Button { app.showHistory = true } label: {
+                Label(tr("히스토리"), systemImage: "clock.arrow.circlepath")
+            }
+            .help(tr("실행한 쿼리 다시 찾기 (⌘Y)"))
+
             Picker(tr("페이지"), selection: $app.rowLimit) {
                 Text("100").tag(100)
                 Text("500").tag(500)
