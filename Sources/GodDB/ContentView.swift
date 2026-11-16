@@ -118,7 +118,17 @@ struct ContentView: View {
             Button(tr("취소"), role: .cancel) { app.txPrompt = nil }
         } message: { prompt in
             Text(tr("열린 트랜잭션에 변경 %@건이 있어요. %@ 전에 커밋하거나 롤백해 주세요.", "\(app.txState(prompt.profileID).changes)",
-                    prompt.reason == .disconnect ? tr("연결을 끊기") : tr("자동 커밋을 켜기")))
+                    prompt.reason.actionText))
+        }
+        .alert(tr("적용하지 않은 편집이 있어요"), isPresented: Binding(get: { app.discardPrompt != nil }, set: { if !$0 { app.discardPrompt = nil } }),
+               presenting: app.discardPrompt) { prompt in
+            Button(tr("버리고 계속"), role: .destructive) {
+                app.discardPrompt = nil
+                prompt.action()
+            }
+            Button(tr("취소"), role: .cancel) { app.discardPrompt = nil }
+        } message: { prompt in
+            Text(tr("결과 표에서 고치고 적용하지 않은 %@건이 사라져요.", "\(prompt.count)"))
         }
         .sheet(item: $app.exportRequest) { request in
             ExportSheet(request: request, onCancel: { app.exportRequest = nil },

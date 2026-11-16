@@ -80,7 +80,7 @@ struct TabChip: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            Button { app.closeTab(tab.id) } label: {
+            Button { app.requestCloseTabs([tab.id]) } label: {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
             }
             .buttonStyle(.plain)
@@ -98,9 +98,9 @@ struct TabChip: View {
         .help(connected ? "\(profile?.name ?? "") / \(tab.database)" : tr("연결이 끊긴 접속이에요. 왼쪽에서 다시 연결하세요."))
         .contextMenu {
             Button(tr("이 접속에 새 탭")) { app.addTab(for: tab.profileID) }
-            Button(tr("탭 닫기")) { app.closeTab(tab.id) }
+            Button(tr("탭 닫기")) { app.requestCloseTabs([tab.id]) }
             Button(tr("다른 탭 모두 닫기")) {
-                for other in app.tabs where other.id != tab.id { app.closeTab(other.id) }
+                app.requestCloseTabs(app.tabs.filter { $0.id != tab.id }.map(\.id))
             }
         }
     }
@@ -114,7 +114,7 @@ struct QueryTabView: View {
     @State private var controller = EditorController()
     @State private var editorHeight: CGFloat = 220
     /// 선택 없이 전체 실행할 때 변경 문이 섞여 있으면 확인을 받는다.
-    @State private var pendingScript: [String]?
+    @State private var pendingRun: RunConfirm?
 
     var body: some View {
         @Bindable var app = app
@@ -131,8 +131,8 @@ struct QueryTabView: View {
                              growsTowardStart: false)
 
                 ResultPane(tab: tab,
-                           onSelectResult: { index in app.selectResult(index, in: tab.id) },
-                           onPage: { page in Task { await app.loadPage(page, in: tab.id) } },
+                           onSelectResult: { index in app.confirmDiscardingEdits([tab.id]) { app.selectResult(index, in: tab.id) } },
+                           onPage: { page in app.confirmDiscardingEdits([tab.id]) { Task { await app.loadPage(page, in: tab.id) } } },
                            onCount: { Task { await app.countRows(in: tab.id) } },
                            onSort: { column, ascending in Task { await app.sortResult(tab.id, column: column, ascending: ascending) } })
                     .frame(maxHeight: .infinity)
@@ -142,19 +142,15 @@ struct QueryTabView: View {
             controller.schemaProvider = { [app] in (app.tables, app.routines) }
             controller.focus()
         }
-        .alert(tr("전체 %@개 문장을 실행할까요?", "\(pendingScript?.count ?? 0)"),
-               isPresented: Binding(get: { pendingScript != nil }, set: { if !$0 { pendingScript = nil } })) {
-            Button(tr("전체 실행"), role: .destructive) {
-                if let script = pendingScript { Task { await app.runScript(script) } }
-                pendingScript = nil
+        .alert(pendingRun?.title ?? "", isPresented: Binding(get: { pendingRun != nil }, set: { if !$0 { pendingRun = nil } }),
+               presenting: pendingRun) { confirm in
+            Button(confirm.wholeScript ? tr("전체 실행") : tr("실행"), role: .destructive) {
+                pendingRun = nil
+                start(confirm)
             }
-            Button(tr("취소"), role: .cancel) { pendingScript = nil }
-        } message: {
-            let writes = (pendingScript ?? []).filter { !SQLText.isReadOnly($0) }
-            Text(tr("선택 영역이 없어서 편집기의 모든 문장을 위에서부터 실행해요.\n변경 문 %@개 포함: ", "\(writes.count)")
-                 + writes.prefix(3).map { AppState.oneLine($0, max: 40) }.joined(separator: " / ")
-                 + (writes.count > 3 ? " …" : "")
-                 + tr("\n\n일부만 실행하려면 그 부분을 선택하고 실행하세요."))
+            Button(tr("취소"), role: .cancel) { pendingRun = nil }
+        } message: { confirm in
+            Text(confirm.message)
         }
     }
 
@@ -226,7 +222,8 @@ struct QueryTabView: View {
         if explain {
             // 실행 계획은 선택 영역 또는 커서가 있는 문장 하나
             guard let sql = controller.sqlToRun() else { return }
-            Task { await app.run(sql: sql, explain: true) }
+            let confirm = RunConfirm(statements: [sql], explain: true, discardedEdits: tab.edits.count)
+            if confirm.needsConfirm { pendingRun = confirm } else { start(confirm) }
             return
         }
         // 선택 영역이 있으면 그 안의 문장만, 없으면 편집기 전체
@@ -234,11 +231,19 @@ struct QueryTabView: View {
         let source = selected ?? tab.text
         let statements = SQLText.statements(in: source).map(\.sql)
         guard !statements.isEmpty else { return }
-        if selected == nil && statements.count > 1 && statements.contains(where: { !SQLText.isReadOnly($0) }) {
-            pendingScript = statements
-            return
+        let confirm = RunConfirm(statements: statements,
+                                 wholeScript: selected == nil && statements.count > 1 && statements.contains { !SQLText.isReadOnly($0) },
+                                 dangerous: statements.filter { SQLText.danger($0) != nil },
+                                 discardedEdits: tab.edits.count)
+        if confirm.needsConfirm { pendingRun = confirm } else { start(confirm) }
+    }
+
+    private func start(_ confirm: RunConfirm) {
+        if confirm.explain {
+            Task { await app.run(sql: confirm.statements[0], explain: true) }
+        } else {
+            Task { await app.runScript(confirm.statements) }
         }
-        Task { await app.runScript(statements) }
     }
 }
 
@@ -773,5 +778,51 @@ enum Pasteboard {
     static func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// 실행 전에 확인할 것: 편집기 전체 실행 · 되돌리기 어려운 문장 · 적용하지 않은 결과 편집
+@MainActor
+struct RunConfirm: Identifiable {
+    let id = UUID()
+    var statements: [String]
+    var explain = false
+    var wholeScript = false
+    var dangerous: [String] = []
+    var discardedEdits = 0
+
+    var needsConfirm: Bool { wholeScript || !dangerous.isEmpty || discardedEdits > 0 }
+
+    var title: String {
+        if !dangerous.isEmpty { return tr("되돌리기 어려운 문장이 있어요") }
+        if wholeScript { return tr("전체 %@개 문장을 실행할까요?", "\(statements.count)") }
+        return tr("적용하지 않은 편집이 있어요")
+    }
+
+    var message: String {
+        var parts: [String] = []
+        if !dangerous.isEmpty {
+            let lines = dangerous.prefix(3).map { "• " + Self.label(SQLText.danger($0)) + " — " + AppState.oneLine($0, max: 50) }
+            parts.append(lines.joined(separator: "\n") + (dangerous.count > 3 ? "\n…" : ""))
+        }
+        if wholeScript {
+            let writes = statements.filter { !SQLText.isReadOnly($0) }
+            parts.append(tr("선택 영역이 없어서 편집기의 모든 문장(%@개, 변경 문 %@개)을 위에서부터 실행해요. 일부만 실행하려면 그 부분을 선택하세요.",
+                            "\(statements.count)", "\(writes.count)"))
+        }
+        if discardedEdits > 0 {
+            parts.append(tr("결과 표에서 고치고 적용하지 않은 %@건은 사라져요.", "\(discardedEdits)"))
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    static func label(_ d: SQLText.Danger?) -> String {
+        switch d {
+        case .deleteAll: tr("WHERE 없는 DELETE (모든 행 삭제)")
+        case .updateAll: tr("WHERE 없는 UPDATE (모든 행 변경)")
+        case .truncate: tr("TRUNCATE (모든 행 삭제)")
+        case .drop: tr("DROP (객체 삭제)")
+        case nil: ""
+        }
     }
 }

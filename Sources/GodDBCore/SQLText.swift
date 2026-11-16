@@ -123,6 +123,38 @@ public enum SQLText {
         return true
     }
 
+    /// 되돌리기 어려운 문장 종류 (실행 전에 한 번 더 확인한다)
+    public enum Danger: String, Sendable {
+        case deleteAll, updateAll, truncate, drop
+    }
+
+    /// WHERE 없는 DELETE / UPDATE, TRUNCATE, DROP 이면 그 종류를 돌려준다.
+    /// 주석 · 문자열 · 괄호(서브쿼리) 안은 보지 않는다.
+    public static func danger(_ sql: String) -> Danger? {
+        switch firstKeyword(sql) {
+        case "TRUNCATE": return .truncate
+        case "DROP": return .drop
+        case "DELETE": return hasTopLevelWhere(sql) ? nil : .deleteAll
+        case "UPDATE": return hasTopLevelWhere(sql) ? nil : .updateAll
+        default: return nil
+        }
+    }
+
+    static func hasTopLevelWhere(_ sql: String) -> Bool {
+        var s = stripComments(sql)
+        // 문자열 · 따옴표 식별자 안의 글자는 지운다
+        for pattern in ["'(?:[^'\\\\]|\\\\.|'')*'", "\"(?:[^\"]|\"\")*\"", "`[^`]*`", "\\[[^\\]]*\\]"] {
+            s = s.replacingOccurrences(of: pattern, with: " ", options: .regularExpression)
+        }
+        // 안쪽 괄호부터 지워 서브쿼리의 WHERE 는 세지 않는다
+        while true {
+            let next = s.replacingOccurrences(of: "\\([^()]*\\)", with: " ", options: .regularExpression)
+            if next == s { break }
+            s = next
+        }
+        return s.range(of: "\\bWHERE\\b", options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     /// LIMIT 이 없는 SELECT 에 LIMIT 을 붙인다.
     public static func applyingLimit(_ sql: String, limit: Int) -> String {
         guard limit > 0, firstKeyword(sql) == "SELECT" else { return sql }

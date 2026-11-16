@@ -127,6 +127,8 @@ final class AppState {
     var showProblemReport = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
     var txPrompt: TxPrompt?
+    /// 적용하지 않은 결과 편집을 버리기 전 확인
+    var discardPrompt: DiscardEditsPrompt?
     /// 결과 내보내기 설정 창
     var exportRequest: ExportRequest?
     var showExportConnections = false
@@ -296,15 +298,32 @@ final class AppState {
             audit: AuditRecord(.settings, target: profile.name, result: "접속 정보 저장"))
         // 열려 있던 접속이면 바뀐 설정으로 다시 연결
         if connectionState(profile.id) == .connected {
-            Task {
-                await disconnect(profile.id)
-                await connect(profile.id)
-            }
+            requestReconnect(profile.id)
         }
     }
 
-    func deleteProfile(_ profile: ConnectionProfile) {
-        Task { await disconnect(profile.id) }
+    /// 다시 연결. 열린 트랜잭션이 있으면 커밋/롤백을 먼저 묻고, 정리된 뒤 다시 연결한다.
+    func requestReconnect(_ id: UUID) {
+        if connections[id]?.tx.open == true {
+            txPrompt = TxPrompt(profileID: id, reason: .reconnect)
+        } else {
+            Task { await reconnect(id) }
+        }
+    }
+
+    /// 끊고 다시 연결한다 (바뀐 접속 설정 적용)
+    func reconnect(_ id: UUID) async {
+        await disconnect(id, force: true)
+        await connect(id)
+    }
+
+    /// 접속 삭제 (확인은 화면에서 받는다). 열린 트랜잭션이 있으면 먼저 커밋/롤백을 묻는다.
+    func deleteProfile(_ profile: ConnectionProfile) async {
+        if connections[profile.id]?.tx.open == true {
+            txPrompt = TxPrompt(profileID: profile.id, reason: .delete)
+            return
+        }
+        await disconnect(profile.id, force: true)
         profiles.removeAll { $0.id == profile.id }
         Keychain.deletePassword(for: profile.id)
         sessionPasswords[profile.id] = nil
@@ -822,7 +841,10 @@ final class AppState {
         guard let t = tabs.first(where: { $0.id == tabID }), let current = t.result, let sql = current.sql,
               let columnIndex = current.columns.firstIndex(where: { $0.name == column }) else { return }
         if !t.edits.isEmpty {
-            log(.warning, .query, tr("편집 중인 변경을 적용하거나 되돌린 뒤 정렬하세요."))
+            confirmDiscardingEdits([tabID]) { [weak self] in
+                self?.update(tabID) { $0.edits = PendingEdits() }
+                Task { await self?.sortResult(tabID, column: column, ascending: ascending) }
+            }
             return
         }
         let index = t.resultIndex
@@ -1005,5 +1027,25 @@ final class AppState {
     func update(_ id: UUID, _ change: (inout QueryTab) -> Void) {
         guard let i = tabs.firstIndex(where: { $0.id == id }) else { return }
         change(&tabs[i])
+    }
+}
+
+/// 적용하지 않은 결과 편집이 사라지는 일(탭 닫기 · 페이지 이동 · 결과 바꾸기 · 정렬) 전에 묻는다
+struct DiscardEditsPrompt: Identifiable {
+    let id = UUID()
+    let count: Int
+    let action: @MainActor () -> Void
+}
+
+extension AppState {
+    /// 탭들에 적용하지 않은 편집이 있으면 확인을 받고, 없으면 바로 실행한다
+    func confirmDiscardingEdits(_ tabIDs: [UUID], _ action: @escaping @MainActor () -> Void) {
+        let n = tabs.filter { tabIDs.contains($0.id) }.reduce(0) { $0 + $1.edits.count }
+        if n == 0 { action() } else { discardPrompt = DiscardEditsPrompt(count: n, action: action) }
+    }
+
+    /// 탭 닫기 (적용하지 않은 편집이 있으면 먼저 묻는다)
+    func requestCloseTabs(_ ids: [UUID]) {
+        confirmDiscardingEdits(ids) { [weak self] in ids.forEach { self?.closeTab($0) } }
     }
 }
