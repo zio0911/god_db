@@ -149,6 +149,7 @@ struct ProfileRow: View {
                 .foregroundStyle(selected ? Color.accentColor : .secondary)
             Text(profile.name).lineLimit(1)
             KindBadge(kind: profile.kind)
+            EnvironmentBadge(environment: profile.environment)
             if profile.readOnly {
                 Text(tr("읽기전용")).font(.caption2).foregroundStyle(.red)
             }

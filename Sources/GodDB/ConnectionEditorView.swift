@@ -56,6 +56,13 @@ struct ConnectionEditorView: View {
                         }
                     }
                     Toggle(profile.kind == .redis ? tr("읽기전용 (조회 명령만 허용)") : tr("읽기전용 (SELECT / SHOW / DESC / EXPLAIN 만 허용)"), isOn: $profile.readOnly)
+                    Picker(tr("환경"), selection: $profile.environment) {
+                        ForEach(ConnectionEnvironment.allCases) { Text($0.title).tag($0) }
+                    }
+                    if profile.environment == .production {
+                        Text(tr("운영 접속은 사이드바 · 탭에 빨간색으로 표시하고, 데이터를 바꾸는 문장을 실행하기 전에 항상 확인해요."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if profile.readOnly && profile.kind == .mssql {
                         Text(tr("SQL Server 는 세션 단위 읽기전용 설정이 없어서 앱에서만 막아요. 운영 DB 는 읽기 전용 계정을 쓰는 걸 권장해요."))
                             .font(.caption).foregroundStyle(.secondary)
