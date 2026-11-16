@@ -39,6 +39,8 @@ struct QueryTab: Identifiable {
     var resultIndex = 0
     var error: String?
     var running = false
+    /// 실행을 시작한 시각 (경과 시간 · 실행 시간 제한)
+    var runStarted: Date?
     /// 페이지 이동 / 전체 행 수 세기 중 (결과 표는 그대로 보여준다)
     var pageLoading = false
     /// "제한 없음" 결과가 메모리 상한에 닿음
@@ -620,6 +622,7 @@ final class AppState {
             trimmed = String(trimmed.dropFirst("EXPLAIN".count)).trimmingCharacters(in: .whitespaces)
         }
         tabs[i].running = true
+        armRunTimeout(tabs[i].id)
         tabs[i].error = nil
         let streaming = rowLimit == 0
         let limit = streaming ? Self.streamPageSize : rowLimit
@@ -688,6 +691,7 @@ final class AppState {
         let tab = tabs[i]
         let tabID = tab.id
         tabs[i].running = true
+        armRunTimeout(tabs[i].id)
         tabs[i].error = nil
         tabs[i].isPlan = false
         tabs[i].planTree = nil
@@ -1047,5 +1051,42 @@ extension AppState {
     /// 탭 닫기 (적용하지 않은 편집이 있으면 먼저 묻는다)
     func requestCloseTabs(_ ids: [UUID]) {
         confirmDiscardingEdits(ids) { [weak self] in ids.forEach { self?.closeTab($0) } }
+    }
+}
+
+// MARK: - 쿼리 취소 · 실행 시간 제한
+
+extension AppState {
+    /// 설정 > 쿼리 > 실행 시간 제한 (초, 0 이면 없음)
+    static let queryTimeoutKey = "queryTimeoutSeconds"
+
+    /// 실행 시작을 기록하고, 제한 시간이 있으면 넘었을 때 취소한다
+    func armRunTimeout(_ tabID: UUID) {
+        let started = Date()
+        update(tabID) { $0.runStarted = started }
+        let seconds = UserDefaults.standard.integer(forKey: Self.queryTimeoutKey)
+        guard seconds > 0 else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard let self, let t = self.tabs.first(where: { $0.id == tabID }), t.running, t.runStarted == started else { return }
+            self.log(.warning, .query, tr("실행 시간 제한 %@초를 넘어 취소해요.", "\(seconds)"))
+            await self.cancelQuery(tabID)
+        }
+    }
+
+    /// 탭에서 실행 중인 쿼리를 멈춘다
+    func cancelQuery(_ tabID: UUID) async {
+        guard let t = tabs.first(where: { $0.id == tabID }), t.running,
+              let session = connections[t.profileID]?.session else { return }
+        do {
+            if try await session.cancelRunning() {
+                log(.info, .query, session.profile.kind == .mssql
+                    ? tr("쿼리 취소를 요청했어요. SQL Server 는 세션을 다시 연결해요 (열린 트랜잭션은 롤백돼요).")
+                    : tr("쿼리 취소를 요청했어요."))
+            }
+        } catch {
+            logError(error, .query, context: tr("쿼리 취소 실패"))
+        }
+        await refreshTx(t.profileID)
     }
 }
