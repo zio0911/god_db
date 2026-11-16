@@ -129,6 +129,8 @@ final class AppState {
     var showProblemReport = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
     var txPrompt: TxPrompt?
+    /// 메인 창 (⌘W 로 쿼리 탭을 닫을지 판단)
+    @ObservationIgnored weak var mainWindow: NSWindow?
     /// 적용하지 않은 결과 편집을 버리기 전 확인
     var discardPrompt: DiscardEditsPrompt?
     /// 결과 내보내기 설정 창

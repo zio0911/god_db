@@ -58,11 +58,13 @@ struct GodDBApp: App {
                 // 언어를 바꾸면 화면 전체를 새 언어로 다시 그린다. (접속·탭 상태는 AppState 에 있어 유지됨)
                 .id(settings.language)
         }
+
         .windowToolbarStyle(.unified)
         .commands {
             // 언어 설정을 읽어 두면 메뉴도 언어가 바뀔 때 다시 만들어진다.
             let _ = settings.language
-            CommandGroup(after: .newItem) {
+            // 새 창(⌘N) 대신: 메인 창은 하나만 (같은 상태를 보여 주는 두 번째 창이 생기지 않게)
+            CommandGroup(replacing: .newItem) {
                 Button(tr("새 쿼리 탭")) { app.addTab() }
                     .keyboardShortcut("t", modifiers: .command)
                 Button(tr("새 접속…")) { app.newProfile() }
