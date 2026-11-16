@@ -52,3 +52,56 @@ struct ConnectionEnvironmentTests {
         #expect(back.environment == .production)
     }
 }
+
+@Suite("ScriptDelimiters")
+struct ScriptDelimiterTests {
+    @Test func mysqlDelimiterKeepsProcedureBodyTogether() {
+        let script = """
+        DROP PROCEDURE IF EXISTS p1;
+        DELIMITER $$
+        CREATE PROCEDURE p1()
+        BEGIN
+          SELECT 1;
+          SELECT 2;
+        END$$
+        DELIMITER ;
+        CALL p1();
+        """
+        let s = SQLText.statements(in: script).map(\.sql)
+        #expect(s.count == 3)
+        #expect(s[0] == "DROP PROCEDURE IF EXISTS p1")
+        #expect(s[1].hasPrefix("CREATE PROCEDURE p1()") && s[1].hasSuffix("END"))
+        #expect(s[1].contains("SELECT 1;\n  SELECT 2;"))
+        #expect(s[2] == "CALL p1()")
+    }
+
+    @Test func slashDelimiter() {
+        let s = SQLText.statements(in: "DELIMITER //\nSELECT 1; SELECT 2 //\nDELIMITER ;\nSELECT 3;").map(\.sql)
+        #expect(s == ["SELECT 1; SELECT 2", "SELECT 3"])
+    }
+
+    @Test func goSplitsBatchesOnly() {
+        let script = """
+        CREATE PROCEDURE dbo.p AS
+        BEGIN
+          SELECT 1;
+          SELECT 2;
+        END
+        GO
+        EXEC dbo.p;
+        go
+        SELECT 'GO';
+        """
+        let s = SQLText.statements(in: script).map(\.sql)
+        #expect(s.count == 3)
+        #expect(s[0].contains("SELECT 1;\n  SELECT 2;"))
+        #expect(s[1] == "EXEC dbo.p;")
+        #expect(s[2] == "SELECT 'GO';")
+    }
+
+    @Test func plainScriptsUnchanged() {
+        #expect(SQLText.statements(in: "SELECT 1; SELECT 'a;b'; -- x;\nSELECT 3").map(\.sql) == ["SELECT 1", "SELECT 'a;b'", "-- x;\nSELECT 3"])
+        // GOOD 같은 단어나 문장 중간 GO 는 구분자가 아니다
+        #expect(SQLText.statements(in: "SELECT good FROM t; SELECT 2").count == 2)
+    }
+}

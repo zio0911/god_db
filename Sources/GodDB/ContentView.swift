@@ -94,6 +94,7 @@ struct ContentView: View {
         .sheet(item: $app.editingProfile) { profile in
             ConnectionEditorView(profile: profile, isNew: app.editingIsNew)
         }
+        .sheet(item: $app.importingTable) { table in CSVImportView(table: table) }
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
