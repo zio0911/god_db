@@ -16,6 +16,16 @@ struct QueryWorkspaceView: View {
                 emptyState
             }
         }
+        // Finder 에서 .sql 파일을 끌어 놓으면 새 탭으로 연다
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for p in providers {
+                _ = p.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, ["sql", "txt"].contains(url.pathExtension.lowercased()) else { return }
+                    Task { @MainActor in AppState.shared?.openSQLFile(url) }
+                }
+            }
+            return true
+        }
     }
 
     @ViewBuilder
@@ -74,7 +84,8 @@ struct TabChip: View {
             }
             if let profile { KindBadge(kind: profile.kind) }
             VStack(alignment: .leading, spacing: 0) {
-                Text(tab.title).lineLimit(1)
+                Text(tab.isDirty ? "● " + tab.title : tab.title).lineLimit(1)
+                    .help(tab.fileURL?.path ?? "")
                 Text("\(profile?.name ?? tr("삭제된 접속"))\(tab.database.isEmpty ? "" : " / \(tab.database)")")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -232,6 +243,11 @@ struct QueryTabView: View {
                 .help(tr("DB 에서 생성문(정의)을 다시 읽어 편집기 내용을 바꿔요"))
             }
 
+            Button { app.showHistory = true } label: {
+                Label(tr("히스토리"), systemImage: "clock.arrow.circlepath")
+            }
+            .help(tr("실행한 쿼리 다시 찾기 (⌘Y)"))
+
             Picker(tr("페이지"), selection: $app.rowLimit) {
                 Text("100").tag(100)
                 Text("500").tag(500)
@@ -247,7 +263,7 @@ struct QueryTabView: View {
             }
             Spacer(minLength: 0)
             if !compact {
-                Text(tr("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘T 새 탭")).font(.caption).foregroundStyle(.secondary)
+                Text(tr("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘/ 주석 · ⌥⌘L 정렬")).font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(8)
@@ -294,6 +310,8 @@ struct ResultPane: View {
     var onSort: (String, Bool) -> Void = { _, _ in }
     @State private var selection = Set<QueryResult.Row.ID>()
     @State private var detailWidth: CGFloat = 380
+    /// 결과 안 빠른 필터 (보이는 행만 거른다)
+    @State private var filterText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -334,7 +352,12 @@ struct ResultPane: View {
                         EditBar(tab: tab, target: target, selection: $selection)
                         Divider()
                     }
-                    let rows = tab.edits.displayRows(result)
+                    let allRows = tab.edits.displayRows(result)
+                    let words = ResultCopy.words(filterText)
+                    let rows = words.isEmpty ? allRows
+                        : allRows.filter { $0.id >= newRowBase || ResultCopy.matches($0.values, words: words) }
+                    QuickFilterBar(text: $filterText, shown: rows.count, total: allRows.count)
+                    Divider()
                     GeometryReader { geo in
                         HStack(spacing: 0) {
                             ResultGrid(result: result, rows: rows, edits: tab.edits, selection: $selection,
@@ -342,7 +365,9 @@ struct ResultPane: View {
                                        editable: { if case .success = target { return true } else { return false } }(),
                                        onAddRow: { if let id = app.addRow(tab.id) { selection = [id] } },
                                        onDeleteRows: { ids in app.toggleDelete(tab.id, rows: ids) },
-                                       onReachEnd: result.appendMode ? { Task { await app.loadMore(in: tab.id) } } : nil)
+                                       onReachEnd: result.appendMode ? { Task { await app.loadMore(in: tab.id) } } : nil,
+                                       copyTableName: { if case .success(let t) = target { return t.table.name } else { return "table" } }(),
+                                       dialect: app.connections[tab.profileID]?.session?.dialect)
                             if let row = selectedRow(rows) {
                                 ResizeHandle(axis: .vertical, size: $detailWidth,
                                              range: 240...max(240, geo.size.width - 200))
@@ -365,6 +390,7 @@ struct ResultPane: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onChange(of: tab.result?.sql) { filterText = "" }
         .onChange(of: tab.result?.id) {
             // 결과가 1행이면 (SHOW CREATE 등) 바로 상세를 연다.
             if let r = tab.result, r.rows.count == 1 { selection = [r.rows[0].id] } else { selection = [] }
@@ -461,6 +487,9 @@ struct ResultGrid: View {
     var onDeleteRows: ((Set<Int>) -> Void)?
     /// 끝 근처 행이 보이면 (보이지 않는 페이징: 다음 행 이어 붙이기)
     var onReachEnd: (() -> Void)?
+    /// INSERT 로 복사할 때 쓸 테이블 이름 / 문법
+    var copyTableName = "table"
+    var dialect: (any SQLDialect)?
     @State private var sortOrder: [ColumnSortComparator] = []
     @State private var hoveredRow: Int?
 
@@ -490,6 +519,11 @@ struct ResultGrid: View {
             if sort != result.activeSort { onSort?(sort.column, sort.ascending) }
         }
         .tableStyle(.bordered(alternatesRowBackgrounds: true))
+        // ⌘C: 고른 행을 TSV(머리글 포함)로 — 엑셀 · 스프레드시트에 바로 붙여 넣을 수 있다
+        .onCopyCommand {
+            let text = copyText(.tsv, selection)
+            return text.isEmpty ? [] : [NSItemProvider(object: text as NSString)]
+        }
         .contextMenu(forSelectionType: QueryResult.Row.ID.self) { ids in
             if editable {
                 Button(tr("이 행 편집")) { selection = ids }
@@ -500,16 +534,35 @@ struct ResultGrid: View {
                     .disabled(ids.isEmpty)
                 Divider()
             }
-            Button(tr("행 복사 (CSV)")) {
-                var copy = result
-                copy.rows = rows.filter { ids.contains($0.id) }
-                Pasteboard.copy(copy.csv())
+            Button(tr("복사 (⌘C)")) { Pasteboard.copy(copyText(.tsv, ids)) }
+                .disabled(ids.isEmpty)
+            Menu(tr("다른 형식으로 복사")) {
+                ForEach([ExportFormat.csv, .tsv, .sql, .json, .markdown]) { f in
+                    Button(f.title) { Pasteboard.copy(copyText(f, ids)) }
+                }
+            }
+            .disabled(ids.isEmpty)
+            Menu(tr("IN 목록으로 복사")) {
+                ForEach(result.columns) { c in
+                    Button(c.name) {
+                        let values = rows.filter { ids.contains($0.id) }.map { $0.values[c.id] }
+                        Pasteboard.copy(ResultCopy.inList(values, quote: dialect?.quoteString ?? SQLText.quoteString))
+                    }
+                }
             }
             .disabled(ids.isEmpty)
         } primaryAction: { ids in
             // 더블클릭: 그 행을 골라 오른쪽 상세(편집 가능하면 편집) 패널을 연다
             selection = ids
         }
+    }
+
+    /// 고른 행을 화면 순서대로 글자로
+    private func copyText(_ format: ExportFormat, _ ids: Set<QueryResult.Row.ID>) -> String {
+        let picked = rows.filter { ids.contains($0.id) }.map(\.values)
+        guard !picked.isEmpty else { return "" }
+        return ResultCopy.text(format, columns: result.columns.map(\.name), rows: picked,
+                               tableName: copyTableName, dialect: dialect)
     }
 
     /// 헤더 화살표를 결과의 실제 정렬과 맞춘다
@@ -869,6 +922,30 @@ struct RunConfirm: Identifiable {
         case .drop: tr("DROP (객체 삭제)")
         case nil: ""
         }
+    }
+}
+
+/// 결과 표 위 빠른 필터 (받아 온 행 안에서만 거른다)
+struct QuickFilterBar: View {
+    @Binding var text: String
+    let shown: Int
+    let total: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal.decrease").foregroundStyle(.secondary)
+            TextField(tr("결과 안에서 찾기 (여러 단어는 모두 포함)"), text: $text)
+                .textFieldStyle(.plain)
+            if !text.isEmpty {
+                Text(tr("%@ / %@행", "\(shown)", "\(total)")).monospacedDigit().foregroundStyle(.secondary)
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help(tr("필터 지우기"))
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 }
 

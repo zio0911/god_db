@@ -94,6 +94,7 @@ struct ContentView: View {
         .sheet(item: $app.editingProfile) { profile in
             ConnectionEditorView(profile: profile, isNew: app.editingIsNew)
         }
+        .sheet(item: $app.importingTable) { table in CSVImportView(table: table) }
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
@@ -112,6 +113,8 @@ struct ContentView: View {
         }
         .background(WindowReader { app.mainWindow = $0 })
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
+        .sheet(isPresented: $app.showQuickOpen) { QuickOpenView() }
+        .sheet(isPresented: $app.showHistory) { HistoryView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in
             Button(tr("커밋")) { Task { await app.resolveTxPrompt(prompt, commit: true) } }

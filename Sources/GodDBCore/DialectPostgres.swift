@@ -17,6 +17,14 @@ public struct PostgresDialect: SQLDialect {
     public var sessionIDSQL: String { "SELECT pg_backend_pid()" }
     public func cancelSQL(sessionID: Int) -> String { "SELECT pg_cancel_backend(\(sessionID))" }
 
+    public var allTablesSQL: String? {
+        """
+        SELECT table_schema, table_name, table_type FROM information_schema.tables
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_schema NOT LIKE 'pg_toast%'
+        ORDER BY table_schema, table_name LIMIT 20000
+        """
+    }
+
     public var databasesSQL: String {
         """
         SELECT nspname FROM pg_namespace
