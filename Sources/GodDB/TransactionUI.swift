@@ -141,6 +141,11 @@ struct TransactionControls: View {
 
 /// 앱 종료 때 커밋하지 않은 트랜잭션이 있으면 묻는다
 final class GodDBAppDelegate: NSObject, NSApplicationDelegate {
+    /// 종료 직전 쿼리 탭을 바로 저장한다
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { AppState.shared?.saveTabsNow() }
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let app = MainActor.assumeIsolated({ AppState.shared }) else { return .terminateNow }
         let open = MainActor.assumeIsolated { app.openTransactions }
