@@ -30,6 +30,8 @@ public struct MSSQLDialect: SQLDialect {
     /// SQL Server 는 쿼리만 멈추는 명령이 없어 세션을 끊는다 (DBSession 이 다시 연결한다)
     public func cancelSQL(sessionID: Int) -> String { "KILL \(sessionID)" }
 
+    public var allTablesSQL: String? { nil }
+
     public var databasesSQL: String {
         "SELECT name FROM sys.databases WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb') ORDER BY name"
     }

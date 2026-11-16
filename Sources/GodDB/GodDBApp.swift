@@ -82,6 +82,10 @@ struct GodDBApp: App {
                     if let id = app.selectedProfileID { Task { await app.disconnect(id) } }
                 }
                 Button(tr("모든 접속 끊기")) { Task { await app.disconnectAll() } }
+                Divider()
+                Button(tr("객체 빠른 찾기…")) { app.showQuickOpen = true }
+                    .keyboardShortcut("o", modifiers: .command)
+                    .disabled(app.state != .connected || app.selectedProfile?.kind == .redis)
             }
         }
 

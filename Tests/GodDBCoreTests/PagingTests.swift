@@ -65,6 +65,8 @@ extension MultiDBChecks {
     /// 세 DB 공통: 테이블 이름 변경 후 삭제
     static func renameAndDrop(_ s: DBSession, container: String) async throws {
         let d = s.dialect
+        // 이전 실행이 중간에 멈춰 남은 테이블 정리
+        for t in ["tb_rename_it", "tb_renamed_it"] { _ = try? await s.raw(d.dropTableSQL(t)) }
         _ = try await s.raw("CREATE TABLE tb_rename_it (id int PRIMARY KEY)")
         _ = try await s.raw(d.renameTableSQL("tb_rename_it", to: "tb_renamed_it"))
         var names = try await s.loadSchema(container).map(\.name)

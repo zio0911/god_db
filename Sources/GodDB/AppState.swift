@@ -129,6 +129,8 @@ final class AppState {
     var showProblemReport = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
     var txPrompt: TxPrompt?
+    /// 객체 빠른 찾기 (⌘O)
+    var showQuickOpen = false
     /// 적용하지 않은 결과 편집을 버리기 전 확인
     var discardPrompt: DiscardEditsPrompt?
     /// 결과 내보내기 설정 창
