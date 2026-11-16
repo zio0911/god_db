@@ -179,15 +179,26 @@ struct QueryTabView: View {
     private func toolbarRow(compact: Bool) -> some View {
         @Bindable var app = app
         return HStack(spacing: 10) {
-            Button {
-                run(explain: false)
-            } label: {
-                Label(tr("실행"), systemImage: "play.fill")
+            if tab.running {
+                Button {
+                    Task { await app.cancelQuery(tab.id) }
+                } label: {
+                    Label(tr("취소"), systemImage: "stop.fill")
+                }
+                .keyboardShortcut(".", modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .help(tr("실행 중인 쿼리 멈추기 (⌘.)"))
+            } else {
+                Button {
+                    run(explain: false)
+                } label: {
+                    Label(tr("실행"), systemImage: "play.fill")
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .help(tr("선택 영역만 실행, 선택이 없으면 전체를 위에서부터 실행 (⌘↩)"))
             }
-            .keyboardShortcut(.return, modifiers: .command)
-            .buttonStyle(.borderedProminent)
-            .disabled(tab.running)
-            .help(tr("선택 영역만 실행, 선택이 없으면 전체를 위에서부터 실행 (⌘↩)"))
 
             Button {
                 run(explain: true)
@@ -291,7 +302,7 @@ struct ResultPane: View {
                 Divider()
             }
             if tab.running {
-                ProgressView(tr("실행 중…")).frame(maxWidth: .infinity, maxHeight: .infinity)
+                RunningView(started: tab.runStarted) { Task { await app.cancelQuery(tab.id) } }
             } else if let error = tab.error {
                 ScrollView {
                     Text(error)
@@ -858,5 +869,24 @@ struct RunConfirm: Identifiable {
         case .drop: tr("DROP (객체 삭제)")
         case nil: ""
         }
+    }
+}
+
+/// 실행 중 표시: 경과 시간과 취소 버튼
+struct RunningView: View {
+    let started: Date?
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let seconds = started.map { Int(context.date.timeIntervalSince($0)) } ?? 0
+                Text(tr("실행 중… %@초", "\(seconds)")).monospacedDigit().foregroundStyle(.secondary)
+            }
+            Button(tr("취소"), role: .cancel, action: onCancel)
+                .help(tr("실행 중인 쿼리 멈추기 (⌘.)"))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
