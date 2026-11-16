@@ -319,6 +319,15 @@ public actor DBSession {
         return "\(profile.kind.title) \(v ?? "")".trimmingCharacters(in: .whitespaces)
     }
 
+    /// 빠른 찾기용 모든 스키마의 테이블 · 뷰 (지원하지 않으면 빈 배열)
+    public func allTables() async throws -> [(schema: String, name: String, isView: Bool)] {
+        guard let sql = dialect.allTablesSQL else { return [] }
+        return try await raw(sql).rows.compactMap { r in
+            guard r.count >= 3, let s = r[0], let n = r[1] else { return nil }
+            return (s, n, (r[2] ?? "").uppercased().contains("VIEW"))
+        }
+    }
+
     public func databases() async throws -> [String] {
         try await raw(dialect.databasesSQL).rows.compactMap { $0.first ?? nil }
     }
