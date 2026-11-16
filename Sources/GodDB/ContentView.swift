@@ -172,6 +172,7 @@ struct ConnectionBadge: View {
                     Text("SSH").font(.caption2).padding(.horizontal, 4)
                         .background(.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                 }
+                EnvironmentBadge(environment: app.selectedProfile?.environment ?? .none)
                 if app.selectedProfile?.readOnly == true {
                     Text(tr("읽기전용")).font(.caption2).foregroundStyle(.red).padding(.horizontal, 4)
                         .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))

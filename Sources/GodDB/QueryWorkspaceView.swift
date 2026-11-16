@@ -93,6 +93,12 @@ struct TabChip: View {
         .overlay(alignment: .bottom) {
             if selected { Rectangle().fill(Color.accentColor).frame(height: 2).padding(.horizontal, 6) }
         }
+        .overlay(alignment: .leading) {
+            // 접속 환경 색 띠 (운영 = 빨강)
+            if let env = profile?.environment, env != .none {
+                RoundedRectangle(cornerRadius: 1.5).fill(env.color).frame(width: 3).padding(.vertical, 4)
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { app.selectTab(tab.id) }
         .help(connected ? "\(profile?.name ?? "") / \(tab.database)" : tr("연결이 끊긴 접속이에요. 왼쪽에서 다시 연결하세요."))
@@ -121,6 +127,18 @@ struct QueryTabView: View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
+                    if let p = app.profile(tab.profileID), p.environment == .production {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                            Text(tr("운영 접속 · %@", p.name)).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(Color.red)
+                    }
                     toolbar
                     Divider()
                     SQLEditorView(text: $tab.text, controller: controller)
@@ -161,15 +179,26 @@ struct QueryTabView: View {
     private func toolbarRow(compact: Bool) -> some View {
         @Bindable var app = app
         return HStack(spacing: 10) {
-            Button {
-                run(explain: false)
-            } label: {
-                Label(tr("실행"), systemImage: "play.fill")
+            if tab.running {
+                Button {
+                    Task { await app.cancelQuery(tab.id) }
+                } label: {
+                    Label(tr("취소"), systemImage: "stop.fill")
+                }
+                .keyboardShortcut(".", modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .help(tr("실행 중인 쿼리 멈추기 (⌘.)"))
+            } else {
+                Button {
+                    run(explain: false)
+                } label: {
+                    Label(tr("실행"), systemImage: "play.fill")
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .help(tr("선택 영역만 실행, 선택이 없으면 전체를 위에서부터 실행 (⌘↩)"))
             }
-            .keyboardShortcut(.return, modifiers: .command)
-            .buttonStyle(.borderedProminent)
-            .disabled(tab.running)
-            .help(tr("선택 영역만 실행, 선택이 없으면 전체를 위에서부터 실행 (⌘↩)"))
 
             Button {
                 run(explain: true)
@@ -245,7 +274,8 @@ struct QueryTabView: View {
         let confirm = RunConfirm(statements: statements,
                                  wholeScript: selected == nil && statements.count > 1 && statements.contains { !SQLText.isReadOnly($0) },
                                  dangerous: statements.filter { SQLText.danger($0) != nil },
-                                 discardedEdits: tab.edits.count)
+                                 discardedEdits: tab.edits.count,
+                                 production: app.profile(tab.profileID)?.environment == .production)
         if confirm.needsConfirm { pendingRun = confirm } else { start(confirm) }
     }
 
@@ -277,7 +307,7 @@ struct ResultPane: View {
                 Divider()
             }
             if tab.running {
-                ProgressView(tr("실행 중…")).frame(maxWidth: .infinity, maxHeight: .infinity)
+                RunningView(started: tab.runStarted) { Task { await app.cancelQuery(tab.id) } }
             } else if let error = tab.error {
                 ScrollView {
                     Text(error)
@@ -801,23 +831,32 @@ struct RunConfirm: Identifiable {
     var wholeScript = false
     var dangerous: [String] = []
     var discardedEdits = 0
+    /// 운영 접속: 데이터를 바꾸는 문장이 있으면 항상 확인
+    var production = false
 
-    var needsConfirm: Bool { wholeScript || !dangerous.isEmpty || discardedEdits > 0 }
+    private var writes: [String] { statements.filter { !SQLText.isReadOnly($0) } }
+    private var productionWrites: Bool { production && !explain && !writes.isEmpty }
+
+    var needsConfirm: Bool { wholeScript || !dangerous.isEmpty || discardedEdits > 0 || productionWrites }
 
     var title: String {
         if !dangerous.isEmpty { return tr("되돌리기 어려운 문장이 있어요") }
+        if productionWrites { return tr("운영 접속에서 데이터를 바꿔요") }
         if wholeScript { return tr("전체 %@개 문장을 실행할까요?", "\(statements.count)") }
         return tr("적용하지 않은 편집이 있어요")
     }
 
     var message: String {
         var parts: [String] = []
+        if productionWrites {
+            parts.append(tr("운영 접속이에요. 데이터를 바꾸는 문장 %@개를 실행해요.", "\(writes.count)")
+                         + (dangerous.isEmpty ? "\n" + writes.prefix(3).map { "• " + AppState.oneLine($0, max: 50) }.joined(separator: "\n") : ""))
+        }
         if !dangerous.isEmpty {
             let lines = dangerous.prefix(3).map { "• " + Self.label(SQLText.danger($0)) + " — " + AppState.oneLine($0, max: 50) }
             parts.append(lines.joined(separator: "\n") + (dangerous.count > 3 ? "\n…" : ""))
         }
         if wholeScript {
-            let writes = statements.filter { !SQLText.isReadOnly($0) }
             parts.append(tr("선택 영역이 없어서 편집기의 모든 문장(%@개, 변경 문 %@개)을 위에서부터 실행해요. 일부만 실행하려면 그 부분을 선택하세요.",
                             "\(statements.count)", "\(writes.count)"))
         }
@@ -835,5 +874,24 @@ struct RunConfirm: Identifiable {
         case .drop: tr("DROP (객체 삭제)")
         case nil: ""
         }
+    }
+}
+
+/// 실행 중 표시: 경과 시간과 취소 버튼
+struct RunningView: View {
+    let started: Date?
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let seconds = started.map { Int(context.date.timeIntervalSince($0)) } ?? 0
+                Text(tr("실행 중… %@초", "\(seconds)")).monospacedDigit().foregroundStyle(.secondary)
+            }
+            Button(tr("취소"), role: .cancel, action: onCancel)
+                .help(tr("실행 중인 쿼리 멈추기 (⌘.)"))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
