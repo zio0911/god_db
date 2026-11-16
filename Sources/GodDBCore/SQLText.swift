@@ -5,6 +5,8 @@ public enum SQLText {
 
     /// 세미콜론 기준으로 구문을 나눈다. 따옴표·백틱·주석 안의 세미콜론은 무시한다.
     /// 반환값의 range 는 원문(UTF-16 오프셋) 기준이다.
+    /// - MySQL `DELIMITER $$` 줄을 만나면 그 뒤로는 그 구분자로 나눈다 (DELIMITER 줄은 실행하지 않음)
+    /// - SQL Server `GO` 줄이 하나라도 있으면 GO 로만 나눈다 (배치 안의 세미콜론은 나누지 않음 — 프로시저 본문 보호)
     public static func statements(in text: String) -> [(sql: String, range: Range<Int>)] {
         let chars = Array(text.utf16)
         var result: [(String, Range<Int>)] = []
@@ -21,6 +23,15 @@ public enum SQLText {
         let backtick = UInt16(UInt8(ascii: "`"))
         let dollar = UInt16(UInt8(ascii: "$"))
         let quotes: Set<UInt16> = [UInt16(UInt8(ascii: "'")), UInt16(UInt8(ascii: "\"")), backtick]
+        var delimiter: [UInt16] = [semicolon]
+        let goMode = text.range(of: #"(?im)^[ \t]*GO([ \t]+\d+)?[ \t]*;?[ \t]*$"#, options: .regularExpression) != nil
+
+        /// i 에서 시작하는 한 줄 (줄바꿈 제외)과 다음 줄 시작 위치
+        func line(at i: Int) -> (String, Int) {
+            var j = i
+            while j < chars.count && chars[j] != newline { j += 1 }
+            return (String(utf16CodeUnits: Array(chars[i..<j]), count: j - i), min(chars.count, j + 1))
+        }
 
         func flush(_ end: Int) {
             let s = String(utf16CodeUnits: Array(chars[start..<end]), count: end - start)
@@ -31,6 +42,25 @@ public enum SQLText {
 
         while i < chars.count {
             let c = chars[i]
+            // 줄 맨 앞: DELIMITER / GO 줄인지
+            if quote == nil && (i == 0 || chars[i - 1] == newline) {
+                let (l, next) = line(at: i)
+                let trimmed = l.trimmingCharacters(in: .whitespaces)
+                let parts = trimmed.split(whereSeparator: \.isWhitespace)
+                if !goMode, parts.count == 2, parts[0].uppercased() == "DELIMITER" {
+                    flush(i)
+                    delimiter = Array(String(parts[1]).utf16)
+                    start = next
+                    i = next
+                    continue
+                }
+                if goMode, trimmed.range(of: #"(?i)^GO([ \t]+\d+)?[ \t]*;?$"#, options: .regularExpression) != nil {
+                    flush(i)
+                    start = next
+                    i = next
+                    continue
+                }
+            }
             if let q = quote {
                 if c == backslash && q != backtick { i += 2; continue }
                 if c == q { quote = nil }
@@ -38,6 +68,14 @@ public enum SQLText {
                 continue
             }
             if quotes.contains(c) { quote = c; i += 1; continue }
+            // 바꾼 구분자 ($$, // 등) — 달러 인용보다 먼저 본다
+            if !goMode, delimiter != [semicolon], i + delimiter.count <= chars.count,
+               Array(chars[i..<(i + delimiter.count)]) == delimiter {
+                flush(i)
+                i += delimiter.count
+                start = i
+                continue
+            }
             // PostgreSQL 달러 인용 ($$ … $$, $tag$ … $tag$) 안의 세미콜론은 무시
             if c == dollar, let tagEnd = dollarTagEnd(chars, from: i) {
                 let tag = Array(chars[i...tagEnd])
@@ -60,7 +98,7 @@ public enum SQLText {
                 i += 2
                 continue
             }
-            if c == semicolon {
+            if c == semicolon && delimiter == [semicolon] && !goMode {
                 flush(i)
                 start = i + 1
             }

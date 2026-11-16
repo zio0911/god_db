@@ -55,6 +55,11 @@ struct QueryTab: Identifiable {
     var planTree: String?
 
     var title: String { customTitle ?? tr("쿼리 %@", "\(number)") }
+    /// 연 .sql 파일 (저장하면 이 파일에 쓴다)
+    var fileURL: URL?
+    /// 파일에 마지막으로 저장한 내용 (바뀌었는지 표시)
+    var savedText: String?
+    var isDirty: Bool { fileURL != nil && text != savedText }
 }
 
 enum MainMode: String, CaseIterable, Identifiable {
@@ -119,6 +124,8 @@ final class AppState {
     var editingIsNew = false
     var passwordPrompt: PasswordPrompt?
     var alteringTable: TableMeta?
+    /// CSV 가져오기 대상 테이블
+    var importingTable: TableMeta?
     /// 진행 중이거나 결과를 보고 있는 쿼리 튜닝
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
@@ -132,6 +139,10 @@ final class AppState {
     var showProblemReport = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
     var txPrompt: TxPrompt?
+    /// 메인 창 (⌘W 로 쿼리 탭을 닫을지 판단)
+    @ObservationIgnored weak var mainWindow: NSWindow?
+    /// 객체 빠른 찾기 (⌘O)
+    var showQuickOpen = false
     /// 적용하지 않은 결과 편집을 버리기 전 확인
     var discardPrompt: DiscardEditsPrompt?
     /// 결과 내보내기 설정 창

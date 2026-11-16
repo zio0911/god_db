@@ -94,6 +94,7 @@ struct ContentView: View {
         .sheet(item: $app.editingProfile) { profile in
             ConnectionEditorView(profile: profile, isNew: app.editingIsNew)
         }
+        .sheet(item: $app.importingTable) { table in CSVImportView(table: table) }
         .sheet(item: $app.alteringTable) { table in
             TableEditorView(table: table)
         }
@@ -110,7 +111,9 @@ struct ContentView: View {
             openWindow(id: "release-notes")
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
+        .background(WindowReader { app.mainWindow = $0 })
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
+        .sheet(isPresented: $app.showQuickOpen) { QuickOpenView() }
         .sheet(isPresented: $app.showHistory) { HistoryView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in
@@ -235,5 +238,20 @@ struct PasswordPromptView: View {
 
     private func submit() {
         app.submitPassword(password, save: save, for: prompt.profile)
+    }
+}
+
+/// 이 화면이 들어 있는 NSWindow 를 알려 준다
+struct WindowReader: NSViewRepresentable {
+    let onWindow: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { onWindow(v.window) }
+        return v
+    }
+
+    func updateNSView(_ v: NSView, context: Context) {
+        DispatchQueue.main.async { onWindow(v.window) }
     }
 }

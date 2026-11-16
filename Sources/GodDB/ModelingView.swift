@@ -382,7 +382,7 @@ struct ModelEditorView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "\(model.name).png"
-        if panel.runModal() == .OK, let url = panel.url { try? png.write(to: url) }
+        if panel.runModal() == .OK, let url = panel.url { SaveFile.write(png, to: url) }
     }
 }
 

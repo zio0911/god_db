@@ -55,6 +55,8 @@ public protocol SQLDialect: Sendable {
     func columnDefinition(_ c: ColumnMeta) -> String
     func defaultLiteral(_ value: String, extra: String) -> String
     func render(_ changes: [SchemaChange], table: String) -> String
+    /// 빠른 찾기용: 모든 DB(스키마)의 (스키마, 테이블, 종류) — 지원하지 않으면 nil (SQL Server 는 지금 DB 만)
+    var allTablesSQL: String? { get }
 }
 
 extension SQLDialect {
@@ -98,6 +100,14 @@ public struct MySQLDialect: SQLDialect {
     public var readOnlySessionSQL: String? { "SET SESSION TRANSACTION READ ONLY" }
     public var sessionIDSQL: String { "SELECT CONNECTION_ID()" }
     public func cancelSQL(sessionID: Int) -> String { "KILL QUERY \(sessionID)" }
+
+    public var allTablesSQL: String? {
+        """
+        SELECT table_schema, table_name, table_type FROM information_schema.tables
+        WHERE table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+        ORDER BY table_schema, table_name LIMIT 20000
+        """
+    }
 
     public var databasesSQL: String {
         """
