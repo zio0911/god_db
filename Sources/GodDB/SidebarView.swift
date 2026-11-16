@@ -66,8 +66,9 @@ struct SidebarView: View {
                                 ForEach(app.databases, id: \.self) { Text($0).tag($0) }
                             }
                             .labelsHidden()
-                            .fixedSize()
-                            Spacer()
+                            // DB 이름이 길어도 오른쪽 버튼이 밀리지 않게 남은 폭 안에서 줄인다
+                            .frame(minWidth: 50, maxWidth: .infinity, alignment: .leading)
+                            .help(app.currentDatabase)
                             if app.selectedTables.count > 1 {
                                 Text(tr("%@개 선택", "\(app.selectedTables.count)")).foregroundStyle(Color.accentColor)
                             } else {
