@@ -131,6 +131,7 @@ struct SidebarView: View {
 struct ProfileRow: View {
     @Environment(AppState.self) private var app
     let profile: ConnectionProfile
+    @State private var confirmDelete = false
 
     var body: some View {
         let selected = app.selectedProfileID == profile.id
@@ -171,12 +172,7 @@ struct ProfileRow: View {
                     app.selectedProfileID = profile.id
                     app.addTab(for: profile.id)
                 }
-                Button(tr("다시 연결")) {
-                    Task {
-                        await app.disconnect(profile.id)
-                        await app.connect(profile.id)
-                    }
-                }
+                Button(tr("다시 연결")) { app.requestReconnect(profile.id) }
                 Button(tr("연결 끊기")) { Task { await app.disconnect(profile.id) } }
             } else {
                 Button(tr("연결")) { Task { await app.connect(profile.id) } }
@@ -186,7 +182,15 @@ struct ProfileRow: View {
             Button(tr("복제")) { app.duplicate(profile) }
             ProfileGroupMenu(profile: profile)
             Divider()
-            Button(tr("삭제"), role: .destructive) { app.deleteProfile(profile) }
+            Button(tr("삭제…"), role: .destructive) { confirmDelete = true }
+        }
+        .alert(tr("'%@' 접속을 삭제할까요?", profile.name), isPresented: $confirmDelete) {
+            Button(tr("삭제"), role: .destructive) { Task { await app.deleteProfile(profile) } }
+            Button(tr("취소"), role: .cancel) {}
+        } message: {
+            let n = app.tabs.filter { $0.profileID == profile.id }.count
+            Text(n > 0 ? tr("접속 정보와 저장된 비밀번호, 이 접속의 쿼리 탭 %@개가 함께 지워져요. 되돌릴 수 없어요.", "\(n)")
+                       : tr("접속 정보와 저장된 비밀번호가 지워져요. 되돌릴 수 없어요."))
         }
     }
 }

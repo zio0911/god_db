@@ -4,7 +4,7 @@ import SwiftUI
 
 /// 커밋하지 않은 트랜잭션이 있을 때 묻는 이유
 struct TxPrompt: Identifiable {
-    enum Reason { case enableAutoCommit, disconnect }
+    enum Reason { case enableAutoCommit, disconnect, reconnect, delete }
     let id = UUID()
     let profileID: UUID
     let reason: Reason
@@ -84,12 +84,27 @@ extension AppState {
         switch prompt.reason {
         case .enableAutoCommit: await setAutoCommit(prompt.profileID, true)
         case .disconnect: await disconnect(prompt.profileID, force: true)
+        case .reconnect: await reconnect(prompt.profileID)
+        case .delete:
+            if let p = profiles.first(where: { $0.id == prompt.profileID }) { await deleteProfile(p) }
         }
     }
 
     /// 앱 종료 전: 열린 트랜잭션이 있는 접속들
     var openTransactions: [(UUID, Int)] {
         connections.compactMap { id, c in c.tx.open ? (id, c.tx.changes) : nil }
+    }
+}
+
+extension TxPrompt.Reason {
+    /// "%@ 전에 커밋하거나 롤백해 주세요" 에 들어갈 말
+    var actionText: String {
+        switch self {
+        case .enableAutoCommit: tr("자동 커밋을 켜기")
+        case .disconnect: tr("연결을 끊기")
+        case .reconnect: tr("바뀐 설정으로 다시 연결하기")
+        case .delete: tr("접속을 삭제하기")
+        }
     }
 }
 
