@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import GodDBCore
 
@@ -33,5 +34,21 @@ struct SQLDangerTests {
         #expect(SQLText.danger("SELECT * FROM orders") == nil)
         #expect(SQLText.danger("INSERT INTO t VALUES (1)") == nil)
         #expect(SQLText.danger("ALTER TABLE t ADD c INT") == nil)
+    }
+}
+
+@Suite("ConnectionEnvironment")
+struct ConnectionEnvironmentTests {
+    @Test func decodesOldProfilesWithoutEnvironment() throws {
+        let json = #"{"id":"6F1C2D3E-0000-4000-8000-000000000001","name":"a","host":"h","port":3306,"username":"u"}"#
+        let p = try JSONDecoder().decode(ConnectionProfile.self, from: Data(json.utf8))
+        #expect(p.environment == .none)
+    }
+
+    @Test func roundTripsEnvironment() throws {
+        var p = ConnectionProfile(name: "prod")
+        p.environment = .production
+        let back = try JSONDecoder().decode(ConnectionProfile.self, from: JSONEncoder().encode(p))
+        #expect(back.environment == .production)
     }
 }
