@@ -26,6 +26,9 @@ public struct MSSQLDialect: SQLDialect {
 
     /// SQL Server 는 세션 단위 읽기전용 설정이 없어서 앱 검사만 한다.
     public var readOnlySessionSQL: String? { nil }
+    public var sessionIDSQL: String { "SELECT @@SPID" }
+    /// SQL Server 는 쿼리만 멈추는 명령이 없어 세션을 끊는다 (DBSession 이 다시 연결한다)
+    public func cancelSQL(sessionID: Int) -> String { "KILL \(sessionID)" }
 
     public var databasesSQL: String {
         "SELECT name FROM sys.databases WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb') ORDER BY name"

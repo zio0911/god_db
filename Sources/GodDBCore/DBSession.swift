@@ -4,12 +4,14 @@ public enum DBError: LocalizedError {
     case readOnlyBlocked
     case notConnected
     case transactionOpen
+    case cancelled
 
     public var errorDescription: String? {
         switch self {
         case .readOnlyBlocked: return tr("읽기전용 접속이라 이 쿼리는 실행할 수 없어요. (SELECT / SHOW / DESC / EXPLAIN 만 허용)")
         case .notConnected: return tr("DB 연결이 끊어졌어요. 다시 연결해 주세요.")
         case .transactionOpen: return tr("커밋하지 않은 트랜잭션이 있어요. 먼저 커밋하거나 롤백해 주세요.")
+        case .cancelled: return tr("쿼리를 취소했어요.")
         }
     }
 }
@@ -20,6 +22,13 @@ public actor DBSession {
     public nonisolated let dialect: any SQLDialect
     private var tunnel: SSHTunnel?
     private var driver: (any DBDriver)?
+    /// 다시 연결 · 취소용 연결에 쓰는 주소 (터널을 거쳤다면 로컬 주소)
+    private var endpoint: DriverEndpoint?
+    /// 서버 쪽 세션 번호 (MySQL CONNECTION_ID, PostgreSQL pid, SQL Server SPID)
+    private var serverSessionID: Int?
+    /// 실행 중인 문장 수 / 취소 요청 여부
+    private var running = 0
+    private var cancelRequested = false
     /// 현재 선택된 DB(MySQL/SQL Server) 또는 스키마(PostgreSQL)
     public private(set) var current: String = ""
 
@@ -72,23 +81,64 @@ public actor DBSession {
             serverName: (profile.ssh == nil && !HostResolver.isIPAddress(profile.host)) ? profile.host : nil,
             username: profile.username, password: password,
             database: profile.database, useTLS: profile.useTLS)
+        self.endpoint = endpoint
         do {
-            switch profile.kind {
-            case .mysql: driver = try await MySQLDriver.connect(endpoint)
-            case .postgres: driver = try await PostgresDriver.connect(endpoint)
-            case .mssql: driver = try await MSSQLDriver.connect(endpoint)
-            case .redis: throw DBError.notConnected  // Redis 는 RedisSession 을 쓴다
-            }
-            if profile.readOnly, let sql = dialect.readOnlySessionSQL {
-                // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
-                _ = try await raw(sql)
-            }
+            try await openDriver(endpoint)
         } catch {
             await driver?.close()
             driver = nil
             tunnel?.stop()
             tunnel = nil
             throw error
+        }
+    }
+
+    private static func makeDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint) async throws -> any DBDriver {
+        switch kind {
+        case .mysql: try await MySQLDriver.connect(endpoint)
+        case .postgres: try await PostgresDriver.connect(endpoint)
+        case .mssql: try await MSSQLDriver.connect(endpoint)
+        case .redis: throw DBError.notConnected  // Redis 는 RedisSession 을 쓴다
+        }
+    }
+
+    private func openDriver(_ endpoint: DriverEndpoint) async throws {
+        let d = try await Self.makeDriver(profile.kind, endpoint)
+        driver = d
+        if profile.readOnly, let sql = dialect.readOnlySessionSQL {
+            // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
+            _ = try await d.query(sql)
+        }
+        serverSessionID = try? await d.query(dialect.sessionIDSQL).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
+    }
+
+    /// 실행 중인 쿼리가 있는지
+    public var isRunning: Bool { running > 0 }
+
+    /// 실행 중인 쿼리를 멈춘다. 별도 연결을 잠깐 열어 서버에 취소를 보낸다.
+    /// 실행 중이던 호출은 DBError.cancelled 로 끝난다. 실행 중이 아니면 false.
+    @discardableResult
+    public func cancelRunning() async throws -> Bool {
+        guard running > 0, let endpoint, let id = serverSessionID else { return false }
+        cancelRequested = true
+        let other = try await Self.makeDriver(profile.kind, endpoint)
+        defer { Task { await other.close() } }
+        _ = try await other.query(dialect.cancelSQL(sessionID: id))
+        return true
+    }
+
+    /// SQL Server 는 취소하면 세션이 끊기므로 다시 연결하고 보던 DB 로 돌아간다. 열린 트랜잭션은 서버가 롤백했다.
+    private func reopenAfterKill() async {
+        await driver?.close()
+        driver = nil
+        inTransaction = false
+        pendingChanges = 0
+        guard let endpoint else { return }
+        do {
+            try await openDriver(endpoint)
+            if !current.isEmpty { _ = try? await driver?.query(dialect.useSQL(current)) }
+        } catch {
+            driver = nil
         }
     }
 
@@ -245,7 +295,20 @@ public actor DBSession {
     /// 모든 값을 문자열로 받는다.
     public func raw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
         guard let driver, driver.isOpen else { throw DBError.notConnected }
-        return try await driver.query(sql)
+        running += 1
+        defer { running -= 1 }
+        do {
+            let r = try await driver.query(sql)
+            if running == 1 { cancelRequested = false }
+            return r
+        } catch {
+            if cancelRequested {
+                cancelRequested = false
+                if profile.kind == .mssql { await reopenAfterKill() }
+                throw DBError.cancelled
+            }
+            throw error
+        }
     }
 
     // MARK: - 메타데이터

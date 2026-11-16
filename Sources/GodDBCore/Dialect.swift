@@ -28,6 +28,10 @@ public protocol SQLDialect: Sendable {
     func applyingLimit(_ sql: String, limit: Int) -> String
     /// 읽기전용 접속일 때 연결 직후 실행할 SQL (서버 측 차단)
     var readOnlySessionSQL: String? { get }
+    /// 이 연결의 서버 쪽 세션 번호 (실행 중인 쿼리 취소에 쓴다)
+    var sessionIDSQL: String { get }
+    /// 다른 연결에서 실행해 그 세션의 쿼리를 멈추는 SQL (id 는 숫자만)
+    func cancelSQL(sessionID: Int) -> String
 
     var databasesSQL: String { get }
     func useSQL(_ name: String) -> String
@@ -92,6 +96,8 @@ public struct MySQLDialect: SQLDialect {
     public func quoteIdent(_ name: String) -> String { SQLText.quoteIdent(name) }
 
     public var readOnlySessionSQL: String? { "SET SESSION TRANSACTION READ ONLY" }
+    public var sessionIDSQL: String { "SELECT CONNECTION_ID()" }
+    public func cancelSQL(sessionID: Int) -> String { "KILL QUERY \(sessionID)" }
 
     public var databasesSQL: String {
         """

@@ -57,6 +57,7 @@ struct GeneralSettingsView: View {
     @State private var showDotZero = false
     @State private var auditToolUnlocked = false
     @State private var tapWork: DispatchWorkItem?
+    @AppStorage(AppState.queryTimeoutKey) private var queryTimeout = 0
 
     var body: some View {
         @Bindable var settings = settings
@@ -76,6 +77,21 @@ struct GeneralSettingsView: View {
                 }
             } header: {
                 Text(tr("언어"))
+            }
+            Section {
+                Picker(tr("실행 시간 제한"), selection: $queryTimeout) {
+                    Text(tr("없음")).tag(0)
+                    Text(tr("30초")).tag(30)
+                    Text(tr("1분")).tag(60)
+                    Text(tr("5분")).tag(300)
+                    Text(tr("10분")).tag(600)
+                    Text(tr("30분")).tag(1800)
+                }
+                Text(tr("시간을 넘기면 쿼리를 자동으로 취소해요. 실행 중에는 언제든 [취소] 또는 ⌘. 로 멈출 수 있어요."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text(tr("쿼리"))
             }
             Section {
                 Toggle(tr("로그 파일 남기기"), isOn: $settings.logFileEnabled)
