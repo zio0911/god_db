@@ -400,7 +400,7 @@ struct ModelSQLSheet: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.init(filenameExtension: "sql") ?? .plainText]
         panel.nameFieldStringValue = "\(model.name).sql"
-        if panel.runModal() == .OK, let url = panel.url { try? sql.write(to: url, atomically: true, encoding: .utf8) }
+        if panel.runModal() == .OK, let url = panel.url { SaveFile.write(Data(sql.utf8), to: url) }
     }
 }
 

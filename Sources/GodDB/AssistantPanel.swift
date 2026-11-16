@@ -155,6 +155,7 @@ struct AssistantPanel: View {
     @Environment(AppState.self) private var app
     @State private var input = ""
     @FocusState private var inputFocused: Bool
+    @State private var confirmDeleteAll = false
 
     /// AI 어시스턴트는 쿼리 튜닝과 따로 켜고 끈다 (설정 > AI > AI 어시스턴트 사용 — 끄면 패널 자체가 숨겨진다)
     private var unavailable: String? { nil }
@@ -213,11 +214,17 @@ struct AssistantPanel: View {
                 }
                 if !chat.history.isEmpty {
                     Divider()
-                    Button(tr("이 범위의 대화 모두 삭제"), role: .destructive) { chat.deleteAll() }
+                    Button(tr("이 범위의 대화 모두 삭제…"), role: .destructive) { confirmDeleteAll = true }
                 }
             } label: { Image(systemName: "clock.arrow.circlepath") }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .help(tr("이전 대화 (90일 보관)"))
+            .alert(tr("이 범위의 대화를 모두 삭제할까요?"), isPresented: $confirmDeleteAll) {
+                Button(tr("삭제"), role: .destructive) { chat.deleteAll() }
+                Button(tr("취소"), role: .cancel) {}
+            } message: {
+                Text(tr("지난 대화 %@개가 지워져요. 되돌릴 수 없어요.", "\(chat.history.count)"))
+            }
             Button { withAnimation(.easeInOut(duration: 0.2)) { app.assistant.visible = false } } label: {
                 Image(systemName: "sidebar.trailing")
             }

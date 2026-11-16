@@ -352,7 +352,7 @@ struct DiagramView: View {
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "ERD_\(doc.focus ?? "schema").png"
         if panel.runModal() == .OK, let url = panel.url {
-            try? png.write(to: url)
+            SaveFile.write(png, to: url)
         }
     }
 }
