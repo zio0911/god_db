@@ -285,6 +285,8 @@ struct TableNode: View {
                     Button(tr("이름 복사")) { Pasteboard.copy(table.name) }
                     Divider()
                     let readOnly = app.selectedProfile?.readOnly == true
+                    Button(tr("CSV 가져오기…")) { app.importingTable = table }
+                        .disabled(readOnly)
                     Button(tr("이름 변경…")) { app.requestRename(table.name) }
                         .disabled(readOnly)
                     Button(tr("삭제 (DROP)…"), role: .destructive) { app.requestDrop(table.name) }

@@ -2,7 +2,7 @@ import Foundation
 
 /// 영어 번역표 (키 = 소스의 한국어 문장). base 는 생성 파일, extra 는 직접 추가한 문장.
 enum L10nEnglish {
-    static let table: [String: String] = base.merging(extra) { _, new in new }.merging(features) { _, new in new }.merging(modeling) { _, new in new }.merging(environment) { _, new in new }.merging(export) { _, new in new }.merging(memory) { _, new in new }.merging(productivity) { _, new in new }.merging(report) { _, new in new }.merging(safety) { _, new in new }.merging(settings) { _, new in new }.merging(transaction) { _, new in new }.merging(update) { _, new in new }
+    static let table: [String: String] = base.merging(extra) { _, new in new }.merging(features) { _, new in new }.merging(modeling) { _, new in new }.merging(environment) { _, new in new }.merging(export) { _, new in new }.merging(memory) { _, new in new }.merging(productivity) { _, new in new }.merging(report) { _, new in new }.merging(safety) { _, new in new }.merging(csvImport) { _, new in new }.merging(settings) { _, new in new }.merging(transaction) { _, new in new }.merging(update) { _, new in new }
 
     static let extra: [String: String] = [
         "앱": "App",

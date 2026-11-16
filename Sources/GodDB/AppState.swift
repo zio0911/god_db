@@ -116,6 +116,8 @@ final class AppState {
     var editingIsNew = false
     var passwordPrompt: PasswordPrompt?
     var alteringTable: TableMeta?
+    /// CSV 가져오기 대상 테이블
+    var importingTable: TableMeta?
     /// 진행 중이거나 결과를 보고 있는 쿼리 튜닝
     var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
