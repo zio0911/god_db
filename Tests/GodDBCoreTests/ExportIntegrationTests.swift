@@ -73,4 +73,12 @@ struct ExportIntegrationTests {
         #expect(ids == Array(1...Self.rows))            // 빠진 행 없음, 기본 키 순서
         #expect(lines.first == "1,이름1")
     }
+
+    /// PostgreSQL: ORDER BY 없는 페이지 조회가 어긋나지 않도록 순차 스캔이 항상 처음부터 시작해야 한다
+    @Test func postgresSessionReadsFromStart() async throws {
+        guard let s = try await session(.postgres) else { return }
+        defer { Task { await s.close() } }
+        let r = try await s.execute("SHOW synchronize_seqscans", limit: 0)
+        #expect(r.rows.first?.values.first == "off")
+    }
 }

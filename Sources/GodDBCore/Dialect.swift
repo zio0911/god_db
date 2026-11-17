@@ -28,6 +28,8 @@ public protocol SQLDialect: Sendable {
     func applyingLimit(_ sql: String, limit: Int) -> String
     /// 읽기전용 접속일 때 연결 직후 실행할 SQL (서버 측 차단)
     var readOnlySessionSQL: String? { get }
+    /// 연결 직후 항상 실행할 세션 설정 (실패해도 접속은 계속)
+    var sessionSetupSQL: String? { get }
     /// 이 연결의 서버 쪽 세션 번호 (실행 중인 쿼리 취소에 쓴다)
     var sessionIDSQL: String { get }
     /// 다른 연결에서 실행해 그 세션의 쿼리를 멈추는 SQL (id 는 숫자만)
@@ -296,6 +298,8 @@ public struct PagedSQL: Sendable, Equatable {
 }
 
 extension SQLDialect {
+    public var sessionSetupSQL: String? { nil }
+
     /// SELECT 를 페이지 단위로 가져오는 SQL. 다음 페이지가 있는지 알기 위해 limit + 1 행을 요청한다.
     /// 이미 LIMIT/TOP/OFFSET/INTO/FOR UPDATE 가 있거나 SELECT 가 아니면 nil (그대로 실행).
     public func pagedSQL(_ sql: String, limit: Int, offset: Int) -> PagedSQL? {

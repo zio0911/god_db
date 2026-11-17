@@ -105,6 +105,7 @@ public actor DBSession {
     private func openDriver(_ endpoint: DriverEndpoint) async throws {
         let d = try await Self.makeDriver(profile.kind, endpoint)
         driver = d
+        if let sql = dialect.sessionSetupSQL { _ = try? await d.query(sql) }
         if profile.readOnly, let sql = dialect.readOnlySessionSQL {
             // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
             _ = try await d.query(sql)

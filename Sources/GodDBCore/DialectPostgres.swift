@@ -14,6 +14,9 @@ public struct PostgresDialect: SQLDialect {
     }
 
     public var readOnlySessionSQL: String? { "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY" }
+    /// 큰 테이블의 순차 스캔은 기본으로 직전 스캔이 멈춘 곳부터 시작한다 (synchronize_seqscans).
+    /// 그러면 ORDER BY 없는 결과를 LIMIT/OFFSET 으로 나눠 받을 때 페이지끼리 행이 겹치거나 빠진다. 항상 처음부터 읽게 한다.
+    public var sessionSetupSQL: String? { "SET synchronize_seqscans = off" }
     public var sessionIDSQL: String { "SELECT pg_backend_pid()" }
     public func cancelSQL(sessionID: Int) -> String { "SELECT pg_cancel_backend(\(sessionID))" }
 
