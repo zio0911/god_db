@@ -317,7 +317,14 @@ extension SQLDialect {
                 guard kw == "SELECT" || kw == "WITH" else { return nil }
                 return PagedSQL(sql: "\(body)\nOFFSET \(offset) ROWS FETCH NEXT \(fetch) ROWS ONLY", skip: 0)
             }
-            // ORDER BY 가 없으면 OFFSET 을 못 써서 TOP(앞 페이지 + 이번 페이지) 로 가져온 뒤 앞부분을 버린다.
+            // ORDER BY 가 없으면 순서 없는 정렬을 붙여 이번 페이지만 받는다.
+            // (TOP(앞 페이지 + 이번 페이지) 로 받아 앞을 버리면 뒤 페이지일수록 다시 받는 행이 늘어 느려진다)
+            // 순서 보장은 TOP 방식과 같다 (둘 다 없음).
+            let noOffset = "\\bDISTINCT\\b|\\bUNION\\b|\\bINTERSECT\\b|\\bEXCEPT\\b|\\bOPTION\\s*\\(|\\bFOR\\s+(XML|JSON|BROWSE)\\b"
+            if kw == "SELECT" || kw == "WITH", upper.range(of: noOffset, options: .regularExpression) == nil {
+                return PagedSQL(sql: "\(body)\nORDER BY (SELECT NULL) OFFSET \(offset) ROWS FETCH NEXT \(fetch) ROWS ONLY", skip: 0)
+            }
+            // DISTINCT · UNION 등은 ORDER BY (SELECT NULL) 을 쓸 수 없어 TOP(앞 페이지 + 이번 페이지) 로 받고 앞부분을 버린다.
             guard kw == "SELECT" else { return nil }
             let top = applyingLimit(body, limit: offset + fetch)
             return top == body ? nil : PagedSQL(sql: top, skip: offset)

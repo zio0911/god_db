@@ -19,9 +19,19 @@ struct PagingSQLTests {
         let d = MSSQLDialect()
         #expect(d.pagedSQL("SELECT * FROM t ORDER BY id", limit: 500, offset: 500)?.sql
                 == "SELECT * FROM t ORDER BY id\nOFFSET 500 ROWS FETCH NEXT 501 ROWS ONLY")
-        let noOrder = d.pagedSQL("SELECT * FROM t", limit: 500, offset: 1000)
-        #expect(noOrder?.sql.contains("TOP 1501") == true)
-        #expect(noOrder?.skip == 1000)
+        // ORDER BY 가 없어도 이번 페이지만 받는다 (앞 페이지를 다시 받지 않음)
+        #expect(d.pagedSQL("SELECT * FROM t;", limit: 500, offset: 1000)
+                == PagedSQL(sql: "SELECT * FROM t\nORDER BY (SELECT NULL) OFFSET 1000 ROWS FETCH NEXT 501 ROWS ONLY", skip: 0))
+        #expect(d.pagedSQL("WITH x AS (SELECT 1 a) SELECT * FROM x", limit: 10, offset: 0)?.sql
+                == "WITH x AS (SELECT 1 a) SELECT * FROM x\nORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 11 ROWS ONLY")
+        // ORDER BY (SELECT NULL) 을 쓸 수 없는 문장은 TOP 으로 받고 앞부분을 버린다
+        for sql in ["SELECT DISTINCT a FROM t", "SELECT a FROM t UNION ALL SELECT a FROM u",
+                    "SELECT a FROM t OPTION (RECOMPILE)", "SELECT a FROM t FOR JSON PATH"] {
+            let p = d.pagedSQL(sql, limit: 500, offset: 1000)
+            #expect(p?.sql.contains("TOP 1501") == true, "\(sql)")
+            #expect(p?.skip == 1000)
+        }
+        #expect(d.pagedSQL("WITH x AS (SELECT 1 a) SELECT a FROM x UNION SELECT 2", limit: 10, offset: 0) == nil)
         // 서브쿼리 안의 ORDER BY 는 맨 바깥 ORDER BY 가 아니다
         #expect(d.pagedSQL("SELECT * FROM (SELECT TOP 10 * FROM t ORDER BY id) x", limit: 5, offset: 0) == nil)
         #expect(d.pagedSQL("SELECT TOP 10 * FROM t", limit: 500, offset: 0) == nil)
