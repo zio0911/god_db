@@ -164,8 +164,7 @@ public struct ProfileStore: Sendable {
         if let fileURL {
             self.fileURL = fileURL
         } else {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            self.fileURL = base.appendingPathComponent("GodDB/profiles.json")
+            self.fileURL = AppPaths.dataDirectory.appendingPathComponent("profiles.json")
         }
     }
 

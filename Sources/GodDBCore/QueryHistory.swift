@@ -28,9 +28,8 @@ public struct HistoryEntry: Codable, Sendable, Identifiable, Equatable {
 
 /// 쿼리 히스토리: ~/Library/Application Support/GodDB/history.jsonl (한 줄에 한 건, 최근 maxEntries 건만 유지)
 public final class QueryHistory: @unchecked Sendable {
-    public static let shared = QueryHistory(file: FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("GodDB/history.jsonl"))
+    public static let shared = QueryHistory(file: AppPaths.dataDirectory
+        .appendingPathComponent("history.jsonl"))
 
     public let file: URL
     public let maxEntries: Int
@@ -130,9 +129,8 @@ public struct SavedTab: Codable, Sendable, Equatable {
 }
 
 public struct TabStore: Sendable {
-    public static let shared = TabStore(file: FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("GodDB/tabs.json"))
+    public static let shared = TabStore(file: AppPaths.dataDirectory
+        .appendingPathComponent("tabs.json"))
 
     public let file: URL
 

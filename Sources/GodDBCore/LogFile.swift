@@ -58,7 +58,8 @@ public final class LogFile: @unchecked Sendable {
     }
 
     /// 개발용 화면 그리기 실행에서는 로그 파일을 쓰지 않는다
-    public static let suspended = CommandLine.arguments.contains { $0.hasPrefix("--render-") }
+    /// 화면 자동 테스트도 실제 감사 로그에 남기지 않는다
+    public static let suspended = CommandLine.arguments.contains { $0.hasPrefix("--render-") } || AppPaths.uiTest
 
     public func append(_ entry: LogEntry) {
         guard Self.enabled, !Self.suspended, entry.audit != nil else { return }

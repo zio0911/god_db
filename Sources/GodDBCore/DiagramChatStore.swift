@@ -38,9 +38,8 @@ public struct DiagramConversation: Codable, Identifiable, Equatable, Sendable {
 ///   ~/Library/Application Support/GodDB/diagram-chats/<scope 해시>.json
 /// 오래 걸리는 분석을 다시 하지 않도록 남겨 두고, keepDays 가 지난 대화는 지운다.
 public final class DiagramChatStore: @unchecked Sendable {
-    public static let shared = DiagramChatStore(directory: FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("GodDB/diagram-chats", isDirectory: true))
+    public static let shared = DiagramChatStore(directory: AppPaths.dataDirectory
+        .appendingPathComponent("diagram-chats", isDirectory: true))
 
     public let directory: URL
     public let keepDays: Int

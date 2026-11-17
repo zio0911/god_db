@@ -603,9 +603,8 @@ extension DataModel {
 
 /// 모델 파일 저장소: ~/Library/Application Support/GodDB/models/<id>.goddbmodel
 public final class ModelStore: @unchecked Sendable {
-    public static let shared = ModelStore(directory: FileManager.default
-        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("GodDB/models", isDirectory: true))
+    public static let shared = ModelStore(directory: AppPaths.dataDirectory
+        .appendingPathComponent("models", isDirectory: true))
 
     public let directory: URL
 
