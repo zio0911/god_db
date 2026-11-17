@@ -366,6 +366,7 @@ final class AppState {
     /// 키체인 또는 이번 실행 중 입력한 비밀번호
     func password(for profile: ConnectionProfile) -> String? {
         if let pw = sessionPasswords[profile.id] { return pw }
+        if let pw = AppPaths.uiTestPassword { return pw }   // 화면 자동 테스트: 로컬 Docker 테스트 DB
         return profile.savePassword ? Keychain.password(for: profile.id) : nil
     }
 
