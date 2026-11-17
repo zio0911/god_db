@@ -218,9 +218,8 @@ struct PasswordPromptView: View {
             if let message = prompt.message {
                 Text(message).foregroundStyle(.red).font(.callout)
             }
-            SecureField(tr("비밀번호"), text: $password)
+            PasswordField(title: tr("비밀번호"), text: $password, onSubmit: submit)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit(submit)
             Toggle(tr("macOS 키체인에 비밀번호 저장"), isOn: $save)
             Text(save ? tr("다음부터는 묻지 않고 바로 연결해요.") : tr("앱을 끄기 전까지만 기억하고, 다음 실행 때 다시 물어봐요."))
                 .font(.caption).foregroundStyle(.secondary)

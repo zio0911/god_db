@@ -15,6 +15,9 @@ struct ConnectionEditorView: View {
     @State private var testing = false
     @State private var testMessage: (ok: Bool, text: String)?
     @State private var hasSavedPassword = false
+    /// 칸에 들어 있는 값이 아직 저장된 비밀번호에서 온 것인지 (칸을 한 번 완전히 비우면 false).
+    /// 한 글자만 지우고 보기를 눌러 본인 확인을 건너뛰지 못하게 한다.
+    @State private var showsSavedPassword = false
 
     init(profile: ConnectionProfile, isNew: Bool) {
         _profile = State(initialValue: profile)
@@ -24,6 +27,7 @@ struct ConnectionEditorView: View {
         let saved = Keychain.password(for: profile.id)
         _password = State(initialValue: saved ?? "")
         _hasSavedPassword = State(initialValue: saved != nil)
+        _showsSavedPassword = State(initialValue: saved != nil)
     }
 
     var body: some View {
@@ -90,8 +94,17 @@ struct ConnectionEditorView: View {
                     }
                     TextField(profile.kind == .redis ? tr("ACL 사용자 (선택)") : tr("사용자"), text: $profile.username,
                               prompt: profile.kind == .redis ? Text(tr("비우면 비밀번호만으로 AUTH")) : nil)
-                    SecureField(tr("비밀번호"), text: $password)
-                        .onChange(of: password) { passwordChanged = true }
+                    PasswordField(title: tr("비밀번호"), text: $password,
+                                  needsAuthentication: showsSavedPassword,
+                                  authenticationReason: tr("'%@' 접속의 저장된 비밀번호를 보려고 해요", "\(profile.name)"),
+                                  onAuthenticatedReveal: {
+                                      app.log(.info, .app, tr("%@ 저장된 비밀번호 보기 (본인 확인)", "\(profile.name)"),
+                                              audit: AuditRecord(.settings, target: profile.name, result: "저장된 비밀번호 보기"))
+                                  })
+                        .onChange(of: password) {
+                            passwordChanged = true
+                            if password.isEmpty { showsSavedPassword = false }
+                        }
                     Toggle(tr("비밀번호 저장 (macOS 키체인)"), isOn: $profile.savePassword)
                     if profile.savePassword {
                         HStack(spacing: 6) {
@@ -105,6 +118,7 @@ struct ConnectionEditorView: View {
                                     Keychain.deletePassword(for: profile.id)
                                     password = ""
                                     hasSavedPassword = false
+                                    showsSavedPassword = false
                                 }
                                 .controlSize(.small)
                             }

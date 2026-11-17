@@ -4,6 +4,10 @@ import Foundation
 extension L10nEnglish {
     static let safety: [String: String] = [
         "'%@' 접속을 삭제할까요?": "Delete the connection '%@'?",
+        "'%@' 접속의 저장된 비밀번호를 보려고 해요": "show the saved password for '%@'",
+        "%@ 저장된 비밀번호 보기 (본인 확인)": "%@: saved password shown (owner verified)",
+        "비밀번호 보기": "Show Password",
+        "비밀번호 가리기": "Hide Password",
         "DROP (객체 삭제)": "DROP (removes the object)",
         "TRUNCATE (모든 행 삭제)": "TRUNCATE (deletes all rows)",
         "WHERE 없는 DELETE (모든 행 삭제)": "DELETE without WHERE (deletes all rows)",
