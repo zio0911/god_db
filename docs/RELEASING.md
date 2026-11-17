@@ -45,15 +45,15 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 | `SPARKLE_PRIVATE_KEY` | 업데이트 서명 개인 키 | `.build/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle_key.txt` |
 | `FORBIDDEN_WORDS_REGEX` (선택) | 앱 안에 있으면 안 되는 단어 정규식 | 예: 회사명·내부 도메인 |
 
+한 번에 등록 (값은 화면에 안 보이게 입력받는다):
+
 ```bash
-gh secret set DEVELOPER_ID_P12 --env release --repo zio0911/god_db < <(base64 -i DeveloperID.p12)
-gh secret set DEVELOPER_ID_P12_PASSWORD --env release --repo zio0911/god_db     # 프롬프트에 붙여넣기
-gh secret set APPLE_ID --env release --repo zio0911/god_db
-gh secret set APPLE_TEAM_ID --env release --repo zio0911/god_db --body ZKVKMA7N59
-gh secret set APPLE_APP_PASSWORD --env release --repo zio0911/god_db
-gh secret set SPARKLE_PRIVATE_KEY --env release --repo zio0911/god_db < sparkle_key.txt
-rm DeveloperID.p12 sparkle_key.txt   # 등록 후 파일은 지운다 (백업은 안전한 곳에 따로)
+./scripts/setup-release-secrets.sh ~/Desktop/DeveloperID.p12
+rm ~/Desktop/DeveloperID.p12   # 등록 후 내보낸 파일은 지운다
 ```
+
+- Secrets 는 저장 후 아무도 (저장소 주인도) 값을 다시 볼 수 없고, 로그에서는 `***` 로 가려진다.
+- fork 에서 온 PR 의 CI 에는 전달되지 않는다. `release` 환경 승인 전에는 서명 단계가 시작되지 않는다.
 
 ## 키 백업 · 갱신
 
