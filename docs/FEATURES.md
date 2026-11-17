@@ -1,6 +1,6 @@
 # GodDB 기능 명세
 
-> 버전 1.3.2 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+, Redis 6+
+> 버전 1.3.3 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+, Redis 6+
 > 이 문서는 기능이 추가·변경될 때마다 함께 갱신한다.
 
 ## 목차
@@ -582,6 +582,10 @@
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 
 ## 18. 변경 이력
+
+### 1.3.3
+- SQL Server: ORDER BY 없는 결과를 스크롤해 이어 받을수록 느려지던 문제 (20만 행 177초 → 5초). ORDER BY 없는 `WITH` 쿼리도 나눠 받음
+- PostgreSQL: 큰 테이블을 ORDER BY 없이 이어 받을 때 행이 겹치거나 빠지던 문제
 
 ### 1.3.2
 - MySQL 에서 결과 집합을 돌려주는 프로시저(`CALL p(…)`) 결과를 표로 보여 줌 (결과 집합이 여러 개면 첫 번째)
