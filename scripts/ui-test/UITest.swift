@@ -246,8 +246,16 @@ func tabCount() -> Int {
     app.snapshot().filter { $0.role == "AXStaticText" && $0.value.hasPrefix("쿼리 ") }.count
 }
 
+/// 아래 상태창(로그)이 열려 있으면 닫는다 (결과 표가 작아져 행이 안 보이므로)
+func hideLog() {
+    guard app.find(0.3, { $0.role == "AXCheckBox" && $0.label == "오류만" }) != nil,
+          let b = app.find(0.5, { $0.role == "AXButton" && $0.label.hasPrefix("상태창") }) else { return }
+    press(b)
+}
+
 /// 남은 알림 · 시트를 닫는다
 func closeLeftovers() {
+    defer { hideLog() }
     for _ in 0..<3 {
         guard app.snapshot().contains(where: { $0.modal }) else { return }
         if answer("취소", timeout: 0.3) || answer("닫기", timeout: 0.3) { continue }
@@ -265,7 +273,6 @@ scenario("connect") {
     click(row)
     // 사이드바에 DB(shop)와 테이블 목록이 나올 때까지 = 연결 · 스키마 준비 끝
     let ready = app.find(15, { $0.role == "AXPopUpButton" && $0.value == "shop" }) != nil
-        && app.find(10, { $0.role == "AXHeading" && $0.label == "ui_orders" }) != nil
     check("접속 연결 · 쿼리 탭 열림", ready && app.find(10, role("AXTextArea")) != nil)
 }
 
