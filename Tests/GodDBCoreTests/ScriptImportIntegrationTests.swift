@@ -30,6 +30,42 @@ struct ScriptImportIntegrationTests {
         _ = try await s.raw("DROP PROCEDURE p_delim_it")
     }
 
+    /// 결과 집합을 돌려주는 프로시저 CALL (#69)
+    @Test func mysqlCallReturnsResultSet() async throws {
+        guard let s = try await session(.mysql) else { return }
+        defer { Task { await s.close() } }
+        let script = """
+        DROP PROCEDURE IF EXISTS p_rows_it;
+        DROP PROCEDURE IF EXISTS p_two_it;
+        DELIMITER $$
+        CREATE PROCEDURE p_rows_it(IN n INT)
+        BEGIN
+          SELECT n AS a, 'x' AS b UNION ALL SELECT n + 1, 'y';
+        END$$
+        CREATE PROCEDURE p_two_it()
+        BEGIN
+          SELECT 1 AS one;
+          SELECT 'p', 'q', 'r';
+        END$$
+        DELIMITER ;
+        """
+        for st in SQLText.statements(in: script).map(\.sql) { _ = try await s.execute(st, limit: 0) }
+        let r = try await s.execute("CALL p_rows_it(41)", limit: 0)
+        #expect(r.columns.map(\.name) == ["a", "b"])
+        #expect(r.rows.map { $0.values } == [["41", "x"], ["42", "y"]])
+        // 앱처럼 페이지 크기를 붙여 실행해도 (CALL 은 감싸지 않음)
+        let paged = try await s.execute("CALL p_rows_it(1)", limit: 100)
+        #expect(paged.rows.count == 2)
+        // 결과 집합이 둘이면 첫 번째만
+        let two = try await s.execute("CALL p_two_it()", limit: 0)
+        #expect(two.columns.map(\.name) == ["one"])
+        #expect(two.rows.count == 1)
+        // 같은 연결로 계속 쓸 수 있다
+        #expect(try await s.raw("SELECT 7").rows.first?.first == "7")
+        _ = try await s.raw("DROP PROCEDURE p_rows_it")
+        _ = try await s.raw("DROP PROCEDURE p_two_it")
+    }
+
     @Test func mssqlGoBatches() async throws {
         guard let s = try await session(.mssql) else { return }
         defer { Task { await s.close() } }

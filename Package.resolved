@@ -1,15 +1,6 @@
 {
-  "originHash" : "cfd1ff2ed9d72f35b73a8abd10b646171abac00732e146720cc5bf557e578295",
+  "originHash" : "353893c517e53e4b02be7567985a4e570c4ec35fd09c4294ed3a6fe48e3c885c",
   "pins" : [
-    {
-      "identity" : "mysql-nio",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/vapor/mysql-nio.git",
-      "state" : {
-        "revision" : "3cd7153792ab259a217507b775c14d9ddba3f79f",
-        "version" : "1.9.3"
-      }
-    },
     {
       "identity" : "sparkle",
       "kind" : "remoteSourceControl",
