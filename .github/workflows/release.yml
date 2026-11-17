@@ -99,17 +99,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           DMG="build/GodDB-$APP_VERSION.dmg"
-          NOTES=$(cat <<'MD'
-          ## 설치
-          `GodDB-*.dmg` 를 열고 GodDB 를 Applications 로 끌어다 놓은 뒤 실행하세요. Apple 공증을 받은 앱이라 바로 열려요.
-          이미 1.1.0 이상을 쓰고 있으면 앱이 자동으로 업데이트를 알려줘요.
-          MD
-          )
+          # docs/FEATURES.md 의 "### X.Y.Z" 변경 이력 + 설치 안내
+          ./scripts/release-notes.sh "$APP_VERSION" > "$RUNNER_TEMP/notes.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
+            # GitHub 웹에서 먼저 만든 릴리스: 파일을 붙이고, 변경 사항이 없으면 노트 맨 위에 넣는다
             gh release upload "$TAG" "$DMG" build/appcast.xml --clobber
+            BODY=$(gh release view "$TAG" --json body --jq .body)
+            if ! grep -q '^## 변경 사항' <<<"$BODY" && grep -q '^## 변경 사항' "$RUNNER_TEMP/notes.md"; then
+              { sed '/^## 설치/,$d' "$RUNNER_TEMP/notes.md"; printf '%s\n' "$BODY"; } > "$RUNNER_TEMP/merged.md"
+              gh release edit "$TAG" --notes-file "$RUNNER_TEMP/merged.md"
+            fi
           else
             gh release create "$TAG" "$DMG" build/appcast.xml --verify-tag --title "GodDB $APP_VERSION" \
-              --generate-notes --notes "$NOTES"
+              --generate-notes --notes-file "$RUNNER_TEMP/notes.md"
           fi
 
       - name: 임시 키체인 정리
