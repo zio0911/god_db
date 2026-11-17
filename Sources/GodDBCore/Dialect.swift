@@ -28,6 +28,8 @@ public protocol SQLDialect: Sendable {
     func applyingLimit(_ sql: String, limit: Int) -> String
     /// 읽기전용 접속일 때 연결 직후 실행할 SQL (서버 측 차단)
     var readOnlySessionSQL: String? { get }
+    /// 연결 직후 항상 실행할 세션 설정 (실패해도 접속은 계속)
+    var sessionSetupSQL: String? { get }
     /// 이 연결의 서버 쪽 세션 번호 (실행 중인 쿼리 취소에 쓴다)
     var sessionIDSQL: String { get }
     /// 다른 연결에서 실행해 그 세션의 쿼리를 멈추는 SQL (id 는 숫자만)
@@ -296,6 +298,8 @@ public struct PagedSQL: Sendable, Equatable {
 }
 
 extension SQLDialect {
+    public var sessionSetupSQL: String? { nil }
+
     /// SELECT 를 페이지 단위로 가져오는 SQL. 다음 페이지가 있는지 알기 위해 limit + 1 행을 요청한다.
     /// 이미 LIMIT/TOP/OFFSET/INTO/FOR UPDATE 가 있거나 SELECT 가 아니면 nil (그대로 실행).
     public func pagedSQL(_ sql: String, limit: Int, offset: Int) -> PagedSQL? {
@@ -317,7 +321,14 @@ extension SQLDialect {
                 guard kw == "SELECT" || kw == "WITH" else { return nil }
                 return PagedSQL(sql: "\(body)\nOFFSET \(offset) ROWS FETCH NEXT \(fetch) ROWS ONLY", skip: 0)
             }
-            // ORDER BY 가 없으면 OFFSET 을 못 써서 TOP(앞 페이지 + 이번 페이지) 로 가져온 뒤 앞부분을 버린다.
+            // ORDER BY 가 없으면 순서 없는 정렬을 붙여 이번 페이지만 받는다.
+            // (TOP(앞 페이지 + 이번 페이지) 로 받아 앞을 버리면 뒤 페이지일수록 다시 받는 행이 늘어 느려진다)
+            // 순서 보장은 TOP 방식과 같다 (둘 다 없음).
+            let noOffset = "\\bDISTINCT\\b|\\bUNION\\b|\\bINTERSECT\\b|\\bEXCEPT\\b|\\bOPTION\\s*\\(|\\bFOR\\s+(XML|JSON|BROWSE)\\b"
+            if kw == "SELECT" || kw == "WITH", upper.range(of: noOffset, options: .regularExpression) == nil {
+                return PagedSQL(sql: "\(body)\nORDER BY (SELECT NULL) OFFSET \(offset) ROWS FETCH NEXT \(fetch) ROWS ONLY", skip: 0)
+            }
+            // DISTINCT · UNION 등은 ORDER BY (SELECT NULL) 을 쓸 수 없어 TOP(앞 페이지 + 이번 페이지) 로 받고 앞부분을 버린다.
             guard kw == "SELECT" else { return nil }
             let top = applyingLimit(body, limit: offset + fetch)
             return top == body ? nil : PagedSQL(sql: top, skip: offset)
