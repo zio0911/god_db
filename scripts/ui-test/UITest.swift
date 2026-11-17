@@ -217,6 +217,17 @@ func setEditor(_ sql: String, cursorAtEnd: Bool = true) throws {
 
 func runQuery() { key("return", cmd) }
 
+/// 실행하고 결과가 보일 때까지 기다린다 (막 연결된 직후 등 한 번 안 먹으면 다시)
+func runAndWait(_ timeout: Double = 8, _ pred: @escaping (Node) -> Bool) -> Node? {
+    runQuery()
+    if let hit = app.find(timeout, pred) { return hit }
+    if let ed = editor() { click(ed) }
+    runQuery()
+    return app.find(timeout, pred)
+}
+
+func cell(_ v: String) -> (Node) -> Bool { { $0.role == "AXStaticText" && $0.value == v } }
+
 /// 열린 알림의 버튼을 누른다 (없으면 false)
 @discardableResult
 func answer(_ title: String, timeout: Double = 3) -> Bool {
@@ -252,13 +263,15 @@ func scenario(_ name: String, _ body: @escaping () throws -> Void) { scenarios.a
 scenario("connect") {
     guard let row = app.find(5, role("AXStaticText", "UI MySQL")) else { throw Abort(message: "테스트 접속이 사이드바에 없어요") }
     click(row)
-    check("접속 연결 · 쿼리 탭 열림", editor() != nil || app.find(10, role("AXTextArea")) != nil)
+    // 사이드바에 DB(shop)와 테이블 목록이 나올 때까지 = 연결 · 스키마 준비 끝
+    let ready = app.find(15, { $0.role == "AXPopUpButton" && $0.value == "shop" }) != nil
+        && app.find(10, { $0.role == "AXHeading" && $0.label == "ui_orders" }) != nil
+    check("접속 연결 · 쿼리 탭 열림", ready && app.find(10, role("AXTextArea")) != nil)
 }
 
 scenario("run") {
     try setEditor("SELECT id, customer, amount FROM ui_orders ORDER BY id")
-    runQuery()
-    let ok = app.find(8, { $0.value == "park" }) != nil
+    let ok = runAndWait(8, cell("park")) != nil
     check("SELECT 실행 · 결과 표에 행 표시", ok)
     check("결과 행 수 표시 (5행)", app.find(3, hasText("5행")) != nil)
 }
@@ -315,10 +328,9 @@ func clearFilter() {
 scenario("grid") {
     clearFilter()
     try setEditor("SELECT id, customer, note FROM ui_orders ORDER BY id")
-    runQuery()
     // 결과 표의 칸 (오른쪽 상세 패널의 입력란이 아니라)
-    guard let cell = app.find(8, { $0.role == "AXStaticText" && $0.value == "lee" }) else { throw Abort(message: "결과가 없어요") }
-    click(cell)
+    guard let lee = runAndWait(8, cell("lee")) else { throw Abort(message: "결과가 없어요") }
+    click(lee)
     setClipboard("")
     key("c", cmd)
     let copied = clipboard()
@@ -350,7 +362,7 @@ scenario("quickopen") {
     paste("ui_ord")
     check("ui_ord → ui_orders 찾음", app.find(3, { $0.value == "ui_orders" }) != nil)
     key("return")
-    check("↩ 로 열면 테이블 데이터 조회", app.find(8, { $0.value == "choi" }) != nil)
+    check("↩ 로 열면 테이블 데이터 조회", app.find(10, cell("choi")) != nil)
 }
 
 scenario("closeTab") {
