@@ -23,12 +23,28 @@
 ```bash
 git switch main && git pull
 # VERSION 파일과 docs/FEATURES.md 변경 이력(### X.Y.Z) 수정
-git commit -am "X.Y.Z 릴리스 준비: 버전·변경 이력" && git push
+git commit -am "chore: X.Y.Z 릴리스 준비" && git push
 git tag vX.Y.Z && git push origin vX.Y.Z
 # → Actions > Release > Review deployments > release 승인 → 약 10~15분 뒤 릴리스 생성
 ```
 
 같은 태그로 다시 만들려면 Actions > Release > Run workflow 에 태그를 넣는다 (파일만 다시 올림).
+
+### 릴리스 노트
+
+릴리스 노트 맨 위 **"변경 사항"** 은 `docs/FEATURES.md` 의 `### X.Y.Z` 제목 아래 내용을 그대로 쓴다 (`scripts/release-notes.sh`).
+그 아래에 설치 안내와 PR 목록(`skip-changelog` 라벨 제외)이 붙는다. 변경 이력은 **FEATURES.md 한 곳에만** 쓴다.
+
+미리 보기: `./scripts/release-notes.sh X.Y.Z`
+
+### GitHub 웹에서 릴리스 (터미널 없이)
+
+1. `VERSION` 파일을 새 버전으로, `docs/FEATURES.md` 맨 위 버전 줄과 `### X.Y.Z` 변경 이력을 고쳐 main 에 커밋한다. (VERSION 과 태그가 다르면 워크플로가 멈춘다)
+2. Releases > **Draft a new release** > 태그 `vX.Y.Z` (Create new tag on publish, target `main`) > 제목 `GodDB X.Y.Z` > Generate release notes > **Publish release**
+3. Actions > Release 가 시작되면 **Review deployments** > `release` 승인. 자동으로 시작되지 않으면 Actions > Release > **Run workflow** 에 `vX.Y.Z`.
+4. 약 10분 뒤 DMG · appcast.xml 이 붙고, 노트 맨 위에 FEATURES.md 변경 이력이 들어간다.
+
+웹에서 먼저 만들면 빌드가 끝날 때까지(약 10분) 최신 릴리스에 appcast.xml 이 없어 그 사이 앱의 업데이트 확인이 한 번 실패할 수 있다. 터미널에서 태그를 먼저 올리면 이 공백이 없다.
 
 ## 처음 한 번: `release` 환경 Secrets 등록
 
@@ -63,4 +79,11 @@ rm ~/Desktop/DeveloperID.p12   # 등록 후 내보낸 파일은 지운다
 
 ## 로컬에서 릴리스 (CI 없이)
 
-`./scripts/make-dmg.sh` 가 이 Mac 키체인의 인증서·공증 프로필(`goddb`)·업데이트 키로 같은 일을 한다. 그 뒤 `gh release create vX.Y.Z build/GodDB-X.Y.Z.dmg build/appcast.xml --verify-tag --generate-notes`.
+`./scripts/make-dmg.sh` 가 이 Mac 키체인의 인증서·공증 프로필(`goddb`)·업데이트 키로 같은 일을 한다. 그 뒤:
+
+```bash
+./scripts/release-notes.sh X.Y.Z > /tmp/notes.md
+gh release create vX.Y.Z build/GodDB-X.Y.Z.dmg build/appcast.xml --verify-tag --title "GodDB X.Y.Z" --generate-notes --notes-file /tmp/notes.md
+```
+
+태그를 올리면 Actions 릴리스도 시작되니, 로컬로 할 때는 그 실행을 취소한다.
