@@ -3,6 +3,21 @@
 `vX.Y.Z` 태그를 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 **빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler → 업데이트 서명(appcast.xml) → GitHub 릴리스**까지 한다.
 `release` 환경에 묶여 있어 **저장소 주인이 Actions 화면에서 승인해야** 서명 단계가 시작된다. `v*` 태그에서만 실행할 수 있다.
 
+## 릴리스 전 확인
+
+```bash
+./scripts/test-dbs.sh up && ./scripts/test-dbs.sh test   # 단위 + 실제 DB 통합 테스트
+./scripts/ui-test.sh                                      # 화면 자동 테스트 (약 2분)
+```
+
+`ui-test.sh` 는 실제 앱을 띄워 마우스 · 키보드로 주요 화면 동작(연결, 실행, 위험 문장 확인, 주석 · 정렬, 쿼리 취소, 결과 복사 · 필터,
+히스토리, 빠른 찾기, 탭 닫기, 운영 접속 확인, 레이아웃)을 눌러 보고 `PASS / FAIL` 을 낸다.
+
+- 실행하는 동안(약 2분) **마우스 · 키보드를 쓰지 않는다** — 실제 화면을 쓴다.
+- 실제 접속 목록 · 탭 · 히스토리 · 감사 로그 · 설정은 건드리지 않는다 (번들 ID 를 바꾼 복사본 + 임시 데이터 폴더, 로컬 Docker MySQL 만 사용).
+- 처음 한 번: 시스템 설정 > 개인정보 보호 및 보안 > **손쉬운 사용** 에서 실행하는 앱(터미널 등)을 허용.
+- 일부만: `./scripts/ui-test.sh --no-build connect run grid`, 끝난 뒤 앱을 보려면 `--keep`.
+
 ## 릴리스 순서
 
 ```bash
