@@ -492,6 +492,8 @@ struct ResultGrid: View {
     var dialect: (any SQLDialect)?
     @State private var sortOrder: [ColumnSortComparator] = []
     @State private var hoveredRow: Int?
+    /// 행을 고르면 결과 표로 키보드 포커스를 옮긴다 (⌘C 가 편집기가 아니라 표에 가도록)
+    @FocusState private var gridFocused: Bool
 
     var body: some View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
@@ -519,6 +521,8 @@ struct ResultGrid: View {
             if sort != result.activeSort { onSort?(sort.column, sort.ascending) }
         }
         .tableStyle(.bordered(alternatesRowBackgrounds: true))
+        .focused($gridFocused)
+        .onChange(of: selection) { if !selection.isEmpty { gridFocused = true } }
         // ⌘C: 고른 행을 TSV(머리글 포함)로 — 엑셀 · 스프레드시트에 바로 붙여 넣을 수 있다
         .onCopyCommand {
             let text = copyText(.tsv, selection)
