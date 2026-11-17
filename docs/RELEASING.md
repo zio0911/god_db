@@ -1,10 +1,7 @@
-# 릴리스
+# 릴리스 (자동)
 
-평소에는 **이 Mac 에서 `./scripts/make-dmg.sh`** 로 빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler → 업데이트 서명(appcast.xml) 까지 하고 GitHub 릴리스에 올린다.
-(이 Mac 키체인의 인증서 · 공증 프로필 `goddb` · Sparkle 업데이트 키를 쓴다.)
-
-GitHub Actions 릴리스(`.github/workflows/release.yml`)는 **수동 실행만** 한다 (Actions > Release > Run workflow 에 태그 입력).
-`release` 환경의 Secrets 가 등록되어 있어야 하고, 저장소 주인이 승인해야 서명 단계가 시작된다. 태그 푸시로는 실행되지 않는다.
+`vX.Y.Z` 태그를 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 **빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler → 업데이트 서명(appcast.xml) → GitHub 릴리스**까지 한다.
+`release` 환경에 묶여 있어 **저장소 주인이 Actions 화면에서 승인해야** 서명 단계가 시작된다. `v*` 태그에서만 실행할 수 있다.
 
 ## 릴리스 전 확인
 
@@ -26,15 +23,14 @@ GitHub Actions 릴리스(`.github/workflows/release.yml`)는 **수동 실행만*
 ```bash
 git switch main && git pull
 # VERSION 파일과 docs/FEATURES.md 변경 이력(### X.Y.Z) 수정
-git commit -am "chore: X.Y.Z 릴리스 준비" && git push
+git commit -am "X.Y.Z 릴리스 준비: 버전·변경 이력" && git push
 git tag vX.Y.Z && git push origin vX.Y.Z
-./scripts/make-dmg.sh                       # 빌드 · 서명 · 공증 (약 5~10분)
-gh release create vX.Y.Z build/GodDB-X.Y.Z.dmg build/appcast.xml --verify-tag --generate-notes --title "GodDB X.Y.Z"
-# 확인: 업데이트 피드가 새 버전을 내려주는지
-curl -sL https://github.com/zio0911/god_db/releases/latest/download/appcast.xml | grep shortVersionString
+# → Actions > Release > Review deployments > release 승인 → 약 10~15분 뒤 릴리스 생성
 ```
 
-## (Actions 로 릴리스할 때만) `release` 환경 Secrets 등록
+같은 태그로 다시 만들려면 Actions > Release > Run workflow 에 태그를 넣는다 (파일만 다시 올림).
+
+## 처음 한 번: `release` 환경 Secrets 등록
 
 값은 **본인이 직접** 넣는다. 저장소 코드·로그에는 남지 않는다 (로그에서는 `***`).
 등록: GitHub 저장소 > Settings > Environments > `release` > Environment secrets, 또는 아래 `gh` 명령.
@@ -64,3 +60,7 @@ rm DeveloperID.p12 sparkle_key.txt   # 등록 후 파일은 지운다 (백업은
 - **Developer ID 인증서**: 만료 2027-12-13. 그 전에 같은 방법(CSR → 다운로드)으로 새로 받고 `DEVELOPER_ID_P12` 를 바꾼다. 이미 배포한 앱은 타임스탬프·공증 덕분에 만료 뒤에도 열린다.
 - **Sparkle 업데이트 키**: 잃어버리면 설치된 앱들이 새 업데이트를 거부한다 (수동 재설치 필요). `.p12` 와 함께 암호 관리자 등 안전한 곳에 백업.
 - **Apple 개발자 멤버십**: 1년마다 갱신.
+
+## 로컬에서 릴리스 (CI 없이)
+
+`./scripts/make-dmg.sh` 가 이 Mac 키체인의 인증서·공증 프로필(`goddb`)·업데이트 키로 같은 일을 한다. 그 뒤 `gh release create vX.Y.Z build/GodDB-X.Y.Z.dmg build/appcast.xml --verify-tag --generate-notes`.

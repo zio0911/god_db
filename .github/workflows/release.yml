@@ -1,16 +1,16 @@
 name: Release
 
-# 수동 실행 (Actions > Release > Run workflow, 태그 입력): 빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler
+# v1.2.3 태그를 푸시하면: 빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler
 #   → 업데이트 서명(appcast.xml) → GitHub 릴리스 생성 + DMG/appcast 첨부
-# 평소 릴리스는 로컬 ./scripts/make-dmg.sh 로 한다. 태그 푸시로는 실행되지 않는다
-# (자동 실행되면 매번 취소·실패 기록이 남았다).
 # 비밀 값은 `release` 환경의 Secrets 에만 있고, 환경 승인(사용자 확인) 후에만 실행된다.
 # 테스트는 다시 돌리지 않는다 — 태그에 들어간 코드는 PR 에서 이미 CI 를 통과했다.
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "릴리스할 태그 (예: v1.1.0)"
+        description: "다시 만들 태그 (예: v1.1.0)"
         required: true
 
 permissions:
