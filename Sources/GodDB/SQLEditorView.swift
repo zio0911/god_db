@@ -331,9 +331,9 @@ final class HintTextView: NSTextView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased()
-        if mods == .command, key == "/" { toggleComment(nil); return true }
-        if mods == [.command, .option], key == "l" { formatSQL(nil); return true }
+        // 입력 방식(한글 등)에 따라 글자가 달라지므로 물리 키 번호로 본다 (US 배열 기준 / = 44, L = 37)
+        if mods == .command, event.keyCode == 44 { toggleComment(nil); return true }
+        if mods == [.command, .option], event.keyCode == 37 { formatSQL(nil); return true }
         return super.performKeyEquivalent(with: event)
     }
 

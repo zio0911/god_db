@@ -299,7 +299,11 @@ public actor DBSession {
         defer { running -= 1 }
         do {
             let r = try await driver.query(sql)
-            if running == 1 { cancelRequested = false }
+            // MySQL 은 KILL QUERY 로 멈춘 SLEEP 등이 오류 없이 끝나기도 한다 → 취소를 요청했으면 취소로 본다
+            if cancelRequested {
+                cancelRequested = false
+                throw DBError.cancelled
+            }
             return r
         } catch {
             if cancelRequested {
