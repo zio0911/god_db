@@ -1169,3 +1169,15 @@ extension AppState {
         await refreshTx(t.profileID)
     }
 }
+
+extension AppState {
+    /// ⌘W: 메인 창이 앞에 있고 쿼리 탭을 보고 있으면 그 탭을 닫고(편집 확인 포함), 아니면 앞에 있는 창을 닫는다
+    func closeTabOrWindow() {
+        let key = NSApp.keyWindow
+        if let key, key === mainWindow, mode == .query, selectedRedis == nil, let id = selectedTabID {
+            requestCloseTabs([id])
+        } else {
+            key?.performClose(nil)
+        }
+    }
+}

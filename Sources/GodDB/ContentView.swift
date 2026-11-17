@@ -241,17 +241,26 @@ struct PasswordPromptView: View {
     }
 }
 
-/// 이 화면이 들어 있는 NSWindow 를 알려 준다
+/// 이 화면이 들어 있는 NSWindow 를 알려 준다 (뷰가 창에 붙는 순간에 알린다)
 struct WindowReader: NSViewRepresentable {
     let onWindow: (NSWindow?) -> Void
 
+    final class Probe: NSView {
+        var onWindow: ((NSWindow?) -> Void)?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            onWindow?(window)
+        }
+    }
+
     func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async { onWindow(v.window) }
+        let v = Probe()
+        v.onWindow = onWindow
         return v
     }
 
     func updateNSView(_ v: NSView, context: Context) {
-        DispatchQueue.main.async { onWindow(v.window) }
+        (v as? Probe)?.onWindow = onWindow
+        if let w = v.window { onWindow(w) }
     }
 }

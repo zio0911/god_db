@@ -69,6 +69,10 @@ struct GodDBApp: App {
                     .keyboardShortcut("t", modifiers: .command)
                 Button(tr("새 접속…")) { app.newProfile() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+                // ⌘W: 메인 창에서 쿼리 탭을 보고 있으면 탭을, 아니면 앞에 있는 창을 닫는다
+                // (메뉴에서 시스템 "닫기" 보다 앞에 있어야 ⌘W 를 먼저 받는다)
+                Button(tr("탭 닫기")) { app.closeTabOrWindow() }
+                    .keyboardShortcut("w", modifiers: .command)
                 Divider()
                 Button(tr("SQL 파일 열기…")) { app.openSQLFilePanel() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
