@@ -153,8 +153,8 @@ struct ExportConnectionsSheet: View {
             Toggle(tr("비밀번호 포함 (암호로 잠금)"), isOn: $includePasswords).toggleStyle(.checkbox)
             if includePasswords {
                 VStack(alignment: .leading, spacing: 6) {
-                    SecureField(tr("암호 (8자 이상)"), text: $passphrase)
-                    SecureField(tr("암호 확인"), text: $confirm)
+                    PasswordField(title: tr("암호 (8자 이상)"), text: $passphrase)
+                    PasswordField(title: tr("암호 확인"), text: $confirm)
                     Text(tr("가져올 때 이 암호가 필요해요. 암호는 파일에 저장되지 않으니 따로 전달하세요."))
                         .font(.caption).foregroundStyle(.secondary)
                     if let problem = passphraseProblem, !passphrase.isEmpty {
@@ -242,7 +242,7 @@ struct ImportConnectionsSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(tr("비밀번호가 암호로 잠겨 들어 있어요. 내보낼 때 정한 암호를 넣으면 함께 가져와요."))
                         .font(.caption).foregroundStyle(.secondary)
-                    SecureField(tr("암호 (비우면 비밀번호 없이 가져옴)"), text: $passphrase)
+                    PasswordField(title: tr("암호 (비우면 비밀번호 없이 가져옴)"), text: $passphrase)
                 }
             }
             if let error {
