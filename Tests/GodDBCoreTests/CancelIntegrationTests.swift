@@ -23,11 +23,8 @@ struct CancelIntegrationTests {
         #expect(await s.isRunning)
         #expect(try await s.cancelRunning())
         var cancelled = false
-        do { _ = try await running.value } catch DBError.cancelled { cancelled = true } catch {
-            // MySQL SLEEP 은 KILL QUERY 되면 오류 없이 1 을 돌려주기도 한다
-            cancelled = kind == .mysql
-        }
-        if kind != .mysql { #expect(cancelled) }
+        do { _ = try await running.value } catch DBError.cancelled { cancelled = true } catch {}
+        #expect(cancelled)   // MySQL SLEEP 처럼 오류 없이 끝나도 취소로 본다
         #expect(Date().timeIntervalSince(started) < 10)
         // 취소 뒤에도 같은 세션으로 계속 쓸 수 있다 (SQL Server 는 다시 연결됨)
         let r = try await s.raw("SELECT 1")

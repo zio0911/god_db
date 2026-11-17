@@ -141,22 +141,6 @@ struct TransactionControls: View {
 
 /// 앱 종료 때 커밋하지 않은 트랜잭션이 있으면 묻는다
 final class GodDBAppDelegate: NSObject, NSApplicationDelegate {
-    private var keyMonitor: Any?
-
-    /// ⌘W: 메인 창에서 쿼리 탭을 보고 있으면 창 대신 그 탭을 닫는다 (다른 창은 원래대로 창을 닫음)
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard mods == .command, event.charactersIgnoringModifiers?.lowercased() == "w" else { return event }
-            return MainActor.assumeIsolated {
-                guard let app = AppState.shared, let main = app.mainWindow, NSApp.keyWindow === main,
-                      app.mode == .query, app.selectedRedis == nil, let id = app.selectedTabID else { return event }
-                app.requestCloseTabs([id])
-                return nil
-            }
-        }
-    }
-
     /// 종료 직전 쿼리 탭을 바로 저장한다
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { AppState.shared?.saveTabsNow() }
