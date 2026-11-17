@@ -108,8 +108,11 @@ final class MySQLDriver: DBDriver, @unchecked Sendable {
 
     func query(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
         guard isOpen else { throw DBError.notConnected }
-        let result = try await connection.simpleQuery(sql).get()
-        guard let first = result.first else { return ([], []) }
+        let all = try await connection.simpleQuery(sql).get()
+        guard let first = all.first else { return ([], []) }
+        // 프로시저(CALL)는 결과 집합을 여러 개 돌려줄 수 있다 → 첫 결과 집합만 (컬럼이 같은 앞쪽 행들)
+        let names = first.columnDefinitions.map(\.name)
+        let result = all.prefix { $0.columnDefinitions.map(\.name) == names && $0.values.count == names.count }
         // binary/varbinary/BLOB 은 바이트 그대로 오므로 글자로 읽으면 깨진다 → 0x16진수로 보여준다
         let binary = first.columnDefinitions.map(Self.isBinary)
         return (first.columnDefinitions.map(\.name),

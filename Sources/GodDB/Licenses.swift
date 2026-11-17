@@ -20,7 +20,7 @@ enum Licenses {
     static let goddbURL = "https://github.com/zio0911/god_db"
 
     static let thirdParty: [ThirdPartyLicense] = [
-        ThirdPartyLicense(name: "mysql-nio", version: "1.9.3", license: "MIT", copyright: "Copyright (c) Qutheory, LLC", url: "https://github.com/vapor/mysql-nio", text: mitMySQL, note: "MySQL 드라이버"),
+        ThirdPartyLicense(name: "mysql-nio", version: "1.9.3 (GodDB 패치)", license: "MIT", copyright: "Copyright (c) Qutheory, LLC", url: "https://github.com/vapor/mysql-nio", text: mitMySQL, note: "MySQL 드라이버 — 결과 집합을 돌려주는 프로시저(CALL)를 받도록 수정 (Vendor/mysql-nio/GODDB_PATCH.md)"),
         ThirdPartyLicense(name: "postgres-nio", version: "1.33.3 (GodDB 패치)", license: "MIT", copyright: "Copyright (c) Tanner Nelson", url: "https://github.com/vapor/postgres-nio", text: mitPostgres, note: "PostgreSQL 드라이버 — 결과를 텍스트 형식으로 받도록 1줄 수정 (Vendor/postgres-nio/GODDB_PATCH.md)"),
         ThirdPartyLicense(name: "SwiftNIO", version: "2.105.0", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-nio", text: apache, note: ""),
         ThirdPartyLicense(name: "SwiftNIO SSL", version: "2.37.6", license: "Apache-2.0", copyright: "Copyright (c) Apple Inc. and the Swift project authors", url: "https://github.com/apple/swift-nio-ssl", text: apache, note: "NIOSSL 에는 BoringSSL(OpenSSL/ISC 계열 라이선스)이 포함돼요."),
