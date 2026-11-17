@@ -408,6 +408,23 @@ final class AppState {
         }
     }
 
+    /// 사이드바에서 접속을 더블클릭했을 때: 연결한 뒤 이 접속의 쿼리 탭으로 가고, 탭이 없으면 새로 연다.
+    func openQueryTab(for id: UUID) async {
+        await open(id)
+        // 한 번 클릭이 먼저 연결을 시작했으면 끝날 때까지 기다린다 (최대 60초)
+        for _ in 0..<600 where connectionState(id) == .connecting {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        guard connectionState(id) == .connected, profile(id)?.kind != .redis else { return }
+        if tabs.first(where: { $0.id == selectedTabID })?.profileID == id {
+            mode = .query
+        } else if let tab = tabs.last(where: { $0.profileID == id }) {
+            selectTab(tab.id)
+        } else {
+            addTab(for: id)
+        }
+    }
+
     func connect(_ id: UUID) async {
         guard let profile = profile(id) else { return }
         selectedProfileID = id
