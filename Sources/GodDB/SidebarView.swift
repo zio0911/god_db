@@ -168,6 +168,8 @@ struct ProfileRow: View {
             // 다른 접속은 끊지 않고 이 접속을 열거나 보기로 바꾼다.
             Task { await app.open(profile.id) }
         }
+        // 더블클릭: 이 접속의 쿼리 탭으로 (없으면 새 탭)
+        .simultaneousGesture(TapGesture(count: 2).onEnded { Task { await app.openQueryTab(for: profile.id) } })
         .contextMenu {
             if state == .connected {
                 Button(tr("새 쿼리 탭")) {
