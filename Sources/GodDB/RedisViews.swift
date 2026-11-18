@@ -760,7 +760,7 @@ struct StreamEntriesTable: View {
 struct RedisConsoleView: View {
     @Bindable var ws: RedisWorkspace
     @State private var selection: TextSelection?
-    @State private var editorHeight: CGFloat = 160
+    @AppStorage(Layout.redisWorkbenchHeight) private var editorHeight: Double = 160
 
     /// 선택 영역이 있으면 그 글, 없으면 전체
     private var textToRun: String {
@@ -831,7 +831,7 @@ struct RedisConsoleView: View {
             }
             .background(Color(nsColor: .textBackgroundColor))
 
-            ResizeHandle(axis: .horizontal, size: $editorHeight, range: 80...500)
+            ResizeHandle(axis: .horizontal, size: $editorHeight.cgFloat, range: 80...500)
 
             // Workbench 편집기
             VStack(spacing: 0) {

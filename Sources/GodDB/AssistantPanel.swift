@@ -9,7 +9,9 @@ final class AssistantState {
     var visible: Bool = UserDefaults.standard.bool(forKey: "GodDB.assistant.visible") {
         didSet { UserDefaults.standard.set(visible, forKey: "GodDB.assistant.visible") }
     }
-    var width: CGFloat = 400
+    var width: CGFloat = UserDefaults.standard.object(forKey: Layout.assistantWidth).flatMap { $0 as? Double }.map { CGFloat($0) } ?? 400 {
+        didSet { UserDefaults.standard.set(Double(width), forKey: Layout.assistantWidth) }
+    }
     var includeSQL = true
     private var chats: [String: DiagramChat] = [:]
     /// "접속ID|DB" → 테이블 통계

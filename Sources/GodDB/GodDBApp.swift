@@ -93,6 +93,10 @@ struct GodDBApp: App {
             CommandGroup(after: .appInfo) {
                 Button(tr("업데이트 확인…")) { UpdateController.shared.checkNow() }
             }
+            CommandGroup(after: .sidebar) {
+                Button(tr("레이아웃 초기화")) { Layout.reset(app) }
+                    .help(tr("끌어서 바꾼 상태창 · 편집기 · 패널 크기를 처음 크기로 되돌려요"))
+            }
             CommandGroup(after: .help) {
                 Button(tr("새로운 기능")) { app.releaseNotesSince = nil; app.showReleaseNotes = true }
                 Button(tr("문제 보고…")) { app.showProblemReport = true }

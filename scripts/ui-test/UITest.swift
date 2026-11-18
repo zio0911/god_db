@@ -510,10 +510,25 @@ scenario("editorHeight") {
     check("새 탭에서도 같은 편집기 높이", abs(newTab - after) < 12, "\(Int(after)) / 새 탭 \(Int(newTab))")
     key("w", cmd)
     Thread.sleep(forTimeInterval: 0.5)
-    if let g = editor(), let p2 = attr(g.el, kAXParentAttribute) {
-        let f2 = frameOf(p2 as! AXUIElement)
-        drag(from: CGPoint(x: f2.midX, y: f2.maxY + 3), to: CGPoint(x: f2.midX, y: f2.maxY + 3 - (after - before)))
+    // 메뉴 보기 > 레이아웃 초기화 → 처음 높이로
+    check("메뉴에 '레이아웃 초기화' 가 있음", menuPress("레이아웃 초기화"))
+    Thread.sleep(forTimeInterval: 0.6)
+    let reset = editorHeight() ?? 0
+    check("레이아웃 초기화 후 편집기가 처음 높이로", abs(reset - before) < 12, "\(Int(before)) / 초기화 후 \(Int(reset))")
+}
+
+/// 메뉴 막대에서 제목으로 메뉴 항목을 찾아 누른다 (메뉴를 열지 않고 접근성 동작으로)
+func menuPress(_ title: String) -> Bool {
+    guard let bar = attr(app.ax, kAXMenuBarAttribute) else { return false }
+    var queue: [(AXUIElement, Int)] = [(bar as! AXUIElement, 0)]
+    while !queue.isEmpty {
+        let (el, d) = queue.removeFirst()
+        if (attr(el, kAXRoleAttribute) as? String) == "AXMenuItem", (attr(el, kAXTitleAttribute) as? String) == title {
+            return AXUIElementPerformAction(el, kAXPressAction as CFString) == .success
+        }
+        if d < 4, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
     }
+    return false
 }
 
 scenario("groupSelect") {

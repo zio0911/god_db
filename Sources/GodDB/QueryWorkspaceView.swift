@@ -130,10 +130,8 @@ struct QueryTabView: View {
     @Binding var tab: QueryTab
     @State private var controller = EditorController()
     /// 편집기 높이 (결과 창과의 경계). 조절하면 모든 탭 · 다음 실행에 쓴다
-    @AppStorage("GodDB.query.editorHeight") private var storedEditorHeight: Double = 220
-    private var editorHeight: Binding<CGFloat> {
-        Binding(get: { CGFloat(storedEditorHeight) }, set: { storedEditorHeight = Double($0) })
-    }
+    @AppStorage(Layout.queryEditorHeight) private var storedEditorHeight: Double = 220
+    private var editorHeight: Binding<CGFloat> { $storedEditorHeight.cgFloat }
     /// 선택 없이 전체 실행할 때 변경 문이 섞여 있으면 확인을 받는다.
     @State private var pendingRun: RunConfirm?
 
@@ -338,7 +336,7 @@ struct ResultPane: View {
     var onCount: () -> Void = {}
     var onSort: (String, Bool) -> Void = { _, _ in }
     @State private var selection = Set<QueryResult.Row.ID>()
-    @State private var detailWidth: CGFloat = 380
+    @AppStorage(Layout.rowDetailWidth) private var detailWidth: Double = 380
     /// 결과 안 빠른 필터 (보이는 행만 거른다)
     @State private var filterText = ""
 
@@ -398,12 +396,12 @@ struct ResultPane: View {
                                        copyTableName: { if case .success(let t) = target { return t.table.name } else { return "table" } }(),
                                        dialect: app.connections[tab.profileID]?.session?.dialect)
                             if let row = selectedRow(rows) {
-                                ResizeHandle(axis: .vertical, size: $detailWidth,
+                                ResizeHandle(axis: .vertical, size: $detailWidth.cgFloat,
                                              range: 240...max(240, geo.size.width - 200))
                                 RowDetailView(result: result, row: row,
                                               rowNumber: row.id >= newRowBase ? nil : result.rowOffset + row.id + 1,
                                               editor: rowEditor(target)) { selection = [] }
-                                    .frame(width: min(detailWidth, max(240, geo.size.width - 200)))
+                                    .frame(width: min(CGFloat(detailWidth), max(240, geo.size.width - 200)))
                             }
                         }
                     }
