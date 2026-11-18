@@ -805,7 +805,7 @@ struct RedisConsoleView: View {
                         ForEach(ws.console) { e in
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack {
-                                    Text("db\(e.db)> ").foregroundStyle(.secondary) + Text(e.command).bold()
+                                    Text("\(Text("db\(e.db)> ").foregroundStyle(.secondary))\(Text(e.command).bold())")
                                     Spacer()
                                     if e.millis > 0 { Text("\(e.millis)ms").font(.caption).foregroundStyle(.secondary) }
                                     Button { ws.workbench += (ws.workbench.hasSuffix("\n") || ws.workbench.isEmpty ? "" : "\n") + e.command + "\n" } label: {

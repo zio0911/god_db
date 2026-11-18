@@ -310,7 +310,7 @@ public actor RedisSession {
             guard index == 0 else { throw RedisCommandError.clusterSingleDB }
             return
         }
-        try await exec(["SELECT", String(index)])
+        _ = try await exec(["SELECT", String(index)])
         db = index
     }
 

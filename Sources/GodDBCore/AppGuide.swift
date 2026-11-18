@@ -87,7 +87,7 @@ public struct AppGuide: Sendable {
         }
         var out: [Section] = []
         var total = 0
-        for (sec, score) in scored.filter({ $0.1 >= 3 }).sorted(by: { $0.1 > $1.1 }).prefix(limit) {
+        for (sec, _) in scored.filter({ $0.1 >= 3 }).sorted(by: { $0.1 > $1.1 }).prefix(limit) {
             var s = sec
             if s.body.count > maxChars - total { s.body = String(s.body.prefix(max(0, maxChars - total))) + "\n…" }
             out.append(s)

@@ -77,16 +77,20 @@ struct LargeResultBenchTests {
                                        dialect: nil)
         let m0 = rss(); var peak = m0
         let t0 = Date()
-        var marks: [String] = []
-        var last = Date()
+        let marks = Marks()
         try await s.exportAll(sql, sort: plan.sort, chunk: 5_000, to: w) { n in
-            if n % 250_000 == 0 { marks.append("\(n / 1000)k@\(String(format: "%.1f", Date().timeIntervalSince(t0)))s") }
-            _ = last; last = Date()
+            if n % 250_000 == 0 { await marks.add("\(n / 1000)k@\(String(format: "%.1f", Date().timeIntervalSince(t0)))s") }
         }
         peak = max(peak, rss())
         let tw = Date().timeIntervalSince(t0)
         try w.finish()
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        print("BENCH export \(kind.rawValue) \(format.rawValue) rows=\(w.rowsWritten) fetch+write=\(String(format: "%.1f", tw))s finish=\(String(format: "%.1f", Date().timeIntervalSince(t0) - tw))s size=\(size / 1_048_576)MB rss +\(Int(peak - m0))MB  \(marks.joined(separator: ", "))")
+        print("BENCH export \(kind.rawValue) \(format.rawValue) rows=\(w.rowsWritten) fetch+write=\(String(format: "%.1f", tw))s finish=\(String(format: "%.1f", Date().timeIntervalSince(t0) - tw))s size=\(size / 1_048_576)MB rss +\(Int(peak - m0))MB  \(await marks.items.joined(separator: ", "))")
     }
+}
+
+/// 진행 기록 (내보내기 진행 콜백은 동시에 불릴 수 있어 actor 로 모은다)
+actor Marks {
+    private(set) var items: [String] = []
+    func add(_ s: String) { items.append(s) }
 }

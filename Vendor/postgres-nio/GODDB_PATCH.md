@@ -10,3 +10,9 @@ interval, 배열, 사용자 정의 타입 …)을 psql 과 같은 문자열로 �
 문자열로 변환해 보내므로 타입별 디코딩이 필요 없다.
 
 원본을 업데이트할 때는 이 한 줄만 다시 적용하면 된다.
+
+## 변경 2: 빌드 경고 숨기기 (`Package.swift`)
+
+`swiftSettings` 에 `.unsafeFlags(["-suppress-warnings"])` 를 넣었다. 원본 코드의 경고(macOS 13 이전 Sendable,
+안 쓰는 반환값, 기본값 추론 등)가 GodDB 빌드 출력을 덮어 GodDB 자체 경고를 찾기 어려웠다. 동작에는 영향이 없다.
+원본을 업데이트할 때 이 한 줄도 다시 넣는다.

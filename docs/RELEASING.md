@@ -79,6 +79,9 @@ rm ~/Desktop/DeveloperID.p12   # 등록 후 내보낸 파일은 지운다
 
 ## 로컬에서 릴리스 (CI 없이)
 
+> 앱에 넣는 FreeTDS · OpenSSL 은 빌드하는 Mac 의 Homebrew 것이라, 그 Mac 의 macOS 이상에서만 열린다.
+> 앱 최소 버전은 macOS 26 (GitHub 실행기와 같음). 더 새 macOS 에서 로컬로 만들면 그 버전 미만 사용자는 앱이 안 열리므로 **릴리스는 Actions 로** 한다.
+
 `./scripts/make-dmg.sh` 가 이 Mac 키체인의 인증서·공증 프로필(`goddb`)·업데이트 키로 같은 일을 한다. 그 뒤:
 
 ```bash

@@ -4,6 +4,8 @@ import PackageDescription
 let swiftSettings: [SwiftSetting] = [
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    // GodDB 패치: 가져다 쓰는 라이브러리의 경고는 GodDB 빌드 출력에서 숨긴다 (GODDB_PATCH.md)
+    .unsafeFlags(["-suppress-warnings"]),
 ]
 
 let package = Package(

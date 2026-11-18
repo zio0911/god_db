@@ -1,3 +1,4 @@
+@preconcurrency import CoreGraphics
 import GodDBCore
 import SwiftUI
 
