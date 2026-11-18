@@ -1,7 +1,10 @@
 # 릴리스 (자동)
 
-`vX.Y.Z` 태그를 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 **빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler → 업데이트 서명(appcast.xml) → GitHub 릴리스**까지 한다.
-`release` 환경에 묶여 있어 **저장소 주인이 Actions 화면에서 승인해야** 서명 단계가 시작된다. `v*` 태그에서만 실행할 수 있다.
+main 에서 **Release 워크플로를 버전과 함께 실행**하면 GitHub Actions(`.github/workflows/release.yml`)가 **빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler → 업데이트 서명(appcast.xml) → 태그 · GitHub 릴리스**까지 한다.
+`release` 환경에 묶여 있어 **저장소 주인이 Actions 화면에서 승인해야** 서명 단계가 시작된다. main 에서만 실행된다.
+
+- 빌드 캐시(`.build`)를 main 기준으로 저장해 다음 릴리스는 바뀐 부분만 다시 컴파일한다 (첫 실행 약 10분 → 이후 약 4~5분 예상).
+- 태그(`vX.Y.Z`)는 빌드가 끝난 뒤 그 커밋에 자동으로 만든다. 태그를 직접 올리지 않는다.
 
 ## 릴리스 전 확인
 
@@ -24,11 +27,12 @@
 git switch main && git pull
 # VERSION 파일과 docs/FEATURES.md 변경 이력(### X.Y.Z) 수정
 git commit -am "chore: X.Y.Z 릴리스 준비" && git push
-git tag vX.Y.Z && git push origin vX.Y.Z
-# → Actions > Release > Review deployments > release 승인 → 약 10~15분 뒤 릴리스 생성
+gh workflow run release.yml --ref main -f version=X.Y.Z
+# → Actions > Release > Review deployments > release 승인 → 빌드 · 공증 후 태그와 릴리스 생성
 ```
 
-같은 태그로 다시 만들려면 Actions > Release > Run workflow 에 태그를 넣는다 (파일만 다시 올림).
+웹에서는 Actions > Release > **Run workflow** (Branch: main) > 버전 `X.Y.Z` 입력.
+이미 있는 버전을 다시 만들려면 같은 버전으로 다시 실행한다 (그 태그를 빌드해 파일만 다시 올림).
 
 ### 릴리스 노트
 
@@ -41,10 +45,10 @@ git tag vX.Y.Z && git push origin vX.Y.Z
 
 1. `VERSION` 파일을 새 버전으로, `docs/FEATURES.md` 맨 위 버전 줄과 `### X.Y.Z` 변경 이력을 고쳐 main 에 커밋한다. (VERSION 과 태그가 다르면 워크플로가 멈춘다)
 2. Releases > **Draft a new release** > 태그 `vX.Y.Z` (Create new tag on publish, target `main`) > 제목 `GodDB X.Y.Z` > Generate release notes > **Publish release**
-3. Actions > Release 가 시작되면 **Review deployments** > `release` 승인. 자동으로 시작되지 않으면 Actions > Release > **Run workflow** 에 `vX.Y.Z`.
+3. Actions > Release > **Run workflow** (Branch: main) > 버전 `X.Y.Z` → **Review deployments** > `release` 승인.
 4. 약 10분 뒤 DMG · appcast.xml 이 붙고, 노트 맨 위에 FEATURES.md 변경 이력이 들어간다.
 
-웹에서 먼저 만들면 빌드가 끝날 때까지(약 10분) 최신 릴리스에 appcast.xml 이 없어 그 사이 앱의 업데이트 확인이 한 번 실패할 수 있다. 터미널에서 태그를 먼저 올리면 이 공백이 없다.
+웹에서 릴리스를 먼저 만들면 빌드가 끝날 때까지 최신 릴리스에 appcast.xml 이 없어 그 사이 앱의 업데이트 확인이 한 번 실패할 수 있다. 1~2 단계 없이 **Run workflow 만 하면** 빌드가 끝난 뒤 태그와 릴리스가 함께 생겨 이 공백이 없다.
 
 ## 처음 한 번: `release` 환경 Secrets 등록
 

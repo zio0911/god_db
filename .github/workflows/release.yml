@@ -1,23 +1,24 @@
 name: Release
 
-# v1.2.3 태그를 푸시하면: 빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler
-#   → 업데이트 서명(appcast.xml) → GitHub 릴리스 생성 + DMG/appcast 첨부
+# main 에서 수동 실행 (버전 입력): 빌드 → Developer ID 서명 → DMG → Apple 공증 → stapler
+#   → 업데이트 서명(appcast.xml) → 태그 · GitHub 릴리스 생성 + DMG/appcast 첨부
+#   gh workflow run release.yml --ref main -f version=1.3.8
+# 태그가 이미 있으면(웹에서 먼저 만든 릴리스 · 다시 빌드) 그 태그를 빌드한다.
+# main 에서 실행하는 이유: 빌드 캐시(.build)를 main 에 저장해 다음 릴리스가 재사용한다 (태그에서 저장한 캐시는 다른 태그가 못 씀).
 # 비밀 값은 `release` 환경의 Secrets 에만 있고, 환경 승인(사용자 확인) 후에만 실행된다.
-# 테스트는 다시 돌리지 않는다 — 태그에 들어간 코드는 PR 에서 이미 CI 를 통과했다.
+# 테스트는 다시 돌리지 않는다 — main 의 코드는 PR 에서 이미 CI 를 통과했다.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
-      tag:
-        description: "다시 만들 태그 (예: v1.1.0)"
+      version:
+        description: "릴리스할 버전 (VERSION 파일과 같아야 함, 예: 1.3.8)"
         required: true
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -26,22 +27,42 @@ jobs:
     environment: release
     timeout-minutes: 60
     env:
-      TAG: ${{ inputs.tag || github.ref_name }}
+      TAG: v${{ inputs.version }}
+      APP_VERSION: ${{ inputs.version }}
     steps:
+      - name: main 에서만 실행
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then echo "main 에서 실행하세요 (지금: $GITHUB_REF)"; exit 1; fi
+
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: 태그가 있으면 그 커밋으로
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            git checkout -q "$TAG"
+            echo "TAG_EXISTS=1" >> "$GITHUB_ENV"
+          fi
+          echo "BUILD_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: 빌드 캐시 (main 기준 — 바뀐 부분만 다시 컴파일)
+        uses: actions/cache@v6
+        with:
+          path: .build
+          key: release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-${{ github.run_id }}
+          restore-keys: |
+            release-${{ runner.os }}-${{ hashFiles('Package.resolved') }}-
+            release-${{ runner.os }}-
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: 버전 확인 (태그 = VERSION 파일)
+      - name: 버전 확인 (입력 = VERSION 파일)
         run: |
-          V="${TAG#v}"
           F="$(cat VERSION)"
-          if [[ "$V" != "$F" ]]; then echo "태그 $TAG 와 VERSION 파일($F)이 달라요"; exit 1; fi
-          echo "APP_VERSION=$V" >> "$GITHUB_ENV"
+          if [[ "$APP_VERSION" != "$F" ]]; then echo "입력한 버전 $APP_VERSION 와 VERSION 파일($F)이 달라요"; exit 1; fi
 
       - name: FreeTDS 설치 (SQL Server 드라이버)
         run: brew install freetds
@@ -110,7 +131,8 @@ jobs:
               gh release edit "$TAG" --notes-file "$RUNNER_TEMP/merged.md"
             fi
           else
-            gh release create "$TAG" "$DMG" build/appcast.xml --verify-tag --title "GodDB $APP_VERSION" \
+            # 태그가 없으면 빌드한 커밋에 만든다
+            gh release create "$TAG" "$DMG" build/appcast.xml --target "$BUILD_SHA" --title "GodDB $APP_VERSION" \
               --generate-notes --notes-file "$RUNNER_TEMP/notes.md"
           fi
 
