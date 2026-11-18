@@ -4,6 +4,7 @@ import Foundation
 extension L10nEnglish {
     static let safety: [String: String] = [
         "'%@' 접속을 삭제할까요?": "Delete the connection '%@'?",
+        "Redis 서버가 %@초 안에 응답하지 않았어요. 주소 · 포트 · TLS 설정과 네트워크(SSH 터널)를 확인하세요.": "The Redis server didn't respond within %@ seconds. Check the address, port, TLS setting and network (SSH tunnel).",
         "'%@' 접속의 저장된 비밀번호를 보려고 해요": "show the saved password for '%@'",
         "%@ 저장된 비밀번호 보기 (본인 확인)": "%@: saved password shown (owner verified)",
         "비밀번호 보기": "Show Password",

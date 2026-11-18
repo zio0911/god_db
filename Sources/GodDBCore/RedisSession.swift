@@ -1,4 +1,5 @@
 import Foundation
+import NIOCore
 
 /// 키 정보
 public struct RedisKeyInfo: Sendable, Equatable {
@@ -73,6 +74,8 @@ public actor RedisSession {
     public private(set) var topology: Topology = .standalone
     public private(set) var db: Int = 0
     private var password: String?
+    /// 연결 과정 명령(AUTH · SELECT · INFO · CLUSTER SLOTS · 센티널 조회)의 응답 제한
+    private var timeout: TimeAmount = .seconds(10)
     /// 노드 주소("host:port") → 연결 / SSH 터널
     private var conns: [String: RedisConnection] = [:]
     private var tunnels: [String: SSHTunnel] = [:]
@@ -84,8 +87,10 @@ public actor RedisSession {
         self.profile = profile
     }
 
-    public static func connect(profile: ConnectionProfile, password: String?) async throws -> RedisSession {
+    public static func connect(profile: ConnectionProfile, password: String?,
+                               timeout: TimeAmount = .seconds(10)) async throws -> RedisSession {
         let s = RedisSession(profile: profile)
+        await s.setTimeout(timeout)
         do {
             try await s.open(password: password)
         } catch {
@@ -94,6 +99,8 @@ public actor RedisSession {
         }
         return s
     }
+
+    private func setTimeout(_ t: TimeAmount) { timeout = t }
 
     /// 접속 화면의 "DB" 칸 (비어 있으면 0)
     public static func databaseIndex(_ text: String) -> Int {
@@ -135,13 +142,18 @@ public actor RedisSession {
             let conn = try await connection(seed)
             // 단일로 설정했어도 서버가 Cluster 면 자동으로 Cluster 로 동작한다
             var clusterEnabled = profile.redisMode == .cluster
-            if !clusterEnabled, let text = try? await conn.send(["INFO", "cluster"]).string {
-                clusterEnabled = text.contains("cluster_enabled:1")
+            if !clusterEnabled {
+                do {
+                    clusterEnabled = (try await conn.send(["INFO", "cluster"], timeout: timeout).string ?? "")
+                        .contains("cluster_enabled:1")
+                } catch is RedisServerError {
+                    // INFO 를 막은 서버는 단일로 본다. 시간 초과 · 연결 끊김은 실패로 본다
+                }
             }
             if clusterEnabled {
                 try await refreshSlots()
             } else if wantedDB != 0 {
-                try await conn.send(["SELECT", String(wantedDB)])
+                try await conn.send(["SELECT", String(wantedDB)], timeout: timeout)
                 db = wantedDB
             }
         }
@@ -159,7 +171,7 @@ public actor RedisSession {
                 do {
                     let c = try await RedisConnection.connect(options(addr, password: pw, database: 0))
                     defer { Task { await c.close() } }
-                    let v = try await c.send(["SENTINEL", "get-master-addr-by-name", name])
+                    let v = try await c.send(["SENTINEL", "get-master-addr-by-name", name], timeout: timeout)
                     guard let a = v.array, a.count == 2, let host = a[0].string, let port = a[1].int else {
                         throw RedisCommandError.sentinelMasterNotFound(name)
                     }
@@ -179,7 +191,7 @@ public actor RedisSession {
     /// CLUSTER SLOTS 로 슬롯 표를 다시 읽는다
     private func refreshSlots() async throws {
         let seedHost = RedisCluster.split(primary)?.host ?? profile.host
-        let v = try await connection(primary).send(["CLUSTER", "SLOTS"])
+        let v = try await connection(primary).send(["CLUSTER", "SLOTS"], timeout: timeout)
         let parsed = RedisCluster.parseSlots(v, seedHost: seedHost)
         guard !parsed.isEmpty else { return }
         slots = parsed
@@ -207,7 +219,8 @@ public actor RedisSession {
         return RedisConnection.Options(
             host: h, port: p,
             serverName: (profile.ssh == nil && !HostResolver.isIPAddress(host)) ? host : nil,
-            useTLS: profile.useTLS, username: profile.username, password: password, database: database)
+            useTLS: profile.useTLS, username: profile.username, password: password, database: database,
+            timeout: timeout)
     }
 
     /// 노드 연결 (없거나 끊겼으면 연다)

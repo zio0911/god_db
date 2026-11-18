@@ -3,6 +3,14 @@ import NIOCore
 import NIOPosix
 import NIOSSL
 
+/// 연결 과정에서 서버가 정해진 시간 안에 응답하지 않음
+public struct RedisTimeoutError: LocalizedError, Sendable {
+    public let seconds: Int
+    public var errorDescription: String? {
+        tr("Redis 서버가 %@초 안에 응답하지 않았어요. 주소 · 포트 · TLS 설정과 네트워크(SSH 터널)를 확인하세요.", "\(seconds)")
+    }
+}
+
 /// Redis 연결 하나. 명령은 보낸 순서대로 응답이 온다 (파이프라인).
 /// 구독(SUBSCRIBE) 연결로 쓰면 모든 응답을 push 스트림으로 넘긴다.
 public final class RedisConnection: @unchecked Sendable {
@@ -25,6 +33,8 @@ public final class RedisConnection: @unchecked Sendable {
         var password: String?
         var database: Int
         var clientName = "GodDB"
+        /// 연결 과정 명령(AUTH · SELECT 등)의 응답 제한
+        var timeout: TimeAmount = .seconds(10)
     }
 
     static func connect(_ o: Options) async throws -> RedisConnection {
@@ -51,13 +61,17 @@ public final class RedisConnection: @unchecked Sendable {
         do {
             if let pw = o.password, !pw.isEmpty {
                 if o.username.isEmpty {
-                    _ = try await conn.send(["AUTH", pw])
+                    _ = try await conn.send(["AUTH", pw], timeout: o.timeout)
                 } else {
-                    _ = try await conn.send(["AUTH", o.username, pw])
+                    _ = try await conn.send(["AUTH", o.username, pw], timeout: o.timeout)
                 }
             }
-            if o.database != 0 { _ = try await conn.send(["SELECT", String(o.database)]) }
-            _ = try? await conn.send(["CLIENT", "SETNAME", o.clientName])
+            if o.database != 0 { _ = try await conn.send(["SELECT", String(o.database)], timeout: o.timeout) }
+            do {
+                _ = try await conn.send(["CLIENT", "SETNAME", o.clientName], timeout: o.timeout)
+            } catch let e as RedisServerError {
+                _ = e  // 이름 붙이기를 막은 서버(권한 등)는 무시. 시간 초과 · 연결 끊김은 실패로 본다
+            }
         } catch {
             await conn.close()
             throw error
@@ -66,22 +80,32 @@ public final class RedisConnection: @unchecked Sendable {
     }
 
     /// 명령 하나를 보내고 응답을 받는다. 서버 오류(-ERR …)는 RedisServerError 로 던진다.
+    /// - timeout: 이 시간 안에 응답이 없으면 연결을 닫고 RedisTimeoutError (nil 이면 제한 없음 — BLPOP 같은 콘솔 명령)
     @discardableResult
-    public func send(_ args: [String]) async throws -> RESPValue {
-        try await sendBytes(args.map { Array($0.utf8) })
+    public func send(_ args: [String], timeout: TimeAmount? = nil) async throws -> RESPValue {
+        try await sendBytes(args.map { Array($0.utf8) }, timeout: timeout)
     }
 
     @discardableResult
-    public func sendBytes(_ args: [[UInt8]]) async throws -> RESPValue {
-        let v = try await raw(args)
+    public func sendBytes(_ args: [[UInt8]], timeout: TimeAmount? = nil) async throws -> RESPValue {
+        let v = try await raw(args, timeout: timeout)
         if case .error(let m) = v { throw RedisServerError(message: m) }
         return v
     }
 
     /// 오류 응답도 값으로 돌려준다 (콘솔용)
-    public func raw(_ args: [[UInt8]]) async throws -> RESPValue {
+    public func raw(_ args: [[UInt8]], timeout: TimeAmount? = nil) async throws -> RESPValue {
         guard channel.isActive else { throw DBError.notConnected }
         let promise = channel.eventLoop.makePromise(of: RESPValue.self)
+        if let timeout {
+            // 응답이 없으면 연결에 오류를 흘려 대기 중인 요청을 모두 실패시키고 연결을 닫는다
+            let seconds = Int(timeout.nanoseconds / 1_000_000_000)
+            let handler = self.handler
+            let task = channel.eventLoop.scheduleTask(in: timeout) {
+                handler.abort(RedisTimeoutError(seconds: seconds))
+            }
+            promise.futureResult.whenComplete { _ in task.cancel() }
+        }
         channel.writeAndFlush(RedisHandler.Request(args: args, promise: promise), promise: nil)
         return try await promise.futureResult.get()
     }
@@ -119,8 +143,18 @@ final class RedisHandler: ChannelDuplexHandler, @unchecked Sendable {
     }
 
     private var buffer: ByteBuffer?
+    private var context: ChannelHandlerContext?
     private var waiting: CircularBuffer<EventLoopPromise<RESPValue>> = []
     private var push: ((RESPValue) -> Void)?
+
+    func handlerAdded(context: ChannelHandlerContext) { self.context = context }
+    func handlerRemoved(context: ChannelHandlerContext) { self.context = nil }
+
+    /// 이벤트 루프에서 부른다: 기다리는 요청을 모두 실패시키고 연결을 닫는다 (응답 시간 초과)
+    func abort(_ error: Error) {
+        failAll(error)
+        context?.close(promise: nil)
+    }
 
     func setPush(on loop: EventLoop, _ f: @escaping (RESPValue) -> Void) {
         loop.execute { self.push = f }
