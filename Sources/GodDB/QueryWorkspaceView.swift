@@ -248,14 +248,25 @@ struct QueryTabView: View {
             }
             .help(tr("실행한 쿼리 다시 찾기 (⌘Y)"))
 
-            Picker(tr("페이지"), selection: $app.rowLimit) {
-                Text("100").tag(100)
-                Text("500").tag(500)
-                Text("1000").tag(1000)
-                Text("5000").tag(5000)
-                Text(tr("제한 없음")).tag(0)
+            // 좁아져도 선택한 값(500 등)은 항상 보이게: 이름표는 compact 에서 숨기고 선택 상자는 줄이지 않는다
+            HStack(spacing: 4) {
+                if !compact { Text(tr("페이지")) }
+                Picker(tr("페이지"), selection: $app.rowLimit) {
+                    Text("100").tag(100)
+                    Text("500").tag(500)
+                    Text("1000").tag(1000)
+                    Text("5000").tag(5000)
+                    Text(tr("제한 없음")).tag(0)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                // 좁을 때 도구 막대에 걸리는 아이콘만 보기(.iconOnly)가 선택한 값 글자까지 숨겨서 되돌린다
+                .labelStyle(.titleAndIcon)
+                .frame(minWidth: 72)
             }
             .fixedSize()
+            .layoutPriority(1)
+            .help(tr("한 번에 가져올 행 수"))
             if let p = app.profiles.first(where: { $0.id == tab.profileID }), p.kind != .redis, !p.readOnly,
                app.connections[tab.profileID]?.state == .connected {
                 Divider().frame(height: 18)
@@ -787,6 +798,7 @@ struct StatusBar: View {
                 if result.appendMode {
                     HStack(spacing: 6) {
                         Text(tr("%@행", "\(result.rows.count.formatted())")).monospacedDigit().foregroundStyle(.primary)
+                            .fixedSize()
                         if loading { ProgressView().controlSize(.small) }
                         Text(!result.hasMore ? tr("· 끝")
                              : appendCapped ? tr("· 화면 최대 %@행 — 전체는 [내보내기]", AppState.maxRowsInMemory.formatted())
@@ -795,13 +807,15 @@ struct StatusBar: View {
                 } else if result.isPaged {
                     pager
                 } else {
-                    Text(tr("%@행", "\(result.rows.count.formatted())"))
+                    Text(tr("%@행", "\(result.rows.count.formatted())")).fixedSize()
                 }
-                if selectedCount > 0 { Text(tr("%@행 선택", "\(selectedCount)")) }
+                if selectedCount > 0 { Text(tr("%@행 선택", "\(selectedCount)")).fixedSize() }
             }
-            Text(String(format: "%.0fms", result.elapsed * 1000))
+            Text(String(format: "%.0fms", result.elapsed * 1000)).fixedSize()
             if !result.columns.isEmpty && selectedCount == 0 && !result.isPaged {
+                // 자리가 모자라면 이 안내부터 줄어든다
                 Text(tr("행을 클릭하면 상세가 나와요")).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.tail).layoutPriority(-1)
             }
             Spacer()
             if let p = exportProgress {
@@ -817,8 +831,10 @@ struct StatusBar: View {
                     onExport()
                 } label: {
                     Label(tr("내보내기"), systemImage: "square.and.arrow.down")
+                        .lineLimit(1)
                 }
                 .buttonStyle(.hover)
+                .fixedSize()
                 .disabled(loading)
                 .help(tr("결과를 파일로 저장: CSV · TSV · Excel · JSON · SQL INSERT · Markdown (보이는 행 또는 쿼리 전체 데이터)"))
             }
@@ -841,6 +857,7 @@ struct StatusBar: View {
             ZStack {
                 Text(result.rows.isEmpty ? tr("0행") : tr("%@–%@행", "\(first.formatted())", "\(last.formatted())"))
                     .monospacedDigit()
+                    .fixedSize()
                     .foregroundStyle(.primary)
                     .opacity(loading ? 0.3 : 1)
                 if loading { ProgressView().controlSize(.small) }
@@ -855,12 +872,16 @@ struct StatusBar: View {
         }
         .buttonStyle(.hover)
         .disabled(loading)
+        .fixedSize()
         if let total = result.totalCount {
             Text(tr("/ 전체 %@행 · %@/%@페이지", "\(total.formatted())", "\(result.page + 1)", "\((lastPage ?? 0) + 1)"))
+                .lineLimit(1).truncationMode(.middle)
         } else {
             Text(tr("%@페이지", "\(result.page + 1)") + (result.hasMore ? tr(" · 더 있음") : tr(" · 끝")))
+                .lineLimit(1)
             Button(tr("전체 행 수")) { onCount() }
                 .buttonStyle(.hover)
+                .fixedSize()
                 .disabled(loading)
                 .help(tr("SELECT COUNT(*) 로 전체 행 수를 세요 (큰 테이블은 오래 걸릴 수 있어요)"))
         }
