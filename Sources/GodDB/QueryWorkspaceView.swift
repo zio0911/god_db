@@ -129,7 +129,11 @@ struct QueryTabView: View {
     @Environment(AppState.self) private var app
     @Binding var tab: QueryTab
     @State private var controller = EditorController()
-    @State private var editorHeight: CGFloat = 220
+    /// 편집기 높이 (결과 창과의 경계). 조절하면 모든 탭 · 다음 실행에 쓴다
+    @AppStorage("GodDB.query.editorHeight") private var storedEditorHeight: Double = 220
+    private var editorHeight: Binding<CGFloat> {
+        Binding(get: { CGFloat(storedEditorHeight) }, set: { storedEditorHeight = Double($0) })
+    }
     /// 선택 없이 전체 실행할 때 변경 문이 섞여 있으면 확인을 받는다.
     @State private var pendingRun: RunConfirm?
 
@@ -154,9 +158,9 @@ struct QueryTabView: View {
                     Divider()
                     SQLEditorView(text: $tab.text, controller: controller)
                 }
-                .frame(height: min(editorHeight, max(80, geo.size.height - 140)))
+                .frame(height: min(editorHeight.wrappedValue, max(80, geo.size.height - 140)))
 
-                ResizeHandle(axis: .horizontal, size: $editorHeight, range: 80...max(80, geo.size.height - 140),
+                ResizeHandle(axis: .horizontal, size: editorHeight, range: 80...max(80, geo.size.height - 140),
                              growsTowardStart: false)
 
                 ResultPane(tab: tab,
@@ -208,7 +212,15 @@ struct QueryTabView: View {
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 .buttonStyle(.borderedProminent)
-                .help(tr("선택 영역만 실행, 선택이 없으면 전체를 위에서부터 실행 (⌘↩)"))
+                .help(tr("선택 영역만 실행, 선택이 없으면 커서가 있는 문장(강조된 문장)만 실행 (⌘↩)"))
+
+                Button {
+                    run(explain: false, all: true)
+                } label: {
+                    Label(tr("전체 실행"), systemImage: "forward.fill")
+                }
+                .keyboardShortcut(.return, modifiers: [.command, .option])
+                .help(tr("편집기의 모든 문장을 위에서부터 실행 (⌥⌘↩)"))
             }
 
             Button {
@@ -274,13 +286,13 @@ struct QueryTabView: View {
             }
             Spacer(minLength: 0)
             if !compact {
-                Text(tr("Tab 자동완성 · ⌘↩ 실행 · ⇧⌘↩ 실행 계획 · ⌘/ 주석 · ⌥⌘L 정렬")).font(.caption).foregroundStyle(.secondary)
+                Text(tr("Tab 자동완성 · ⌘↩ 커서 문장 실행 · ⌥⌘↩ 전체 실행 · ⇧⌘↩ 실행 계획 · ⌘/ 주석 · ⌥⌘L 정렬")).font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(8)
     }
 
-    private func run(explain: Bool) {
+    private func run(explain: Bool, all: Bool = false) {
         if explain {
             // 실행 계획은 선택 영역 또는 커서가 있는 문장 하나
             guard let sql = controller.sqlToRun() else { return }
@@ -288,13 +300,19 @@ struct QueryTabView: View {
             if confirm.needsConfirm { pendingRun = confirm } else { start(confirm) }
             return
         }
-        // 선택 영역이 있으면 그 안의 문장만, 없으면 편집기 전체
-        let selected = controller.selectedSQL()
-        let source = selected ?? tab.text
-        let statements = SQLText.statements(in: source).map(\.sql)
+        // 전체 실행: 편집기의 모든 문장. 그 외: 선택 영역이 있으면 그 안의 문장들, 없으면 커서가 있는 문장 하나
+        let selected = all ? nil : controller.selectedSQL()
+        let statements: [String]
+        if all {
+            statements = SQLText.statements(in: tab.text).map(\.sql)
+        } else if let selected {
+            statements = SQLText.statements(in: selected).map(\.sql)
+        } else {
+            statements = controller.sqlToRun().map { SQLText.statements(in: $0).map(\.sql) } ?? []
+        }
         guard !statements.isEmpty else { return }
         let confirm = RunConfirm(statements: statements,
-                                 wholeScript: selected == nil && statements.count > 1 && statements.contains { !SQLText.isReadOnly($0) },
+                                 wholeScript: all && statements.count > 1 && statements.contains { !SQLText.isReadOnly($0) },
                                  dangerous: statements.filter { SQLText.danger($0) != nil },
                                  discardedEdits: tab.edits.count,
                                  production: app.profile(tab.profileID)?.environment == .production)
@@ -930,7 +948,7 @@ struct RunConfirm: Identifiable {
             parts.append(lines.joined(separator: "\n") + (dangerous.count > 3 ? "\n…" : ""))
         }
         if wholeScript {
-            parts.append(tr("선택 영역이 없어서 편집기의 모든 문장(%@개, 변경 문 %@개)을 위에서부터 실행해요. 일부만 실행하려면 그 부분을 선택하세요.",
+            parts.append(tr("편집기의 모든 문장(%@개, 변경 문 %@개)을 위에서부터 실행해요. 한 문장만 실행하려면 그 문장에 커서를 두고 ⌘↩ 를 누르세요.",
                             "\(statements.count)", "\(writes.count)"))
         }
         if discardedEdits > 0 {

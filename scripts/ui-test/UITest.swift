@@ -457,6 +457,79 @@ scenario("queryLayout") {
           range.map { "폭 \(Int($0.frame.width)) / 필요 \(Int(needRange))" } ?? "행 범위 없음")
 }
 
+/// 요소 아래 글자를 모두 모은다 (깊이 제한)
+func texts(under el: AXUIElement, depth: Int = 5) -> [String] {
+    var out: [String] = []
+    let n = node(el)
+    if !n.value.isEmpty { out.append(n.value) }
+    if depth > 0, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] {
+        for k in kids { out += texts(under: k, depth: depth - 1) }
+    }
+    return out
+}
+
+/// 편집기(스크롤 영역) 높이
+func editorHeight() -> CGFloat? {
+    guard let ed = editor(), let parent = attr(ed.el, kAXParentAttribute) else { return nil }
+    return frameOf(parent as! AXUIElement).height
+}
+
+func drag(from a: CGPoint, to b: CGPoint) {
+    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: a, mouseButton: .left))
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left))
+    for i in 1...10 {
+        let p = CGPoint(x: a.x + (b.x - a.x) * CGFloat(i) / 10, y: a.y + (b.y - a.y) * CGFloat(i) / 10)
+        post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: p, mouseButton: .left))
+        usleep(30_000)
+    }
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left))
+    Thread.sleep(forTimeInterval: 0.4)
+}
+
+scenario("runCurrent") {
+    // 문장이 둘일 때 ⌘↩ 는 커서가 있는 문장만, ⌥⌘↩ 는 전체
+    try setEditor("SELECT 'first1' AS v;\nSELECT 'second2' AS v;", cursorAtEnd: false)
+    runQuery()
+    let first = app.find(6, cell("first1")) != nil
+    check("⌘↩: 커서가 있는 첫 문장만 실행", first && app.find(1, cell("second2")) == nil)
+    key("return", [.maskCommand, .maskAlternate])
+    check("⌥⌘↩: 전체 실행 (두 번째 문장 결과도 나옴)", app.find(6, cell("second2")) != nil)
+}
+
+scenario("editorHeight") {
+    // 편집기 / 결과 경계를 내리면 새 탭에서도 그 높이를 기억
+    guard let ed = editor(), let parent = attr(ed.el, kAXParentAttribute) else { throw Abort(message: "편집기 없음") }
+    let f = frameOf(parent as! AXUIElement)
+    let before = f.height
+    drag(from: CGPoint(x: f.midX, y: f.maxY + 3), to: CGPoint(x: f.midX, y: f.maxY + 123))
+    let after = editorHeight() ?? 0
+    check("경계를 끌면 편집기가 커짐", after > before + 60, "\(Int(before)) → \(Int(after))")
+    key("t", cmd)
+    Thread.sleep(forTimeInterval: 0.8)
+    let newTab = editorHeight() ?? 0
+    check("새 탭에서도 같은 편집기 높이", abs(newTab - after) < 12, "\(Int(after)) / 새 탭 \(Int(newTab))")
+    key("w", cmd)
+    Thread.sleep(forTimeInterval: 0.5)
+    if let g = editor(), let p2 = attr(g.el, kAXParentAttribute) {
+        let f2 = frameOf(p2 as! AXUIElement)
+        drag(from: CGPoint(x: f2.midX, y: f2.maxY + 3), to: CGPoint(x: f2.midX, y: f2.maxY + 3 - (after - before)))
+    }
+}
+
+scenario("groupSelect") {
+    // 그룹 안 접속을 눌러도 그룹 줄이 선택(강조)되지 않음
+    guard let child = app.find(3, role("AXStaticText", "UI MySQL Prod")) else { throw Abort(message: "그룹 안 접속 없음") }
+    click(child)
+    Thread.sleep(forTimeInterval: 0.6)
+    let selectedRows = app.snapshot().filter { n in
+        n.role == "AXRow" && ((attr(n.el, kAXSelectedAttribute) as? Bool) ?? false)
+    }
+    let groupSelected = selectedRows.contains { texts(under: $0.el).contains("UI 그룹") }
+    check("그룹 안 접속을 눌러도 그룹 전체가 선택되지 않음", !groupSelected, "선택된 줄 \(selectedRows.count)개")
+    check("선택한 테이블 목록에 그룹이 섞이지 않음", app.find(1, hasText("개 선택")) == nil)
+    if let dev = app.find(3, role("AXStaticText", "UI MySQL")) , dev.value == "UI MySQL" { click(dev) }
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {
