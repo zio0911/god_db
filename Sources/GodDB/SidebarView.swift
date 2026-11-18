@@ -145,10 +145,9 @@ struct ProfileRow: View {
                 .frame(width: 7, height: 7)
                 .opacity(state == .connecting ? 0 : 1)
                 .overlay { if state == .connecting { ProgressView().controlSize(.mini) } }
-            Image(systemName: "cylinder.split.1x2")
-                .foregroundStyle(selected ? Color.accentColor : .secondary)
-            Text(profile.name).lineLimit(1)
             KindBadge(kind: profile.kind)
+            Text(profile.name).lineLimit(1)
+                .fontWeight(selected ? .semibold : .regular)
             EnvironmentBadge(environment: profile.environment)
             if profile.readOnly {
                 Text(tr("읽기전용")).font(.caption2).foregroundStyle(.red)
@@ -200,24 +199,45 @@ struct ProfileRow: View {
 }
 
 /// DB 종류 작은 표시 (MY / PG / MSSQL)
+/// DB 종류 아이콘: 브랜드 로고(MySQL · PostgreSQL · Redis, Simple Icons)를 브랜드 색으로. SQL Server 는 SF Symbol.
 struct KindBadge: View {
     let kind: DatabaseKind
+    var size: CGFloat = 16
 
     var body: some View {
-        Text(kind == .mssql ? "MSSQL" : kind == .postgres ? "PG" : kind == .redis ? "RD" : "MY")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 3)
-            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
-            .help(kind.title)
+        Group {
+            if let path = BrandLogo.paths[kind] {
+                SVGLogoShape(path: path).fill(kind.iconColor)
+            } else {
+                Image(systemName: kind.iconName)
+                    .font(.system(size: size * 0.78, weight: .semibold))
+                    .foregroundStyle(kind.iconColor)
+            }
+        }
+        .frame(width: size, height: size)
+        .help(kind.title)
+        .accessibilityLabel(kind.title)
+    }
+}
+
+extension DatabaseKind {
+    /// 메뉴 안(색이 빠지는 곳)에서 쓰는 SF Symbol
+    var iconName: String {
+        switch self {
+        case .mysql: return "fish.fill"
+        case .postgres: return "cylinder.fill"
+        case .mssql: return "server.rack"
+        case .redis: return "square.stack.3d.up.fill"
+        }
     }
 
-    private var color: Color {
-        switch kind {
-        case .mysql: return .orange
-        case .postgres: return .blue
-        case .mssql: return .purple
-        case .redis: return .red
+    /// 브랜드 색 (Simple Icons 기준, SQL Server 는 Microsoft SQL Server 빨강)
+    var iconColor: Color {
+        switch self {
+        case .mysql: return Color(red: 0x44 / 255, green: 0x79 / 255, blue: 0xA1 / 255)
+        case .postgres: return Color(red: 0x41 / 255, green: 0x69 / 255, blue: 0xE1 / 255)
+        case .mssql: return Color(red: 0xCC / 255, green: 0x29 / 255, blue: 0x27 / 255)
+        case .redis: return Color(red: 0xFF / 255, green: 0x44 / 255, blue: 0x38 / 255)
         }
     }
 }

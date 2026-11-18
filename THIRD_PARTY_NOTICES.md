@@ -4,6 +4,7 @@ GodDB는 MIT 라이선스이며 아래 오픈소스를 사용합니다. 전체 �
 
 | 이름 | 버전 | 라이선스 | 저작권 | 비고 |
 |---|---|---|---|---|
+| [Simple Icons](https://simpleicons.org) | 16.38.0 | CC0-1.0 | Simple Icons contributors | MySQL · PostgreSQL · Redis 로고 (DB 종류 아이콘). MySQL 은 Oracle, PostgreSQL 은 PostgreSQL Community Association, Redis 는 Redis Ltd. 의 상표이며 DB 종류를 가리키는 용도로만 써요. |
 | [mysql-nio](https://github.com/vapor/mysql-nio) | 1.9.3 | MIT | Copyright (c) Qutheory, LLC | MySQL 드라이버 |
 | [postgres-nio](https://github.com/vapor/postgres-nio) | 1.33.3 (GodDB 패치) | MIT | Copyright (c) Tanner Nelson | PostgreSQL 드라이버 — 결과를 텍스트 형식으로 받도록 1줄 수정 (Vendor/postgres-nio/GODDB_PATCH.md) |
 | [SwiftNIO](https://github.com/apple/swift-nio) | 2.105.0 | Apache-2.0 | Copyright (c) Apple Inc. and the Swift project authors |  |
