@@ -6,7 +6,7 @@ struct ContentView: View {
     @Environment(AppState.self) private var app
     @Environment(\.openWindow) private var openWindow
     @AppStorage(AppSettings.assistantKey) private var assistantEnabled = true
-    @State private var logHeight: CGFloat = 220
+    @AppStorage(Layout.logHeight) private var logHeight: Double = 220
 
     var body: some View {
         @Bindable var app = app
@@ -44,9 +44,9 @@ struct ContentView: View {
 
                     if app.showLog {
                         let maxLog = max(120, geo.size.height - 260)
-                        ResizeHandle(axis: .horizontal, size: $logHeight, range: 100...maxLog)
+                        ResizeHandle(axis: .horizontal, size: $logHeight.cgFloat, range: 100...maxLog)
                         LogPanelView()
-                            .frame(height: min(logHeight, maxLog))
+                            .frame(height: min(CGFloat(logHeight), maxLog))
                     }
                     Divider()
                     MainStatusBar()
