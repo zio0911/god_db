@@ -400,6 +400,14 @@ scenario("compareLayout") {
     let win = app.snapshot().first { $0.role == "AXWindow" }?.frame ?? .zero
     check("스키마 비교: 기준 · 대상 선택이 창 안에 있음", pops.count >= 2 && pops.allSatisfy { $0.frame.maxX <= win.maxX + 1 },
           "\(pops.count)개")
+    // 접속 선택에 환경이 붙는지 (테스트 접속: UI MySQL · 개발)
+    if let pop = pops.first { press(pop); Thread.sleep(forTimeInterval: 0.5) }
+    check("스키마 비교: 접속 목록에 환경 표시 (UI MySQL · 개발)", app.find(2, hasText("UI MySQL · 개발")) != nil)
+    if let shotDir = ProcessInfo.processInfo.environment["GODDB_UI_SHOT_DIR"], !shotDir.isEmpty {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        p.arguments = ["-x", "\(shotDir)/compareMenu.png"]; try? p.run(); p.waitUntilExit()
+    }
+    key("escape")
     if let q = app.find(2, { $0.role == "AXRadioButton" && $0.label == "쿼리" }) { click(q) }
 }
 
