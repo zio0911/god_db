@@ -5,14 +5,14 @@ import SwiftUI
 /// 모델링 모드: 왼쪽 모델 목록 + 가운데 다이어그램 + 아래 테이블/관계 편집기 (MySQL Workbench 모델과 비슷)
 struct ModelingView: View {
     @Environment(AppState.self) private var app
-    @State private var listWidth: CGFloat = 220
+    @AppStorage(Layout.modelListWidth) private var listWidth: Double = 220
 
     var body: some View {
         let modeling = app.modeling
         HStack(spacing: 0) {
             ModelListView()
                 .frame(width: listWidth)
-            ResizeHandle(axis: .vertical, size: $listWidth, range: 170...360, growsTowardStart: false)
+            ResizeHandle(axis: .vertical, size: $listWidth.cgFloat, range: 170...360, growsTowardStart: false)
             if let id = modeling.selectedID, let binding = modeling.binding(id) {
                 ModelEditorView(model: binding)
                     .id(id)
@@ -140,7 +140,7 @@ struct ModelEditorView: View {
     @State private var pendingParent: UUID?
     @State private var selection: ModelSelection?
     @State private var zoom: CGFloat = 1
-    @State private var editorHeight: CGFloat = 280
+    @AppStorage(Layout.modelEditorHeight) private var editorHeight: Double = 280
     @State private var showSQL = false
     @State private var showCompare = false
     @State private var showIssues = false
@@ -202,9 +202,9 @@ struct ModelEditorView: View {
                     .onExitCommand { tool = .select; pendingParent = nil }
                     if selection != nil {
                         let maxH = max(160, geo.size.height - 160)
-                        ResizeHandle(axis: .horizontal, size: $editorHeight, range: 140...maxH)
+                        ResizeHandle(axis: .horizontal, size: $editorHeight.cgFloat, range: 140...maxH)
                         selectionEditor
-                            .frame(height: min(editorHeight, maxH))
+                            .frame(height: min(CGFloat(editorHeight), maxH))
                     }
                 }
             }

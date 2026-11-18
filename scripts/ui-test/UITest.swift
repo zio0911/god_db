@@ -400,6 +400,10 @@ scenario("compareLayout") {
     let win = app.snapshot().first { $0.role == "AXWindow" }?.frame ?? .zero
     check("스키마 비교: 기준 · 대상 선택이 창 안에 있음", pops.count >= 2 && pops.allSatisfy { $0.frame.maxX <= win.maxX + 1 },
           "\(pops.count)개")
+    // 접속 선택에 환경이 붙는지 (테스트 접속: UI MySQL · 개발)
+    if let pop = pops.first { press(pop); Thread.sleep(forTimeInterval: 0.5) }
+    check("스키마 비교: 접속 목록에 환경 표시 (UI MySQL · 개발)", app.find(2, hasText("UI MySQL · 개발")) != nil)
+    key("escape")
     if let q = app.find(2, { $0.role == "AXRadioButton" && $0.label == "쿼리" }) { click(q) }
 }
 
@@ -455,6 +459,94 @@ scenario("queryLayout") {
     }
     check("좁은 창 + AI 패널: 결과 아래 '1–5행' 이 잘리지 않음", range.map { $0.frame.width + 1 >= needRange } ?? false,
           range.map { "폭 \(Int($0.frame.width)) / 필요 \(Int(needRange))" } ?? "행 범위 없음")
+}
+
+/// 요소 아래 글자를 모두 모은다 (깊이 제한)
+func texts(under el: AXUIElement, depth: Int = 5) -> [String] {
+    var out: [String] = []
+    let n = node(el)
+    if !n.value.isEmpty { out.append(n.value) }
+    if depth > 0, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] {
+        for k in kids { out += texts(under: k, depth: depth - 1) }
+    }
+    return out
+}
+
+/// 편집기(스크롤 영역) 높이
+func editorHeight() -> CGFloat? {
+    guard let ed = editor(), let parent = attr(ed.el, kAXParentAttribute) else { return nil }
+    return frameOf(parent as! AXUIElement).height
+}
+
+func drag(from a: CGPoint, to b: CGPoint) {
+    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: a, mouseButton: .left))
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left))
+    for i in 1...10 {
+        let p = CGPoint(x: a.x + (b.x - a.x) * CGFloat(i) / 10, y: a.y + (b.y - a.y) * CGFloat(i) / 10)
+        post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: p, mouseButton: .left))
+        usleep(30_000)
+    }
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left))
+    Thread.sleep(forTimeInterval: 0.4)
+}
+
+scenario("runCurrent") {
+    // 문장이 둘일 때 ⌘↩ 는 커서가 있는 문장만, ⌥⌘↩ 는 전체
+    try setEditor("SELECT 'first1' AS v;\nSELECT 'second2' AS v;", cursorAtEnd: false)
+    runQuery()
+    let first = app.find(6, cell("first1")) != nil
+    check("⌘↩: 커서가 있는 첫 문장만 실행", first && app.find(1, cell("second2")) == nil)
+    key("return", [.maskCommand, .maskAlternate])
+    check("⌥⌘↩: 전체 실행 (두 번째 문장 결과도 나옴)", app.find(6, cell("second2")) != nil)
+}
+
+scenario("editorHeight") {
+    // 편집기 / 결과 경계를 내리면 새 탭에서도 그 높이를 기억
+    guard let ed = editor(), let parent = attr(ed.el, kAXParentAttribute) else { throw Abort(message: "편집기 없음") }
+    let f = frameOf(parent as! AXUIElement)
+    let before = f.height
+    drag(from: CGPoint(x: f.midX, y: f.maxY + 3), to: CGPoint(x: f.midX, y: f.maxY + 123))
+    let after = editorHeight() ?? 0
+    check("경계를 끌면 편집기가 커짐", after > before + 60, "\(Int(before)) → \(Int(after))")
+    key("t", cmd)
+    Thread.sleep(forTimeInterval: 0.8)
+    let newTab = editorHeight() ?? 0
+    check("새 탭에서도 같은 편집기 높이", abs(newTab - after) < 12, "\(Int(after)) / 새 탭 \(Int(newTab))")
+    key("w", cmd)
+    Thread.sleep(forTimeInterval: 0.5)
+    // 메뉴 보기 > 레이아웃 초기화 → 처음 높이로
+    check("메뉴에 '레이아웃 초기화' 가 있음", menuPress("레이아웃 초기화"))
+    Thread.sleep(forTimeInterval: 0.6)
+    let reset = editorHeight() ?? 0
+    check("레이아웃 초기화 후 편집기가 처음 높이로", abs(reset - before) < 12, "\(Int(before)) / 초기화 후 \(Int(reset))")
+}
+
+/// 메뉴 막대에서 제목으로 메뉴 항목을 찾아 누른다 (메뉴를 열지 않고 접근성 동작으로)
+func menuPress(_ title: String) -> Bool {
+    guard let bar = attr(app.ax, kAXMenuBarAttribute) else { return false }
+    var queue: [(AXUIElement, Int)] = [(bar as! AXUIElement, 0)]
+    while !queue.isEmpty {
+        let (el, d) = queue.removeFirst()
+        if (attr(el, kAXRoleAttribute) as? String) == "AXMenuItem", (attr(el, kAXTitleAttribute) as? String) == title {
+            return AXUIElementPerformAction(el, kAXPressAction as CFString) == .success
+        }
+        if d < 4, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
+    }
+    return false
+}
+
+scenario("groupSelect") {
+    // 그룹 안 접속을 눌러도 그룹 줄이 선택(강조)되지 않음
+    guard let child = app.find(3, role("AXStaticText", "UI MySQL Prod")) else { throw Abort(message: "그룹 안 접속 없음") }
+    click(child)
+    Thread.sleep(forTimeInterval: 0.6)
+    let selectedRows = app.snapshot().filter { n in
+        n.role == "AXRow" && ((attr(n.el, kAXSelectedAttribute) as? Bool) ?? false)
+    }
+    let groupSelected = selectedRows.contains { texts(under: $0.el).contains("UI 그룹") }
+    check("그룹 안 접속을 눌러도 그룹 전체가 선택되지 않음", !groupSelected, "선택된 줄 \(selectedRows.count)개")
+    check("선택한 테이블 목록에 그룹이 섞이지 않음", app.find(1, hasText("개 선택")) == nil)
+    if let dev = app.find(3, role("AXStaticText", "UI MySQL")) , dev.value == "UI MySQL" { click(dev) }
 }
 
 /// 테스트 앱 설정 값 바꾸기 (번들 ID 를 바꾼 복사본이라 실제 GodDB 설정은 건드리지 않는다)

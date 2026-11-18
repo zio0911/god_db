@@ -53,12 +53,13 @@ struct ProfileList: View {
     }
 
     var body: some View {
-        ForEach(app.profiles.filter { $0.group.isEmpty }) { ProfileRow(profile: $0) }
+        // 접속 · 그룹 줄은 목록 선택(테이블 여러 개 고르기)에 끼지 않는다. 접속 강조는 ProfileRow 가 직접 그린다
+        ForEach(app.profiles.filter { $0.group.isEmpty }) { ProfileRow(profile: $0).selectionDisabled() }
         ForEach(app.profileGroups, id: \.self) { group in
             let members = app.profiles.filter { $0.group == group }
             DisclosureGroup(isExpanded: Binding(get: { !collapsed.contains(group) },
                                                 set: { setExpanded(group, $0) })) {
-                ForEach(members) { ProfileRow(profile: $0) }
+                ForEach(members) { ProfileRow(profile: $0).selectionDisabled() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "folder.fill").foregroundStyle(Color.accentColor.opacity(0.8))
@@ -81,6 +82,8 @@ struct ProfileList: View {
                     return !items.isEmpty
                 }
             }
+            // 그룹 이름이 꼬리표가 되어 선택되는 것을 막는다 (하위 접속을 눌렀는데 그룹 전체가 선택돼 보이던 문제)
+            .selectionDisabled()
         }
     }
 }
