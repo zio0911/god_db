@@ -447,6 +447,12 @@ scenario("queryLayout") {
           limit.map { "폭 \(Int($0.frame.width)) / 필요 \(Int(needLimit))" } ?? "선택 상자 없음")
     let range = nodes.first { $0.role == "AXStaticText" && $0.value == "1–5행" }
     let needRange = textWidth("1–5행", .preferredFont(forTextStyle: .callout))
+    // 결과 아래 버튼 글자가 두 줄로 깨지지 않음 (한 줄 높이 ≈ 20pt)
+    for title in ["전체 행 수", "내보내기"] {
+        let b = nodes.first { $0.role == "AXButton" && $0.text.contains(title) }
+        check("좁은 창 + AI 패널: '\(title)' 버튼이 한 줄", b.map { $0.frame.height < 30 } ?? false,
+              b.map { "높이 \(Int($0.frame.height))" } ?? "버튼 없음")
+    }
     check("좁은 창 + AI 패널: 결과 아래 '1–5행' 이 잘리지 않음", range.map { $0.frame.width + 1 >= needRange } ?? false,
           range.map { "폭 \(Int($0.frame.width)) / 필요 \(Int(needRange))" } ?? "행 범위 없음")
 }

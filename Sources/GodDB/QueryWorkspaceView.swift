@@ -260,6 +260,8 @@ struct QueryTabView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
+                // 좁을 때 도구 막대에 걸리는 아이콘만 보기(.iconOnly)가 선택한 값 글자까지 숨겨서 되돌린다
+                .labelStyle(.titleAndIcon)
                 .frame(minWidth: 72)
             }
             .fixedSize()
@@ -829,8 +831,10 @@ struct StatusBar: View {
                     onExport()
                 } label: {
                     Label(tr("내보내기"), systemImage: "square.and.arrow.down")
+                        .lineLimit(1)
                 }
                 .buttonStyle(.hover)
+                .fixedSize()
                 .disabled(loading)
                 .help(tr("결과를 파일로 저장: CSV · TSV · Excel · JSON · SQL INSERT · Markdown (보이는 행 또는 쿼리 전체 데이터)"))
             }
@@ -877,6 +881,7 @@ struct StatusBar: View {
                 .lineLimit(1)
             Button(tr("전체 행 수")) { onCount() }
                 .buttonStyle(.hover)
+                .fixedSize()
                 .disabled(loading)
                 .help(tr("SELECT COUNT(*) 로 전체 행 수를 세요 (큰 테이블은 오래 걸릴 수 있어요)"))
         }

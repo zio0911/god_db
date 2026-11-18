@@ -187,6 +187,7 @@ struct DiagramView: View {
                 ForEach(DiagramNameMode.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
+            .labelStyle(.titleAndIcon)  // 좁을 때 걸리는 아이콘만 보기가 글자를 숨기지 않게
             .fixedSize()
             .help(tr("물리명: 실제 테이블·컬럼 이름 / 논리명: 코멘트 (없으면 물리명)"))
             Toggle(isOn: Binding(get: { showInferred }, set: { showInferred = $0; relayoutAnimated() })) {
