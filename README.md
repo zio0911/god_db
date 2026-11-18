@@ -1,6 +1,6 @@
 # GodDB (갓디비)
 
-무료 macOS DB 클라이언트 — **MySQL / PostgreSQL / SQL Server / Redis**.
+무료 macOS DB 클라이언트 — **MySQL / PostgreSQL / SQL Server / Redis**. **macOS 26 이상** (Apple 실리콘).
 SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https://github.com/vapor/postgres-nio)(텍스트 결과 패치본, `Vendor/`) + [FreeTDS](https://www.freetds.org).
 
 상세 기능 명세: [docs/FEATURES.md](docs/FEATURES.md) · 한국어 / English (설정 `⌘,`)

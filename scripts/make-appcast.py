@@ -44,7 +44,7 @@ xml = f"""<?xml version="1.0" encoding="utf-8"?>
       <pubDate>{pub}</pubDate>
       <sparkle:version>{bundle_version}</sparkle:version>
       <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
       <sparkle:releaseNotesLink>https://github.com/{repo}/releases/tag/v{version}</sparkle:releaseNotesLink>
       <description><![CDATA[{notes}]]></description>
       <enclosure url="{url}" type="application/octet-stream" {sig.strip()} />

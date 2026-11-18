@@ -6,7 +6,8 @@ let freetdsLib = "/opt/homebrew/opt/freetds/lib"
 
 let package = Package(
     name: "GodDB",
-    platforms: [.macOS(.v15)],
+    // 앱에 넣는 FreeTDS · OpenSSL(Homebrew) 이 macOS 26 용이라 앱도 26 이상 (그보다 낮으면 앱이 열리지 않는다)
+    platforms: [.macOS("26.0")],
     products: [
         .executable(name: "GodDB", targets: ["GodDB"])
     ],
