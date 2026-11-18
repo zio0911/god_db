@@ -113,7 +113,7 @@ struct DiagramView: View {
     @State private var didFit = false
     @State private var showAI = false
     @State private var chat: DiagramChat
-    @State private var aiWidth: CGFloat = 380
+    @AppStorage(Layout.diagramAIWidth) private var aiWidth: Double = 380
     @AppStorage("GodDB.diagram.nameMode") private var nameModeRaw = DiagramNameMode.physical.rawValue
 
     private let margin: CGFloat = 40
@@ -157,7 +157,7 @@ struct DiagramView: View {
                 .onChange(of: geo.size) { viewport = geo.size }
             }
             if showAI {
-                ResizeHandle(axis: .vertical, size: $aiWidth, range: 300...700)
+                ResizeHandle(axis: .vertical, size: $aiWidth.cgFloat, range: 300...700)
                 DiagramAIPanel(doc: doc, chat: chat)
                     .frame(width: aiWidth)
             }

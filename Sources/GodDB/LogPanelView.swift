@@ -45,7 +45,7 @@ struct MainStatusBar: View {
 struct LogPanelView: View {
     @Environment(AppState.self) private var app
     @State private var errorsOnly = false
-    @State private var detailWidth: CGFloat = 380
+    @AppStorage(Layout.logDetailWidth) private var detailWidth: Double = 380
 
     private var visible: [LogEntry] {
         (errorsOnly ? app.logs.filter { $0.level == .error || $0.level == .warning } : app.logs).reversed()
@@ -100,9 +100,9 @@ struct LogPanelView: View {
                         }
                         .listStyle(.plain)
                         let maxDetail = max(200, geo.size.width - 200)
-                        ResizeHandle(axis: .vertical, size: $detailWidth, range: 200...maxDetail)
+                        ResizeHandle(axis: .vertical, size: $detailWidth.cgFloat, range: 200...maxDetail)
                         LogDetail(entry: app.logs.first { $0.id == app.selectedLogID })
-                            .frame(width: min(detailWidth, maxDetail))
+                            .frame(width: min(CGFloat(detailWidth), maxDetail))
                     }
                 }
             }
