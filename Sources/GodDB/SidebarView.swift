@@ -199,23 +199,29 @@ struct ProfileRow: View {
 }
 
 /// DB 종류 작은 표시 (MY / PG / MSSQL)
-/// DB 종류 아이콘 (글자 대신 모양 + 색). 공식 로고는 상표라 쓰지 않고 GodDB 자체 아이콘을 쓴다.
+/// DB 종류 아이콘: 브랜드 로고(MySQL · PostgreSQL · Redis, Simple Icons)를 브랜드 색으로. SQL Server 는 SF Symbol.
 struct KindBadge: View {
     let kind: DatabaseKind
     var size: CGFloat = 16
 
     var body: some View {
-        Image(systemName: kind.iconName)
-            .font(.system(size: size * 0.58, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(kind.iconColor, in: RoundedRectangle(cornerRadius: size * 0.25))
-            .help(kind.title)
-            .accessibilityLabel(kind.title)
+        Group {
+            if let path = BrandLogo.paths[kind] {
+                SVGLogoShape(path: path).fill(kind.iconColor)
+            } else {
+                Image(systemName: kind.iconName)
+                    .font(.system(size: size * 0.78, weight: .semibold))
+                    .foregroundStyle(kind.iconColor)
+            }
+        }
+        .frame(width: size, height: size)
+        .help(kind.title)
+        .accessibilityLabel(kind.title)
     }
 }
 
 extension DatabaseKind {
+    /// 메뉴 안(색이 빠지는 곳)에서 쓰는 SF Symbol
     var iconName: String {
         switch self {
         case .mysql: return "fish.fill"
@@ -225,12 +231,13 @@ extension DatabaseKind {
         }
     }
 
+    /// 브랜드 색 (Simple Icons 기준, SQL Server 는 Microsoft SQL Server 빨강)
     var iconColor: Color {
         switch self {
-        case .mysql: return .orange
-        case .postgres: return .blue
-        case .mssql: return .purple
-        case .redis: return .red
+        case .mysql: return Color(red: 0x44 / 255, green: 0x79 / 255, blue: 0xA1 / 255)
+        case .postgres: return Color(red: 0x41 / 255, green: 0x69 / 255, blue: 0xE1 / 255)
+        case .mssql: return Color(red: 0xCC / 255, green: 0x29 / 255, blue: 0x27 / 255)
+        case .redis: return Color(red: 0xFF / 255, green: 0x44 / 255, blue: 0x38 / 255)
         }
     }
 }

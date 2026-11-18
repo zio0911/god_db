@@ -80,7 +80,7 @@ struct CompareView: View {
 
     /// 선택 목록 항목: [DB 아이콘] 이름 · 환경
     private func profileItem(_ p: ConnectionProfile) -> some View {
-        Label { Text(Self.label(p)) } icon: { Image(systemName: p.kind.iconName) }
+        Label { Text(Self.label(p)) } icon: { Image(nsImage: BrandLogo.image(p.kind)) }
             .tag(UUID?.some(p.id))
     }
 
