@@ -57,7 +57,12 @@ struct SVGLogoShape: Shape {
 
 extension BrandLogo {
     /// 메뉴 항목처럼 SwiftUI 모양을 못 쓰는 곳용 이미지 (브랜드 색 그대로)
-    static func image(_ kind: DatabaseKind, size: CGFloat = 14) -> NSImage {
+    @MainActor static func image(_ kind: DatabaseKind, size: CGFloat = 14) -> NSImage {
+        if kind == .mssql {
+            let r = ImageRenderer(content: MSSQLIcon(size: size))
+            r.scale = 2
+            if let img = r.nsImage { img.size = NSSize(width: size, height: size); return img }
+        }
         let color = NSColor(kind.iconColor)
         let img = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
             if let path = paths[kind], let ctx = NSGraphicsContext.current?.cgContext {

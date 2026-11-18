@@ -199,7 +199,7 @@ struct ProfileRow: View {
 }
 
 /// DB 종류 작은 표시 (MY / PG / MSSQL)
-/// DB 종류 아이콘: 브랜드 로고(MySQL · PostgreSQL · Redis, Simple Icons)를 브랜드 색으로. SQL Server 는 SF Symbol.
+/// DB 종류 아이콘: 브랜드 로고(MySQL · PostgreSQL · Redis, Simple Icons)를 브랜드 색으로. SQL Server 는 자체 그림(MSSQLIcon).
 struct KindBadge: View {
     let kind: DatabaseKind
     var size: CGFloat = 16
@@ -208,6 +208,8 @@ struct KindBadge: View {
         Group {
             if let path = BrandLogo.paths[kind] {
                 SVGLogoShape(path: path).fill(kind.iconColor)
+            } else if kind == .mssql {
+                MSSQLIcon(size: size)
             } else {
                 Image(systemName: kind.iconName)
                     .font(.system(size: size * 0.78, weight: .semibold))
@@ -231,12 +233,12 @@ extension DatabaseKind {
         }
     }
 
-    /// 브랜드 색 (Simple Icons 기준, SQL Server 는 Microsoft SQL Server 빨강)
+    /// 브랜드 색 (Simple Icons 기준, SQL Server 는 자체 아이콘의 주황)
     var iconColor: Color {
         switch self {
         case .mysql: return Color(red: 0x44 / 255, green: 0x79 / 255, blue: 0xA1 / 255)
         case .postgres: return Color(red: 0x41 / 255, green: 0x69 / 255, blue: 0xE1 / 255)
-        case .mssql: return Color(red: 0xCC / 255, green: 0x29 / 255, blue: 0x27 / 255)
+        case .mssql: return MSSQLIcon.body
         case .redis: return Color(red: 0xFF / 255, green: 0x44 / 255, blue: 0x38 / 255)
         }
     }
