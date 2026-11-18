@@ -206,7 +206,9 @@ struct KindBadge: View {
 
     var body: some View {
         Group {
-            if let path = BrandLogo.paths[kind] {
+            if kind == .postgres {
+                PostgresIcon()
+            } else if let path = BrandLogo.paths[kind] {
                 SVGLogoShape(path: path).fill(kind.iconColor)
             } else if kind == .mssql {
                 MSSQLIcon(size: size)
@@ -237,7 +239,7 @@ extension DatabaseKind {
     var iconColor: Color {
         switch self {
         case .mysql: return Color(red: 0x44 / 255, green: 0x79 / 255, blue: 0xA1 / 255)
-        case .postgres: return Color(red: 0x41 / 255, green: 0x69 / 255, blue: 0xE1 / 255)
+        case .postgres: return PostgresIcon.blue
         case .mssql: return MSSQLIcon.body
         case .redis: return Color(red: 0xFF / 255, green: 0x44 / 255, blue: 0x38 / 255)
         }
