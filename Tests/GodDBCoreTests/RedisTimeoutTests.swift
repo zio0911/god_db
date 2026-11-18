@@ -42,7 +42,7 @@ struct RedisTimeoutTests {
         p.standardOutput = FileHandle.nullDevice
         try p.run()
         defer { p.terminate() }
-        Thread.sleep(forTimeInterval: 0.5)
+        try await Task.sleep(for: .milliseconds(500))
         let profile = ConnectionProfile(kind: .redis, name: "closing", host: "127.0.0.1", port: port,
                                         username: "", database: "", useTLS: false)
         await #expect(throws: (any Error).self) {

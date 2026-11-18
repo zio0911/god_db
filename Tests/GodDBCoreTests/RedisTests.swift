@@ -199,7 +199,7 @@ struct RedisIntegrationTests {
         #expect(channels.contains { $0.0 == "news" && $0.1 == 1 })
         #expect(try await s.publish("news", "안녕") == 1)
         #expect(try await s.publish("evt:login", "u1") == 1)
-        let msgs = try await collected.value
+        let msgs = await collected.value
         #expect(msgs.contains { $0.kind == "message" && $0.channel == "news" && $0.payload == "안녕" })
         #expect(msgs.contains { $0.kind == "pmessage" && $0.pattern == "evt:*" && $0.channel == "evt:login" })
         await sub.close()
