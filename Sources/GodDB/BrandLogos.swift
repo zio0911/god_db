@@ -17,6 +17,35 @@ enum BrandLogo {
         .redis: SVGPath.parse(redis),
     ]
 
+    /// PostgreSQL 코끼리 바깥 윤곽 (가장 큰 조각) — 안을 파랗게 채울 때 쓴다
+    static let postgresSilhouette: CGPath = {
+        let full = SVGPath.parse(postgresql)
+        var best: CGPath = full
+        var bestArea: CGFloat = 0
+        for part in subpaths(full) {
+            let b = part.boundingBoxOfPath
+            if b.width * b.height > bestArea { bestArea = b.width * b.height; best = part }
+        }
+        return best
+    }()
+
+    /// 하위 경로로 나눈다
+    static func subpaths(_ p: CGPath) -> [CGPath] {
+        var parts: [CGMutablePath] = []
+        p.applyWithBlock { e in
+            let el = e.pointee
+            switch el.type {
+            case .moveToPoint: let m = CGMutablePath(); m.move(to: el.points[0]); parts.append(m)
+            case .addLineToPoint: parts.last?.addLine(to: el.points[0])
+            case .addQuadCurveToPoint: parts.last?.addQuadCurve(to: el.points[1], control: el.points[0])
+            case .addCurveToPoint: parts.last?.addCurve(to: el.points[2], control1: el.points[0], control2: el.points[1])
+            case .closeSubpath: parts.last?.closeSubpath()
+            @unknown default: break
+            }
+        }
+        return parts
+    }
+
     /// 조건에 맞는 조각(하위 경로)만 남긴다
     static func keepSubpaths(_ p: CGPath, where keep: (CGRect) -> Bool) -> CGPath {
         var parts: [CGMutablePath] = []
@@ -36,9 +65,9 @@ enum BrandLogo {
         return out
     }
 
-    /// 경로를 rect 가운데에 꽉 차게 (가로세로 비율 유지)
-    static func fitted(_ p: CGPath, in rect: CGRect) -> CGPath {
-        let b = p.boundingBoxOfPath
+    /// 경로를 rect 가운데에 꽉 차게 (가로세로 비율 유지). frame 을 주면 그 범위를 기준으로 맞춘다
+    static func fitted(_ p: CGPath, in rect: CGRect, frame: CGRect? = nil) -> CGPath {
+        let b = frame ?? p.boundingBoxOfPath
         guard b.width > 0, b.height > 0 else { return p }
         let s = min(rect.width / b.width, rect.height / b.height)
         var t = CGAffineTransform(translationX: rect.midX, y: rect.midY)
@@ -51,14 +80,39 @@ enum BrandLogo {
 /// 24×24 좌표 경로를 주어진 크기에 맞춰 그리는 모양
 struct SVGLogoShape: Shape {
     let path: CGPath
+    var frame: CGRect? = nil
     func path(in rect: CGRect) -> Path {
-        Path(BrandLogo.fitted(path, in: rect))
+        Path(BrandLogo.fitted(path, in: rect, frame: frame))
+    }
+}
+
+/// PostgreSQL: 파랗게 채운 코끼리 + 흰 선 + 바깥 검은 테두리 (공식 컬러 로고 느낌)
+struct PostgresIcon: View {
+    static let blue = Color(red: 0x33 / 255, green: 0x67 / 255, blue: 0x91 / 255)
+    var body: some View {
+        let full = BrandLogo.paths[.postgres]!
+        let f = full.boundingBoxOfPath
+        ZStack {
+            SVGLogoShape(path: BrandLogo.postgresSilhouette, frame: f).fill(Self.blue)
+            SVGLogoShape(path: BrandLogo.postgresSilhouette, frame: f).stroke(Color.black, lineWidth: 0.8)
+            SVGLogoShape(path: full, frame: f).fill(Color.white)
+        }
     }
 }
 
 extension BrandLogo {
     /// 메뉴 항목처럼 SwiftUI 모양을 못 쓰는 곳용 이미지 (브랜드 색 그대로)
-    static func image(_ kind: DatabaseKind, size: CGFloat = 14) -> NSImage {
+    @MainActor static func image(_ kind: DatabaseKind, size: CGFloat = 14) -> NSImage {
+        if kind == .postgres {
+            let r = ImageRenderer(content: PostgresIcon().frame(width: size, height: size))
+            r.scale = 2
+            if let img = r.nsImage { img.size = NSSize(width: size, height: size); return img }
+        }
+        if kind == .mssql {
+            let r = ImageRenderer(content: MSSQLIcon(size: size))
+            r.scale = 2
+            if let img = r.nsImage { img.size = NSSize(width: size, height: size); return img }
+        }
         let color = NSColor(kind.iconColor)
         let img = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
             if let path = paths[kind], let ctx = NSGraphicsContext.current?.cgContext {
