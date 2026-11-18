@@ -56,16 +56,37 @@ struct CompareView: View {
         GridRow {
             Text(title).foregroundStyle(.secondary)
                 .gridColumnAlignment(.trailing)
-            Picker(title, selection: id) {
-                Text(tr("선택")).tag(UUID?.none)
-                ForEach(app.profiles.filter { $0.kind.isSQL }) { Text($0.name).tag(UUID?.some($0.id)) }
+            let sql = app.profiles.filter { $0.kind.isSQL }
+            let selected = app.profiles.first { $0.id == id.wrappedValue }
+            HStack(spacing: 6) {
+                Picker(title, selection: id) {
+                    Text(tr("선택")).tag(UUID?.none)
+                    // 그룹 없는 접속 먼저, 그다음 그룹별 (사이드바와 같은 순서)
+                    ForEach(sql.filter { $0.group.isEmpty }) { profileItem($0) }
+                    ForEach(app.profileGroups.filter { g in sql.contains { $0.group == g } }, id: \.self) { g in
+                        Section(g) { ForEach(sql.filter { $0.group == g }) { profileItem($0) } }
+                    }
+                }
+                .labelsHidden()
+                .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+                .help(selected.map { Self.label($0) + ($0.group.isEmpty ? "" : " · " + $0.group) } ?? "")
+                // 고른 접속의 환경을 사이드바와 같은 색으로
+                if let selected { EnvironmentBadge(environment: selected.environment) }
             }
-            .labelsHidden()
-            .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
-            .help(app.profiles.first { $0.id == id.wrappedValue }?.name ?? "")
             TextField(tr("DB/스키마 (비우면 기본)"), text: db)
                 .frame(width: 170)
         }
+    }
+
+    /// 선택 목록 항목: [DB 아이콘] 이름 · 환경
+    private func profileItem(_ p: ConnectionProfile) -> some View {
+        Label { Text(Self.label(p)) } icon: { Image(systemName: p.kind.iconName) }
+            .tag(UUID?.some(p.id))
+    }
+
+    /// "이름 · 운영" (환경 표시 안 함이면 이름만)
+    static func label(_ p: ConnectionProfile) -> String {
+        p.environment == .none ? p.name : "\(p.name) · \(p.environment.title)"
     }
 
     @ViewBuilder

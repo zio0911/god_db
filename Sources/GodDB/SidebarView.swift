@@ -145,10 +145,9 @@ struct ProfileRow: View {
                 .frame(width: 7, height: 7)
                 .opacity(state == .connecting ? 0 : 1)
                 .overlay { if state == .connecting { ProgressView().controlSize(.mini) } }
-            Image(systemName: "cylinder.split.1x2")
-                .foregroundStyle(selected ? Color.accentColor : .secondary)
-            Text(profile.name).lineLimit(1)
             KindBadge(kind: profile.kind)
+            Text(profile.name).lineLimit(1)
+                .fontWeight(selected ? .semibold : .regular)
             EnvironmentBadge(environment: profile.environment)
             if profile.readOnly {
                 Text(tr("읽기전용")).font(.caption2).foregroundStyle(.red)
@@ -200,20 +199,34 @@ struct ProfileRow: View {
 }
 
 /// DB 종류 작은 표시 (MY / PG / MSSQL)
+/// DB 종류 아이콘 (글자 대신 모양 + 색). 공식 로고는 상표라 쓰지 않고 GodDB 자체 아이콘을 쓴다.
 struct KindBadge: View {
     let kind: DatabaseKind
+    var size: CGFloat = 16
 
     var body: some View {
-        Text(kind == .mssql ? "MSSQL" : kind == .postgres ? "PG" : kind == .redis ? "RD" : "MY")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 3)
-            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 3))
+        Image(systemName: kind.iconName)
+            .font(.system(size: size * 0.58, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(kind.iconColor, in: RoundedRectangle(cornerRadius: size * 0.25))
             .help(kind.title)
+            .accessibilityLabel(kind.title)
+    }
+}
+
+extension DatabaseKind {
+    var iconName: String {
+        switch self {
+        case .mysql: return "fish.fill"
+        case .postgres: return "cylinder.fill"
+        case .mssql: return "server.rack"
+        case .redis: return "square.stack.3d.up.fill"
+        }
     }
 
-    private var color: Color {
-        switch kind {
+    var iconColor: Color {
+        switch self {
         case .mysql: return .orange
         case .postgres: return .blue
         case .mssql: return .purple
