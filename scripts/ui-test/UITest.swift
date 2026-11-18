@@ -549,6 +549,32 @@ scenario("groupSelect") {
     if let dev = app.find(3, role("AXStaticText", "UI MySQL")) , dev.value == "UI MySQL" { click(dev) }
 }
 
+/// 테스트 앱 설정 값 바꾸기 (번들 ID 를 바꾼 복사본이라 실제 GodDB 설정은 건드리지 않는다)
+func testDefaults(_ args: [String]) {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+    p.arguments = args
+    try? p.run(); p.waitUntilExit()
+    Thread.sleep(forTimeInterval: 0.5)
+}
+
+scenario("dangerSetting") {
+    // 개발 접속에서 (운영 접속은 설정과 관계없이 항상 확인)
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    _ = app.gone(5, hasText("운영 접속 ·"))
+    let key = "GodDB.safety.confirmDangerous"
+    testDefaults(["write", "local.goddb.app.uitest", key, "-bool", "false"])
+    try setEditor("DROP TABLE IF EXISTS ui_tmp_never_exists")
+    runQuery()
+    let asked = app.find(2, hasText("되돌리기 어려운 문장이 있어요")) != nil
+    if asked { answer("취소") }
+    check("설정에서 끄면 DROP 이 확인 없이 실행", !asked)
+    testDefaults(["delete", "local.goddb.app.uitest", key])
+    runQuery()
+    check("다시 켜면 (기본값) DROP 전에 확인", app.find(4, hasText("되돌리기 어려운 문장이 있어요")) != nil)
+    answer("취소")
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {

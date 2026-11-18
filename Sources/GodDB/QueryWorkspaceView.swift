@@ -311,7 +311,7 @@ struct QueryTabView: View {
         guard !statements.isEmpty else { return }
         let confirm = RunConfirm(statements: statements,
                                  wholeScript: all && statements.count > 1 && statements.contains { !SQLText.isReadOnly($0) },
-                                 dangerous: statements.filter { SQLText.danger($0) != nil },
+                                 dangerous: AppState.confirmDangerous ? statements.filter { SQLText.danger($0) != nil } : [],
                                  discardedEdits: tab.edits.count,
                                  production: app.profile(tab.profileID)?.environment == .production)
         if confirm.needsConfirm { pendingRun = confirm } else { start(confirm) }

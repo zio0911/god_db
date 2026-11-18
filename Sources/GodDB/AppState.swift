@@ -1155,6 +1155,9 @@ extension AppState {
 extension AppState {
     /// 설정 > 쿼리 > 실행 시간 제한 (초, 0 이면 없음)
     static let queryTimeoutKey = "queryTimeoutSeconds"
+    /// 위험한 명령(WHERE 없는 DELETE · UPDATE, TRUNCATE, DROP, Redis FLUSHALL 등) 실행 전 확인 (기본 켬)
+    static let confirmDangerousKey = "GodDB.safety.confirmDangerous"
+    static var confirmDangerous: Bool { UserDefaults.standard.object(forKey: confirmDangerousKey) as? Bool ?? true }
 
     /// 실행 시작을 기록하고, 제한 시간이 있으면 넘었을 때 취소한다
     func armRunTimeout(_ tabID: UUID) {
