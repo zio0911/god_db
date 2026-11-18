@@ -4,6 +4,11 @@ import Foundation
 extension L10nEnglish {
     static let safety: [String: String] = [
         "'%@' 접속을 삭제할까요?": "Delete the connection '%@'?",
+        "위험한 명령 실행 전 확인": "Confirm before dangerous statements",
+        "위험한 명령 실행 전 확인을 켰어요": "Turned on confirmation before dangerous statements",
+        "위험한 명령 실행 전 확인을 껐어요": "Turned off confirmation before dangerous statements",
+        "WHERE 없는 DELETE · UPDATE, TRUNCATE, DROP, Redis 의 FLUSHALL · FLUSHDB · KEYS 등을 실행하기 전에 한 번 더 물어봐요. 운영 접속에서 데이터를 바꾸는 확인은 이 설정과 관계없이 항상 떠요.": "Asks once more before DELETE or UPDATE without WHERE, TRUNCATE, DROP, and Redis FLUSHALL, FLUSHDB, KEYS and similar. The confirmation for changing data on production connections always appears regardless of this setting.",
+        "안전": "Safety",
         "Redis 서버가 %@초 안에 응답하지 않았어요. 주소 · 포트 · TLS 설정과 네트워크(SSH 터널)를 확인하세요.": "The Redis server didn't respond within %@ seconds. Check the address, port, TLS setting and network (SSH tunnel).",
         "'%@' 접속의 저장된 비밀번호를 보려고 해요": "show the saved password for '%@'",
         "%@ 저장된 비밀번호 보기 (본인 확인)": "%@: saved password shown (owner verified)",

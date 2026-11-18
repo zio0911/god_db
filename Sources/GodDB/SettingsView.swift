@@ -53,6 +53,8 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(AppState.self) private var app
+    @AppStorage(AppState.confirmDangerousKey) private var confirmDangerous = true
     @State private var versionTaps = 0
     @State private var showDotZero = false
     @State private var auditToolUnlocked = false
@@ -92,6 +94,20 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Text(tr("쿼리"))
+            }
+            Section {
+                Toggle(tr("위험한 명령 실행 전 확인"), isOn: $confirmDangerous)
+                    .onChange(of: confirmDangerous) { _, on in
+                        app.log(on ? .info : .warning, .app,
+                                on ? tr("위험한 명령 실행 전 확인을 켰어요") : tr("위험한 명령 실행 전 확인을 껐어요"),
+                                audit: AuditRecord(.settings, target: "GodDB",
+                                                   result: on ? "위험한 명령 확인 켬" : "위험한 명령 확인 끔"))
+                    }
+                Text(tr("WHERE 없는 DELETE · UPDATE, TRUNCATE, DROP, Redis 의 FLUSHALL · FLUSHDB · KEYS 등을 실행하기 전에 한 번 더 물어봐요. 운영 접속에서 데이터를 바꾸는 확인은 이 설정과 관계없이 항상 떠요."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text(tr("안전"))
             }
             Section {
                 Toggle(tr("로그 파일 남기기"), isOn: $settings.logFileEnabled)

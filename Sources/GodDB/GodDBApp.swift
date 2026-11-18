@@ -134,6 +134,7 @@ struct GodDBApp: App {
         Settings {
             SettingsView()
                 .environment(settings)
+                .environment(app)
         }
     }
 }

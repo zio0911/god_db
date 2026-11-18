@@ -243,7 +243,8 @@ final class RedisWorkspace {
     func runScript(_ text: String, confirmed: Bool = false) async {
         let lines = RedisText.scriptLines(text)
         guard !lines.isEmpty else { return }
-        if !confirmed, lines.contains(where: { RedisText.splitArgs($0).map(RedisCommands.isDangerous) ?? false }) {
+        if !confirmed, AppState.confirmDangerous,
+           lines.contains(where: { RedisText.splitArgs($0).map(RedisCommands.isDangerous) ?? false }) {
             pendingScript = lines
             return
         }
@@ -474,7 +475,7 @@ final class RedisWorkspace {
         }
         if history.last != trimmed { history.append(trimmed) }
         if history.count > 500 { history.removeFirst(history.count - 500) }
-        if !confirmed && RedisCommands.isDangerous(args) {
+        if !confirmed && AppState.confirmDangerous && RedisCommands.isDangerous(args) {
             pendingDangerous = args
             return
         }
