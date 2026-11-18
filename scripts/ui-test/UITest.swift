@@ -403,6 +403,54 @@ scenario("compareLayout") {
     if let q = app.find(2, { $0.role == "AXRadioButton" && $0.label == "쿼리" }) { click(q) }
 }
 
+/// 테스트 앱 창을 PNG 로 저장 (GODDB_UI_SHOT_DIR 이 있을 때만, 눈으로 확인용)
+func shot(_ name: String) {
+    guard let dir = ProcessInfo.processInfo.environment["GODDB_UI_SHOT_DIR"] else { return }
+    let list = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
+    let mine = list.filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == app.pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+    guard let wid = mine.max(by: {
+        let a = ($0[kCGWindowBounds as String] as? [String: CGFloat]) ?? [:], b = ($1[kCGWindowBounds as String] as? [String: CGFloat]) ?? [:]
+        return (a["Width"] ?? 0) * (a["Height"] ?? 0) < (b["Width"] ?? 0) * (b["Height"] ?? 0)
+    })?[kCGWindowNumber as String] as? Int else { return }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    p.arguments = ["-x", "-o", "-l", "\(wid)", "\(dir)/\(name).png"]
+    try? p.run(); p.waitUntilExit()
+}
+
+/// 글자를 다 보여 주려면 필요한 폭
+func textWidth(_ s: String, _ font: NSFont) -> CGFloat {
+    (s as NSString).size(withAttributes: [.font: font]).width
+}
+
+scenario("queryLayout") {
+    // 좁은 창 + AI 어시스턴트 패널: 페이지 크기 선택(500)과 결과 아래 행 범위가 잘리지 않아야 한다
+    guard let w = app.find(3, role("AXWindow")) else { throw Abort(message: "창 없음") }
+    var original = w.frame.size
+    var size = CGSize(width: 1000, height: 720)
+    AXUIElementSetAttributeValue(w.el, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!)
+    guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
+    click(ai)
+    defer {
+        click(ai)
+        AXUIElementSetAttributeValue(w.el, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &original)!)
+    }
+    try setEditor("SELECT id, customer, amount FROM ui_orders ORDER BY id")
+    _ = runAndWait(8, cell("park"))
+    usleep(400_000)
+    shot("queryLayout")
+    let nodes = app.snapshot()
+    let win = nodes.first { $0.role == "AXWindow" }?.frame ?? .zero
+    let limit = nodes.first { $0.role == "AXPopUpButton" && $0.value == "500" }
+    let needLimit = textWidth("500", .systemFont(ofSize: NSFont.systemFontSize)) + 20
+    check("좁은 창 + AI 패널: 페이지 크기 '500' 이 보임", limit.map { $0.frame.width >= needLimit && $0.frame.maxX <= win.maxX + 1 } ?? false,
+          limit.map { "폭 \(Int($0.frame.width)) / 필요 \(Int(needLimit))" } ?? "선택 상자 없음")
+    let range = nodes.first { $0.role == "AXStaticText" && $0.value == "1–5행" }
+    let needRange = textWidth("1–5행", .preferredFont(forTextStyle: .callout))
+    check("좁은 창 + AI 패널: 결과 아래 '1–5행' 이 잘리지 않음", range.map { $0.frame.width + 1 >= needRange } ?? false,
+          range.map { "폭 \(Int($0.frame.width)) / 필요 \(Int(needRange))" } ?? "행 범위 없음")
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {
