@@ -90,6 +90,8 @@ struct SidebarView: View {
                             .buttonStyle(.borderless)
                             .help(tr("스키마 새로고침 (⇧⌘R)"))
                         }
+                        // 오른쪽 세로 스크롤바와 겹치지 않게
+                        .padding(.trailing, 14)
                     }
 
                     ForEach(RoutineMeta.Kind.allCases, id: \.self) { kind in
