@@ -8,7 +8,8 @@ struct SidebarView: View {
     var body: some View {
         @Bindable var app = app
         VStack(spacing: 0) {
-            List(selection: $app.selectedTables) {
+            // 기본 목록 선택색(진한 파랑)이 눈이 아프다는 의견으로, 선택은 직접 그린다 (TableNode)
+            List {
                 Section(tr("접속")) {
                     ProfileList()
                     HStack {
@@ -54,7 +55,6 @@ struct SidebarView: View {
                         }
                         ForEach(app.filteredTables) { table in
                             TableNode(table: table)
-                                .tag(table.name)
                         }
                     } header: {
                         HStack {
@@ -291,10 +291,16 @@ struct TableNode: View {
         } label: {
             Label(table.name, systemImage: "tablecells")
                 .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 1)
+                .padding(.horizontal, 4)
+                .background(app.selectedTables.contains(table.name) ? Color.accentColor.opacity(0.15) : .clear,
+                            in: RoundedRectangle(cornerRadius: 5))
                 .help(table.comment.isEmpty ? table.name : table.comment)
                 .contentShape(Rectangle())
                 // 한 번 클릭은 목록 선택(⌘/⇧ 다중 선택)에 맡기고, 두 번 클릭만 가로챈다
                 .simultaneousGesture(TapGesture(count: 2).onEnded { app.openTableQuery(table.name) })
+                .simultaneousGesture(TapGesture(count: 1).onEnded { app.clickTable(table.name) })
                 .contextMenu {
                     Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(table.name) }
                     Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }

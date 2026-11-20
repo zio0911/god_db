@@ -160,6 +160,27 @@ final class AppState {
     var redisWorkspaces: [UUID: RedisWorkspace] = [:]
     /// 사이드바에서 고른 테이블 (⌘/⇧ 클릭으로 여러 개)
     var selectedTables: Set<String> = []
+    /// ⇧ 클릭 범위 선택의 기준 테이블
+    var tableSelectionAnchor: String?
+
+    /// 사이드바 테이블 클릭: 그냥 클릭은 하나만, ⌘ 클릭은 넣고 빼기, ⇧ 클릭은 기준부터 범위
+    func clickTable(_ name: String) {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.shift), let anchor = tableSelectionAnchor {
+            let names = filteredTables.map(\.name)
+            if let a = names.firstIndex(of: anchor), let b = names.firstIndex(of: name) {
+                let range = Set(names[min(a, b)...max(a, b)])
+                selectedTables = flags.contains(.command) ? selectedTables.union(range) : range
+                return
+            }
+        }
+        if flags.contains(.command) {
+            if selectedTables.contains(name) { selectedTables.remove(name) } else { selectedTables.insert(name) }
+        } else {
+            selectedTables = [name]
+        }
+        tableSelectionAnchor = name
+    }
     /// 열린 ER 다이어그램 창들
     var diagrams: [UUID: DiagramDoc] = [:]
     /// 마지막으로 저장한 CSV (Finder 에서 보기)
