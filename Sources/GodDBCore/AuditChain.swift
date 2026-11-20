@@ -146,6 +146,9 @@ public enum AuditChain {
         var keyText: String?
         var status = FileReport.Status.ok
         let width = AuditRecord.header.count + columns.count
+        // 앞 줄들의 무결성 값 (동시 쓰기 판단용)
+        var seen: [String] = []
+        var forks: [Int] = []
         func fail(_ line: Int, _ reason: String) -> FileReport {
             FileReport(file: fileName, lines: rows.count - 1, status: .broken(line: line, reason: reason), publicKey: keyText)
         }
@@ -164,18 +167,35 @@ public enum AuditChain {
                 key = k
                 keyText = parts[2]
             }
-            guard h == hash(prev: prev, line: line) else {
-                return fail(i + 1, i == 1 ? "첫 줄이 바뀌었어요" : "이 줄이 바뀌었거나, 앞 줄이 지워졌거나 끼워 넣어졌어요")
+            var forked = false
+            if h != hash(prev: prev, line: line) {
+                // 앱이 동시에 두 개 켜져 각자 기억한 마지막 값에 이어 쓴 경우: 이 줄은 앞의 다른 줄 값에 이어져 있다.
+                // 줄을 고치거나 지우거나 끼워 넣어서는 이렇게 되지 않으므로 "변조" 가 아니라 "의심" 으로 알린다.
+                guard i > 1, seen.contains(where: { hash(prev: $0, line: line) == h }) else {
+                    return fail(i + 1, i == 1 ? "첫 줄이 바뀌었어요" : "이 줄이 바뀌었거나, 앞 줄이 지워졌거나 끼워 넣어졌어요")
+                }
+                forked = true
             }
             guard let key, let sigData = Data(base64Encoded: sig),
                   let s = try? P256.Signing.ECDSASignature(rawRepresentation: sigData),
                   key.isValidSignature(s, for: Data(h.utf8)) else {
                 return fail(i + 1, "서명이 맞지 않아요 (이 PC 의 기기 키로 쓴 줄이 아니에요)")
             }
+            if forked { forks.append(i + 1) }
+            seen.append(prev)
             if i == 1, let expectedPrevious, cols[5] != expectedPrevious {
                 status = .unlinked(reason: "이전 파일(\(cols[3]))의 마지막 무결성 값과 달라요 — 이전 파일이 지워졌거나 바뀌었어요")
             }
             prev = h
+        }
+        if !forks.isEmpty {
+            let lines = forks.map { "\($0)" }.joined(separator: ", ")
+            let reason = "\(lines)번째 줄: 앱이 동시에 두 개 켜져 같은 파일에 썼어요 (줄 내용 · 서명은 맞아요)"
+            if case .unlinked(let r) = status {
+                status = .unlinked(reason: r + " / " + reason)
+            } else {
+                status = .unlinked(reason: reason)
+            }
         }
         return FileReport(file: fileName, lines: rows.count - 1, status: status, lastHash: prev, publicKey: keyText)
     }

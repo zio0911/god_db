@@ -18,8 +18,6 @@ public final class LogFile: @unchecked Sendable {
     public let keepDays: Int?
     private let queue = DispatchQueue(label: "goddb.logfile")
     private var cleaned = false
-    /// 파일별 마지막 해시 (체인 이어 쓰기용)
-    private var lastHash: [String: String] = [:]
     /// 기기 서명 키 (기본: Secure Enclave/키체인). 테스트는 고정 키를 넘긴다.
     private let signer: @Sendable () -> AuditChain.Signer?
 
@@ -86,13 +84,22 @@ public final class LogFile: @unchecked Sendable {
         if !cleaned { cleaned = true; removeOld() }
         let url = url(for: date)
         let name = url.lastPathComponent
+        // 앱이 동시에 여러 개 켜져 있어도 체인이 갈라지지 않게: 파일을 잠그고, 마지막 값은 늘 파일에서 다시 읽는다
+        let fd = open(url.path, O_RDWR | O_APPEND | O_CREAT, 0o600)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        flock(fd, LOCK_EX)
+        defer { flock(fd, LOCK_UN) }
+        let isNew = lseek(fd, 0, SEEK_END) == 0
         guard let signer = signer() else {
             // 기기 키를 못 쓰면 무결성 칸 없이 쓴다 (검사에서 예전 형식으로 보인다)
-            append(Data(text.utf8), to: url, header: true)
+            let head = isNew ? "\u{FEFF}" + AuditRecord.header.joined(separator: "\t") + "\n" : ""
+            Self.write(Data((head + text).utf8), to: fd)
             return
         }
         var out = ""
-        if !fm.fileExists(atPath: url.path) {
+        var prev: String
+        if isNew {
             // 새 날짜 파일: 머리글 + 공개 키·이전 파일 연결 "체인" 줄. 이전 파일 마지막 값은 시스템 로그에도 봉인
             let (prevName, prevHash) = previousFileTail(before: name)
             if let prevName { AuditChain.sealToSystemLog(file: prevName, lastHash: prevHash) }
@@ -101,39 +108,31 @@ public final class LogFile: @unchecked Sendable {
                                            previousFile: prevName, previousHash: prevHash, signer: signer)
             let sealed = AuditChain.seal(prev: AuditChain.seed(fileName: name), line: link, signer: signer)
             out += link + "\t" + sealed.suffix + "\n"
-            lastHash[name] = sealed.hash
-        } else if lastHash[name] == nil {
+            prev = sealed.hash
+        } else {
             // 무결성 칸이 없는 예전 형식 파일(업데이트한 날)은 그날은 예전 형식 그대로 이어 쓴다
-            if !Self.hasIntegrityColumns(url) {
-                append(Data(text.utf8), to: url, header: false)
+            guard Self.hasIntegrityColumns(url) else {
+                Self.write(Data(text.utf8), to: fd)
                 return
             }
-            lastHash[name] = Self.lastHash(in: url) ?? AuditChain.seed(fileName: name)
+            prev = Self.lastHash(in: url) ?? AuditChain.seed(fileName: name)
         }
-        var prev = lastHash[name]!
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let sealed = AuditChain.seal(prev: prev, line: String(line), signer: signer)
             out += line + "\t" + sealed.suffix + "\n"
             prev = sealed.hash
         }
-        lastHash[name] = prev
-        append(Data(out.utf8), to: url, header: false)
+        Self.write(Data(out.utf8), to: fd)
     }
 
-    private func append(_ data: Data, to url: URL, header: Bool) {
-        let fm = FileManager.default
-        var data = data
-        if header && !fm.fileExists(atPath: url.path) {
-            data = Data(("\u{FEFF}" + AuditRecord.header.joined(separator: "\t") + "\n").utf8) + data
-        }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-        } else {
-            try? data.write(to: url)
-            // 다른 사용자가 못 읽게
-            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    private static func write(_ data: Data, to fd: Int32) {
+        data.withUnsafeBytes { buf in
+            var off = 0
+            while off < buf.count {
+                let n = Foundation.write(fd, buf.baseAddress! + off, buf.count - off)
+                if n <= 0 { break }
+                off += n
+            }
         }
     }
 
