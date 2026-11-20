@@ -206,5 +206,26 @@ extension L10nEnglish {
         "%@ 편집 가능 · 칸을 더블클릭해 바로 고치거나, 행을 고르면 오른쪽에서 고쳐요": "%@ is editable · double-click a cell to edit it in place, or select a row to edit on the right",
         "NULL 로 설정 (%@)": "Set to NULL (%@)",
         "칸 편집": "Edit cell",
+        // 모델링: 테이블 명세서(엑셀) 내보내기
+        "모델링 파일 저장하기…": "Save Model File…",
+        "테이블 명세서로 저장하기…": "Save as Table Specification…",
+        "시스템명": "System name",
+        "작성자": "Author",
+        "작성일": "Date",
+        "저장…": "Save…",
+        "목차 시트와 테이블마다 한 시트(컬럼 · 인덱스 · 관계)로 된 엑셀 파일을 만들어요.": "Creates an Excel file with a contents sheet and one sheet per table (columns, indexes, relations).",
+        "다이어그램 PNG 저장하기…": "Save Diagram as PNG…",
+        // 모델링 도구 막대 설명
+        "선택 / 이동 — 테이블·관계를 눌러 고르고, 카드를 끌어 옮겨요": "Select / Move — click a table or relation to select it, drag cards to move them",
+        "테이블 추가 — 이 도구를 고른 뒤 다이어그램 빈 곳을 누르면 새 테이블이 생겨요": "Add Table — choose this tool, then click an empty spot in the diagram to create a table",
+        "1:N 비식별 관계 — 부모 테이블, 자식 테이블 순서로 누르면 FK 컬럼이 자식에 생겨요": "1:N non-identifying relation — click the parent table, then the child; an FK column is added to the child",
+        "1:N 식별 관계 — 부모 키가 자식의 기본 키에 포함돼요 (부모 → 자식 순서로 누르기)": "1:N identifying relation — the parent key becomes part of the child's primary key (click parent, then child)",
+        "1:1 관계 — 부모 → 자식 순서로 누르면 유니크 FK 컬럼이 자식에 생겨요": "1:1 relation — click parent, then child; a unique FK column is added to the child",
+        "되돌리기 — 마지막 구조 변경(테이블·관계 추가/삭제, 이동, 자동 정렬)을 취소해요": "Undo — reverts the last structural change (adding/deleting tables or relations, moving, auto arrange)",
+        "자동 정렬 — 테이블을 관계에 따라 겹치지 않게 다시 배치": "Auto Arrange — rearranges tables by their relations so they don't overlap",
+        "모델 검사 — 물리명·타입·기본 키 문제를 보여 줘요. 오류가 있으면 SQL 추출을 막아요": "Check Model — shows physical name, type and primary key problems. Errors block SQL export",
+        "내보내기 — 모델링 파일(.goddbmodel), 테이블 명세서(엑셀), 다이어그램 PNG 로 저장해요": "Export — save as a model file (.goddbmodel), a table specification (Excel) or a diagram PNG",
+        "SQL 추출 — 모델을 CREATE TABLE · FK SQL 로 뽑아 복사하거나 저장해요": "Export SQL — generates CREATE TABLE and FK SQL from the model to copy or save",
+        "대상 DB — SQL 추출 문법과 자주 쓰는 타입 목록에 써요": "Target DB — used for the SQL export dialect and the common type list",
     ]
 }

@@ -171,7 +171,6 @@ extension L10nEnglish {
         "테이블 이름 변경은 사이드바에서 테이블 우클릭 > 이름 바꾸기를 쓰세요.": "To rename the table, right-click it in the sidebar > Rename.",
         "테이블 추가": "Add table",
         "테이블%@": "Table%@",
-        "파일로 내보내기…": "Export to file…",
         "패널 닫기": "Close panel",
         "편집기 SQL": "Editor SQL",
         "함께 보낼 정보": "Sent with your question",
