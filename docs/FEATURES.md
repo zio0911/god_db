@@ -124,7 +124,8 @@
 
 - Mac 의 `/usr/bin/ssh -N -L 127.0.0.1:<빈 포트>:<DB 호스트>:<DB 포트>` 로 터널을 연다.
 - `~/.ssh/config`, `ssh-agent`, `known_hosts` 를 그대로 쓴다. 키 파일을 비우면 agent/설정 파일을 따른다.
-- 옵션: `BatchMode=yes`(비밀번호 묻지 않음), `StrictHostKeyChecking=accept-new`, `ExitOnForwardFailure=yes`, `ServerAliveInterval=30`.
+- 옵션: `BatchMode=yes`(비밀번호 묻지 않음), `StrictHostKeyChecking=yes` + `UserKnownHostsFile="~/.ssh/known_hosts" "<GodDB known_hosts>"`, `ExitOnForwardFailure=yes`, `ServerAliveInterval=30`.
+- 처음 접속하는 서버는 지문을 보여 주고 확인받는다 — [37. SSH 호스트 키 확인](#37-ssh-호스트-키-확인).
 - 15초 안에 포트가 열리지 않거나 ssh 가 종료되면 ssh 의 오류 메시지를 그대로 보여준다.
 - 지원: 키 파일 인증 / ssh-agent. **미지원: 비밀번호 방식 SSH.**
 
@@ -667,6 +668,17 @@ MySQL · PostgreSQL · Redis 의 TLS 연결에서 서버 인증서를 확인한�
 - **감사 로그**: `설정 | ‹접속› | TLS 인증서 신뢰 SHA256:…` / `설정 | ‹접속› | 인증서 고정 지움`.
 - 구현: NIOSSL 사용자 정의 확인 콜백 (`Vendor/mysql-nio` · `Vendor/postgres-nio` 패치로 콜백을 넘긴다 — 각 `GODDB_PATCH.md`).
 
+## 37. SSH 호스트 키 확인
+
+SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (예전에는 `accept-new` 로 묻지 않고 저장).
+
+- **연결 전**: `ssh -G` 로 `~/.ssh/config` 의 HostName · Port · HostKeyAlias 를 반영한 이름(`host` 또는 `[host]:port`)을 `ssh-keygen -F` 로 `~/.ssh/known_hosts` 와 GodDB 전용 `~/Library/Application Support/GodDB/known_hosts` 에서 찾는다.
+- **없으면**: `ssh-keyscan -T 5 -p <port> <host>` 로 키를 받고 `ssh-keygen -lf -` 로 지문(SHA256) 계산 → 확인 창 "처음 접속하는 SSH 서버예요 — host:port", 키 종류 · 지문, "서버 관리자에게 받은 지문과 같은지 확인하세요." [취소] [신뢰하고 연결].
+  - 신뢰하면 받은 키를 GodDB 전용 `known_hosts`(권한 0600)에 더하고 다시 연결. `~/.ssh/known_hosts` 는 건드리지 않는다.
+- **ssh 실행**: `-o StrictHostKeyChecking=yes -o UserKnownHostsFile="~/.ssh/known_hosts" "<GodDB known_hosts>"` (경로의 공백 때문에 큰따옴표).
+- **키가 바뀌면** ssh 가 거부 (`REMOTE HOST IDENTIFICATION HAS CHANGED`) → "SSH 서버 키가 바뀌었어요 …" + [저장된 키 지우기] — `ssh-keygen -R` 로 **GodDB 전용 파일에서만** 지우고 다시 연결(처음 접속 확인). `~/.ssh/known_hosts` 의 키는 직접 지워야 한다고 안내.
+- **감사 로그**: `설정 | SSH 호스트 키 신뢰 host:port SHA256:…` / `설정 | SSH 호스트 키 지움 host:port`.
+
 ## 17. 알려진 제약
 
 - SQL Server: 세션 단위 읽기전용이 없어 앱 검사만 한다 (서버에서 강제되지 않음). 운영 DB 는 **읽기 권한만 있는 DB 계정**을 쓴다. 접속 편집에서 읽기전용을 켜면 같은 안내가 나온다. 기본값 변경 시 기존 기본값 제약조건 삭제는 안내 주석으로만 만든다. Windows 통합 인증 미지원 (SQL 인증만).
@@ -674,6 +686,7 @@ MySQL · PostgreSQL · Redis 의 TLS 연결에서 서버 인증서를 확인한�
 - 서로 다른 종류의 DB 끼리 스키마 비교는 가능하지만 타입 이름 차이로 "다름"이 많이 나온다.
 - 비밀번호 방식 SSH 미지원.
 - SQL Server TLS 는 암호화만 한다 (FreeTDS 로는 서버 인증서 · 지문 확인 불가). 외부망에서는 SSH 터널이나 VPN.
+- SSH 바스티온이 `ProxyJump` 를 거쳐야 하면 `ssh-keyscan` 이 키를 받지 못한다 → 터미널에서 한 번 접속해 `~/.ssh/known_hosts` 에 키를 넣어 두면 그 키를 쓴다.
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 
 ## 18. 변경 이력

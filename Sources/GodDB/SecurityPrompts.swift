@@ -1,7 +1,7 @@
 import GodDBCore
 import SwiftUI
 
-// F9-3 TLS 서버 인증서 확인 — 확인 창
+// F9-3 TLS 서버 인증서 확인 · F9-4 SSH 호스트 키 확인 — 확인 창
 
 /// 연결 중 만난 인증서 · 호스트 키 문제
 enum SecurityPrompt: Equatable {
@@ -9,6 +9,10 @@ enum SecurityPrompt: Equatable {
     case tlsUntrusted(TLSCertInfo, [TLSFailureReason])
     /// 고정한 인증서와 다름 → [저장된 인증서 지우기]
     case tlsPinMismatch(TLSCertInfo)
+    /// 처음 접속하는 SSH 서버 → [신뢰하고 연결]
+    case sshUnknown(SSHHostScan)
+    /// SSH 서버 키가 바뀜 → [저장된 키 지우기]
+    case sshChanged(host: String, port: Int, pattern: String)
 
     /// 연결 오류에서 확인 창을 고른다 (해당 없으면 nil)
     static func from(_ error: any Error) -> SecurityPrompt? {
@@ -19,6 +23,13 @@ enum SecurityPrompt: Equatable {
             case .serverNoTLS: return nil
             }
         }
+        if let e = error as? SSHHostKeyError {
+            switch e {
+            case .unknown(let scan): return .sshUnknown(scan)
+            case .changed(let host, let port, let pattern): return .sshChanged(host: host, port: port, pattern: pattern)
+            case .scanFailed: return nil
+            }
+        }
         return nil
     }
 
@@ -26,13 +37,15 @@ enum SecurityPrompt: Equatable {
         switch self {
         case .tlsUntrusted: return tr("이 인증서 신뢰 (고정)")
         case .tlsPinMismatch: return tr("저장된 인증서 지우기")
+        case .sshUnknown: return tr("신뢰하고 연결")
+        case .sshChanged: return tr("저장된 키 지우기")
         }
     }
 
     /// 지우는 동작이면 위험 표시
     var isRemoval: Bool {
         switch self {
-        case .tlsPinMismatch: return true
+        case .tlsPinMismatch, .sshChanged: return true
         default: return false
         }
     }
@@ -62,7 +75,7 @@ extension AppState {
         return true
     }
 
-    /// 확인 창에서 [신뢰] · [지우기] 를 눌렀을 때.
+    /// 확인 창에서 [신뢰] · [지우기] 를 눌렀을 때 파일 · 감사 로그를 처리한다.
     /// TLS 고정 지문은 저장하지 않고 바꿀 값을 돌려준다 (메인 창은 접속 목록에, 접속 편집은 편집 중인 값에 넣는다).
     func applySecurityAccept(_ prompt: SecurityPrompt, profileName: String) -> PinChange {
         switch prompt {
@@ -70,6 +83,21 @@ extension AppState {
             return .set(info.sha256)
         case .tlsPinMismatch:
             return .clear
+        case .sshUnknown(let scan):
+            do {
+                try SSHHostKeys.trust(scan)
+                let fps = scan.keys.map(\.fingerprint).joined(separator: ", ")
+                log(.info, .app, tr("SSH 호스트 키 신뢰 %@ %@", "\(scan.host):\(scan.port)", fps),
+                    audit: AuditRecord(.settings, result: "SSH 호스트 키 신뢰 \(scan.host):\(scan.port) \(fps)"))
+            } catch {
+                logError(error, .app, context: tr("SSH 호스트 키를 저장하지 못했어요"))
+            }
+            return .none
+        case .sshChanged(let host, let port, let pattern):
+            SSHHostKeys.remove(pattern: pattern)
+            log(.info, .app, tr("SSH 호스트 키 지움 %@", "\(host):\(port)"),
+                audit: AuditRecord(.settings, result: "SSH 호스트 키 지움 \(host):\(port)"))
+            return .none
         }
     }
 
@@ -134,13 +162,15 @@ struct SecurityPromptView: View {
         switch prompt {
         case .tlsUntrusted: return tr("서버 인증서를 확인할 수 없어요 — %@", profileName)
         case .tlsPinMismatch: return tr("서버 인증서가 바뀌었어요 — %@", profileName)
+        case .sshUnknown(let scan): return tr("처음 접속하는 SSH 서버예요 — %@", "\(scan.host):\(scan.port)")
+        case .sshChanged(let host, let port, _): return tr("SSH 서버 키가 바뀌었어요 — %@", "\(host):\(port)")
         }
     }
 
     private var icon: String {
         switch prompt {
-        case .tlsUntrusted: return "exclamationmark.shield"
-        case .tlsPinMismatch: return "exclamationmark.octagon"
+        case .tlsUntrusted, .sshUnknown: return "exclamationmark.shield"
+        case .tlsPinMismatch, .sshChanged: return "exclamationmark.octagon"
         }
     }
 
@@ -155,6 +185,23 @@ struct SecurityPromptView: View {
             Text(tr("서버 인증서가 바뀌었어요. 서버를 교체한 게 아니라면 중간에서 가로채는 공격일 수 있어요. 관리자에게 확인한 뒤 [저장된 인증서 지우기] 를 누르세요."))
                 .font(.callout)
             certGrid(info)
+        case .sshUnknown(let scan):
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(scan.keys, id: \.self) { key in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(key.type).frame(width: 70, alignment: .leading)
+                        Text(key.fingerprint).textSelection(.enabled)
+                    }
+                    .font(.system(.callout, design: .monospaced))
+                }
+            }
+            Text(tr("서버 관리자에게 받은 지문과 같은지 확인하세요."))
+                .font(.callout).foregroundStyle(.secondary)
+        case .sshChanged:
+            Text(tr("SSH 서버 키가 바뀌었어요. 서버를 다시 설치한 게 아니라면 중간에서 가로채는 공격일 수 있어요. 관리자에게 확인한 뒤 [저장된 키 지우기] (GodDB 전용 파일에서만 지움)."))
+                .font(.callout)
+            Text(tr("~/.ssh/known_hosts 에 있는 키는 지우지 않아요. 그 파일의 키가 바뀐 거라면 터미널에서 ssh-keygen -R 로 지우세요."))
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
