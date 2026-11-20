@@ -14,6 +14,8 @@ struct CompareView: View {
     @State private var report: SchemaDiffReport?
     @State private var showExtra = false
     @State private var selection: Set<SchemaDiffItem.ID> = []
+    /// 결과 목록이 키보드 입력(⌘C · ⌘A)을 받게. DB 이름 입력칸에 남아 있으면 ⌘C 가 그 글자를 복사한다
+    @FocusState private var listFocused: Bool
     @State private var task: Task<Void, Never>?
 
     var body: some View {
@@ -135,6 +137,9 @@ struct CompareView: View {
                     TableColumn(tr("내용"), value: \.detail)
                 }
                 .frame(minWidth: 300)
+                .focused($listFocused)
+                .onChange(of: selection) { listFocused = true }
+                .onAppear { listFocused = true }
                 // ⌘C: 고른 항목들의 보정 SQL 을 목록 순서대로
                 .onCopyCommand {
                     let text = SchemaDiffReport.fixSQL(of: visible, selected: selection)
