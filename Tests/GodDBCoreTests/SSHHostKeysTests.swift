@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import GodDBCore
 
-@Suite("SSHHostKeys")
+@Suite("SSHHostKeys", .timeLimit(.minutes(1)))
 struct SSHHostKeysTests {
     /// 테스트용 공개키 (ssh-keygen 으로 만든 ED25519 — 어느 서버의 키도 아님)
     static let edKey = "AAAAC3NzaC1lZDI1NTE5AAAAIChtIjIrffCgho75EL9ZKPIMs9wEuDDnaOjuD4Q/Ep5M"
