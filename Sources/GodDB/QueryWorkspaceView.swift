@@ -586,7 +586,7 @@ struct ResultGrid: View {
             let c = GridCell(row: rowID, column: column)
             if canEditInline(c) {
                 selection = [rowID]
-                editingCell = c
+                beginEditing(c)
             }
         }
         .onChange(of: result.id) {
@@ -600,7 +600,7 @@ struct ResultGrid: View {
         }
         .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .focused($gridFocused)
-        .onChange(of: selection) { if !selection.isEmpty { gridFocused = true } }
+        .onChange(of: selection) { if !selection.isEmpty && editingCell == nil { gridFocused = true } }
         // ⌘C: 고른 행을 TSV(머리글 포함)로 — 엑셀 · 스프레드시트에 바로 붙여 넣을 수 있다
         .onCopyCommand {
             let text = copyText(.tsv, selection)
@@ -654,7 +654,7 @@ struct ResultGrid: View {
             if NSApp.currentEvent?.type != .keyDown, ids.count == 1, let rowID = ids.first,
                let c = clickedCell(row: rowID) ?? pointer.cell.flatMap({ $0.row == rowID ? $0 : nil }),
                canEditInline(c) {
-                editingCell = c
+                beginEditing(c)
             }
         }
     }
@@ -715,6 +715,12 @@ struct ResultGrid: View {
     }
 
     /// 칸 편집을 끝낸다: 바뀌었으면 변경에 넣고, Tab/⇧Tab 이면 같은 행 옆 칸으로
+    /// 칸 편집 시작: 표가 포커스를 다시 가져가지 않게 표 포커스를 먼저 놓는다 (입력란이 스스로 첫 응답자가 된다)
+    private func beginEditing(_ c: GridCell) {
+        gridFocused = false
+        editingCell = c
+    }
+
     private func finishEditing(_ c: GridCell, original: String?, text: String, how: InlineCellEdit.Finish, keyboard: Bool) {
         guard editingCell == c else { return }
         if let value = InlineCellEdit.committedValue(original: original, text: text, finish: how) {
@@ -722,7 +728,7 @@ struct ResultGrid: View {
         }
         if let next = InlineCellEdit.neighbor(of: c.column, editable: Array(editableColumns), finish: how),
            case let nextCell = GridCell(row: c.row, column: next), canEditInline(nextCell) {
-            editingCell = nextCell
+            beginEditing(nextCell)
         } else {
             editingCell = nil
             // 키보드로 끝냈으면 표로 포커스를 돌려 화살표 · ⌘C 가 이어지게 (다른 곳을 눌렀으면 그대로)
