@@ -340,6 +340,11 @@ final class HintTextView: NSTextView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
         menu.insertItem(.separator(), at: 0)
+        // 선택 영역(없으면 커서 문장)을 저장 쿼리로
+        let save = NSMenuItem(title: tr("쿼리 저장… (⌥⌘S)"), action: #selector(saveQuery(_:)), keyEquivalent: "")
+        save.target = self
+        menu.insertItem(save, at: 0)
+        menu.insertItem(.separator(), at: 0)
         let format = NSMenuItem(title: tr("SQL 정렬 (⌥⌘L)"), action: #selector(formatSQL(_:)), keyEquivalent: "")
         format.target = self
         menu.insertItem(format, at: 0)
@@ -347,6 +352,10 @@ final class HintTextView: NSTextView {
         comment.target = self
         menu.insertItem(comment, at: 0)
         return menu
+    }
+
+    @objc func saveQuery(_ sender: Any?) {
+        NotificationCenter.default.post(name: .goddbSaveQuery, object: self)
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
@@ -379,4 +388,9 @@ final class HintTextView: NSTextView {
             line.fill()
         }
     }
+}
+
+extension Notification.Name {
+    /// 편집기 우클릭 > 쿼리 저장…
+    static let goddbSaveQuery = Notification.Name("GodDB.saveQuery")
 }

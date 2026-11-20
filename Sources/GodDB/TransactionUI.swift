@@ -150,19 +150,24 @@ final class GodDBAppDelegate: NSObject, NSApplicationDelegate {
         guard let app = MainActor.assumeIsolated({ AppState.shared }) else { return .terminateNow }
         let open = MainActor.assumeIsolated { app.openTransactions }
         guard !open.isEmpty else { return .terminateNow }
-        let alert = NSAlert()
-        alert.messageText = tr("커밋하지 않은 트랜잭션이 있어요")
-        alert.informativeText = tr("접속 %@개에 커밋하지 않은 변경 %@건이 있어요. 종료하면 되돌려져요(롤백).",
-                                   "\(open.count)", "\(open.map(\.1).reduce(0, +))")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: tr("롤백하고 종료"))
-        alert.addButton(withTitle: tr("취소"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        guard Self.confirmRollback(open, proceedTitle: tr("롤백하고 종료")) else { return .terminateCancel }
         Task { @MainActor in
             for (id, _) in open { await app.rollbackTx(id) }
             LogFile.shared.flush()
             NSApplication.shared.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    /// 열린 트랜잭션이 있을 때 "롤백하고 …" 확인 (앱 종료 · 이전 버전 설치가 같이 쓴다). 진행하면 true
+    static func confirmRollback(_ open: [(UUID, Int)], proceedTitle: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = tr("커밋하지 않은 트랜잭션이 있어요")
+        alert.informativeText = tr("접속 %@개에 커밋하지 않은 변경 %@건이 있어요. 종료하면 되돌려져요(롤백).",
+                                   "\(open.count)", "\(open.map(\.1).reduce(0, +))")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: proceedTitle)
+        alert.addButton(withTitle: tr("취소"))
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }

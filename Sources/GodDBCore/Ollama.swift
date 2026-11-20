@@ -23,12 +23,15 @@ public enum OllamaError: LocalizedError {
     case notRunning
     case noModel
     case http(Int, String)
+    /// 이 PC 밖의 주소 — 구조 · SQL · 샘플 값이 다른 서버로 가므로 요청하지 않는다
+    case remoteBlocked(String)
 
     public var errorDescription: String? {
         switch self {
         case .notRunning: return tr("Ollama 가 실행 중이 아니에요. 설정 > AI 에서 확인해 주세요.")
         case .noModel: return tr("AI 에 쓸 모델을 설정 > AI 에서 골라 주세요.")
         case .http(let code, let body): return tr("Ollama 오류 (HTTP %@): %@", "\(code)", body)
+        case .remoteBlocked(let host): return tr("AI 는 이 PC 의 Ollama 만 쓸 수 있어요 (%@ 는 다른 서버예요). 설정 > AI 에서 주소를 localhost 로 바꿔 주세요.", host)
         }
     }
 }
@@ -54,7 +57,13 @@ public struct OllamaClient: Sendable {
         return Self.isInstalled ? .installedNotRunning : .notInstalled
     }
 
+    /// 이 PC 밖이면 요청 전에 막는다 (설정을 거치지 않고 주소가 들어와도)
+    func ensureLocal() throws {
+        guard AISettings.isLocalURL(baseURL.absoluteString) else { throw OllamaError.remoteBlocked(baseURL.host ?? baseURL.absoluteString) }
+    }
+
     public func models() async throws -> [OllamaModel] {
+        try ensureLocal()
         var request = URLRequest(url: baseURL.appendingPathComponent("api/tags"))
         request.timeoutInterval = 3
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -111,6 +120,7 @@ public struct OllamaClient: Sendable {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    try ensureLocal()
                     var request = URLRequest(url: baseURL.appendingPathComponent("api/chat"))
                     request.httpMethod = "POST"
                     request.timeoutInterval = 600
@@ -159,14 +169,9 @@ public struct OllamaClient: Sendable {
     }
 }
 
-/// 쿼리 튜닝 설정 (UserDefaults)
-public enum TuningSettings {
+/// 로컬 AI(Ollama) 설정 (UserDefaults). 저장 키는 예전 쿼리 튜닝 시절 이름을 그대로 써서 기존 설정이 유지된다.
+public enum AISettings {
     private static let d = UserDefaults.standard
-
-    public static var enabled: Bool {
-        get { d.object(forKey: "GodDB.tuning.enabled") as? Bool ?? true }
-        set { d.set(newValue, forKey: "GodDB.tuning.enabled") }
-    }
 
     public static var url: String {
         get { d.string(forKey: "GodDB.tuning.url") ?? "http://localhost:11434" }
@@ -183,10 +188,20 @@ public enum TuningSettings {
         OllamaClient(baseURL: URL(string: url) ?? URL(string: "http://localhost:11434")!)
     }
 
-    /// 이 Mac 안의 주소인지 (아니면 스키마 정보가 다른 서버로 간다)
-    public static var isLocal: Bool {
-        guard let host = URL(string: url)?.host?.lowercased() else { return false }
-        return ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
+    public static let defaultURL = "http://localhost:11434"
+
+    /// 지금 저장된 주소가 이 PC 인지
+    public static var isLocal: Bool { isLocalURL(url) }
+
+    /// 이 PC(루프백) 주소인지: localhost, 127.0.0.0/8, ::1. 스킴은 http(s) 만.
+    public static func isLocalURL(_ text: String) -> Bool {
+        guard let u = URL(string: text.trimmingCharacters(in: .whitespaces)),
+              let scheme = u.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              var host = u.host?.lowercased() else { return false }
+        if host.hasPrefix("[") && host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        if host == "localhost" || host == "::1" || host == "0:0:0:0:0:0:0:1" { return true }
+        let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 4 && parts[0] == "127" && parts.allSatisfy { p in Int(p).map { (0...255).contains($0) } ?? false }
     }
 
     /// 코드·SQL 에 강한 추천 모델

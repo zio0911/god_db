@@ -20,10 +20,12 @@ public final class SSHTunnel: @unchecked Sendable {
     public let localPort: Int
     private let process: Process
     private let stderrPipe = Pipe()
+    private let config: SSHConfig
 
     public init(config: SSHConfig, remoteHost: String, remotePort: Int) throws {
         guard let port = SSHTunnel.findFreePort() else { throw SSHTunnelError.noFreePort }
         localPort = port
+        self.config = config
         process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         process.arguments = SSHTunnel.arguments(
@@ -33,12 +35,16 @@ public final class SSHTunnel: @unchecked Sendable {
         process.standardInput = FileHandle.nullDevice
     }
 
-    public static func arguments(config: SSHConfig, localPort: Int, remoteHost: String, remotePort: Int) -> [String] {
+    public static func arguments(config: SSHConfig, localPort: Int, remoteHost: String, remotePort: Int,
+                                 knownHostsFile: URL = SSHHostKeys.godDBFile) -> [String] {
         var args = [
             "-N",
             "-o", "ExitOnForwardFailure=yes",
             "-o", "BatchMode=yes",
-            "-o", "StrictHostKeyChecking=accept-new",
+        ]
+        // 모르는 서버 · 바뀐 키는 거부 (처음 접속은 연결 전에 지문을 보여 주고 확인받는다 — F9-4)
+        args += SSHHostKeys.sshOptions(godDBFile: knownHostsFile)
+        args += [
             "-o", "ServerAliveInterval=30",
             "-o", "ConnectTimeout=10",
             "-p", String(config.port),
@@ -54,12 +60,25 @@ public final class SSHTunnel: @unchecked Sendable {
 
     /// ssh 를 실행하고 로컬 포트가 열릴 때까지 기다린다.
     public func start() async throws {
+        // 연결 전에 known_hosts 에서 찾고, 없으면 키를 받아 확인 창용 오류를 던진다
+        let config = self.config
+        try await Task.detached { try SSHHostKeys.check(config) }.value
         try process.run()
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if !process.isRunning {
                 let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                 let msg = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                switch SSHHostKeys.classify(stderr: msg) {
+                case .changed:
+                    let resolved = await Task.detached { SSHHostKeys.resolve(config) }.value
+                    throw SSHHostKeyError.changed(host: config.host, port: config.port, pattern: resolved.pattern)
+                case .unknown:
+                    // 확인한 뒤 키가 바뀌었거나 다른 종류의 키만 알려진 경우 → 다시 받아 확인 창
+                    try await Task.detached { try SSHHostKeys.check(config) }.value
+                case nil:
+                    break
+                }
                 throw SSHTunnelError.exited(msg.isEmpty ? tr("ssh 종료 코드 %@", "\(process.terminationStatus)") : msg)
             }
             if SSHTunnel.canConnect(port: localPort) { return }

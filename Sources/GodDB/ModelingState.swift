@@ -10,6 +10,8 @@ import UniformTypeIdentifiers
 final class ModelingState {
     var models: [DataModel] = []
     var selectedID: UUID?
+    /// 테이블 명세서 저장 시트를 띄울 모델
+    var tableSpecModel: DataModel?
     private(set) var loaded = false
     /// 모델별 되돌리기 기록 (구조 변경 전 스냅샷)
     private var undo: [UUID: [DataModel]] = [:]
@@ -138,6 +140,11 @@ final class ModelingState {
         do { try ModelStore.encode(m).write(to: url, options: .atomic) } catch {
             NSAlert(error: error).runModal()
         }
+    }
+
+    /// 테이블 명세서(엑셀) 저장: 시스템명 · 작성자 · 작성일을 묻는 시트부터
+    func exportTableSpec(_ id: UUID) {
+        tableSpecModel = models.first { $0.id == id }
     }
 
     func importFile() {
