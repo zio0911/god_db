@@ -148,6 +148,14 @@ final class AppState {
     var showQuickOpen = false
     /// ID 로 찾기 (⌥⌘F)
     var idSearchRequest: IDSearchRequest?
+    /// 저장 쿼리 창 (⌥⌘S 저장 · ⇧⌘K 목록 · 빈칸 입력)
+    var savedQuerySheet: SavedQuerySheet?
+    /// 저장 쿼리 목록 (saved-queries.json)
+    var savedQueries = SavedQueryStore.shared.load()
+    /// 보고 있는 쿼리 탭의 편집기 (⌥⌘S 가 선택 영역 · 커서 문장을 읽는다)
+    @ObservationIgnored weak var activeEditor: EditorController?
+    /// 이 탭의 편집기 내용 전체를 평소 실행 경로(확인 창 포함)로 실행해 달라는 요청 (저장 쿼리 [실행])
+    var runAllRequest: UUID?
     /// 적용하지 않은 결과 편집을 버리기 전 확인
     var discardPrompt: DiscardEditsPrompt?
     /// 결과 내보내기 설정 창

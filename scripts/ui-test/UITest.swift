@@ -627,6 +627,52 @@ scenario("idSearch") {
     check("[없는 ID 복사] → 99", clipboard() == "99", clipboard())
 }
 
+scenario("savedQuery") {
+    // 저장 쿼리: :id 쿼리를 ⌥⌘S 로 저장 → 편집기 비우기 → ⇧⌘K 목록에서 더블클릭 → 값 2 입력 → 실행 → 다시 열면 2 가 남아 있음
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    try setEditor("SELECT id, customer FROM ui_orders WHERE id = :id")
+    key("s", [cmd, opt])
+    guard let nameField = app.find(4, { $0.modal && $0.role == "AXTextField" && $0.value.hasPrefix("SELECT id, customer") }) else {
+        check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", false); return
+    }
+    check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", nameField.value == "SELECT id, customer FROM ui_orders WHERE ", nameField.value)
+    check("찾은 빈칸 표시 (빈칸: :id)", app.find(2, { $0.modal && $0.text.contains("빈칸: :id") }) != nil)
+    click(nameField)
+    key("a", cmd)
+    paste("UI 주문 조회")
+    guard let save = app.find(2, { $0.modal && button("저장")($0) }) else { check("[저장] 버튼", false); return }
+    press(save)
+    check("저장하면 창이 닫힘", app.gone(3, { $0.modal && $0.role == "AXTextField" }))
+
+    // 지금 탭을 비워 두면 그 탭에 넣고 실행한다
+    if let ed = editor() { click(ed) }
+    key("a", cmd)
+    key("delete")
+    key("k", [cmd, shift])
+    guard let row = app.find(4, { $0.modal && $0.role == "AXStaticText" && $0.value == "UI 주문 조회" }) else {
+        check("⇧⌘K 저장 쿼리 목록에 보임", false); return
+    }
+    check("⇧⌘K 저장 쿼리 목록에 보임", true)
+    click(row, double: true)
+    guard let field = app.find(4, { $0.modal && $0.role == "AXTextField" && $0.label.contains(":id") }) else {
+        check("빈칸이 있으면 입력 창 (:id)", false); return
+    }
+    check("빈칸이 있으면 입력 창 (:id)", true)
+    click(field)
+    paste("2")
+    guard let run = app.find(2, { $0.modal && button("실행")($0) }) else { check("[실행] 버튼", false); return }
+    press(run)
+    check("값을 채워 지금 탭에 넣음 (WHERE id = 2)", editorText().contains("WHERE id = 2"), editorText())
+    check("실행 결과 (lee)", app.find(8, cell("lee")) != nil)
+
+    // 다시 열면 마지막 값이 채워져 있다
+    key("k", [cmd, shift])
+    if let again = app.find(4, { $0.modal && $0.role == "AXStaticText" && $0.value == "UI 주문 조회" }) { click(again, double: true) }
+    let remembered = app.find(4, { $0.modal && $0.role == "AXTextField" && $0.label.contains(":id") })
+    check("다음에 열면 마지막 값 기억 (2)", remembered?.value == "2", remembered?.value ?? "입력 창 없음")
+    answer("취소")
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {

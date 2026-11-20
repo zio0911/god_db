@@ -115,6 +115,12 @@ struct GodDBApp: App {
                 Button(tr("ID 로 찾기…")) { app.openIDSearch() }
                     .keyboardShortcut("f", modifiers: [.command, .option])
                     .disabled(!app.canSearchIDs)
+                Button(tr("쿼리 저장…")) { app.openSaveQuery() }
+                    .keyboardShortcut("s", modifiers: [.command, .option])
+                    .disabled(!app.canSaveQuery)
+                Button(tr("저장 쿼리…")) { app.openSavedQueries() }
+                    .keyboardShortcut("k", modifiers: [.command, .shift])
+                    .disabled(!app.canOpenSavedQueries)
                 Button(tr("쿼리 히스토리…")) { app.showHistory = true }
                     .keyboardShortcut("y", modifiers: .command)
             }
