@@ -68,8 +68,10 @@ struct ConnectionEditorView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if profile.readOnly && profile.kind == .mssql {
-                        Text(tr("SQL Server 는 세션 단위 읽기전용 설정이 없어서 앱에서만 막아요. 운영 DB 는 읽기 전용 계정을 쓰는 걸 권장해요."))
-                            .font(.caption).foregroundStyle(.secondary)
+                        // SQL Server 는 세션 읽기전용이 없어 서버에서 강제할 수 없다 (MySQL · PostgreSQL 은 세션 READ ONLY 로 이중 차단)
+                        Label(tr("SQL Server 는 앱에서만 막아요(서버에서 강제되지 않음). 운영 DB 는 읽기 권한만 있는 DB 계정을 쓰세요."),
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
                     }
                 }
                 Section(profile.kind.title) {
