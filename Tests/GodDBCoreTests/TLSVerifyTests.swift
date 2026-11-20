@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import GodDBCore
 
-@Suite("TLSVerify")
+@Suite("TLSVerify", .timeLimit(.minutes(1)))
 struct TLSVerifyTests {
     /// 테스트용 자체 서명 인증서 (CN=goddb-test.local, SAN DNS:goddb-test.local, 2026-11-20 ~ 2036-11-17). 개인키는 버렸다.
     static let selfSignedPEM = """
