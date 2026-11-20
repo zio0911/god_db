@@ -343,7 +343,9 @@ scenario("cancel") {
 /// 결과 빠른 필터 비우기 (× 버튼)
 /// 사이드바 테이블 줄 (목록은 보이는 줄만 손쉬운 사용에 나오므로 '테이블 검색' 으로 좁혀서 찾는다)
 func sidebarTable(_ name: String) -> Node? {
-    let isRow: (Node) -> Bool = { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == name }
+    // 라벨 뒤에 도움말(테이블 코멘트)이 " | …" 로 붙으므로 앞부분 · 값만 본다
+    let isRow: (Node) -> Bool = { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role)
+        && ($0.value == name || $0.label.components(separatedBy: " | ").first == name) }
     if let f = app.find(2, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("테이블 검색") }) {
         click(f)
         key("a", [cmd])
