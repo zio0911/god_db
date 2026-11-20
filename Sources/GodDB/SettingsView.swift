@@ -11,9 +11,8 @@ final class AppSettings {
         didSet { L10n.language = language }
     }
 
-    var tuningEnabled: Bool { didSet { TuningSettings.enabled = tuningEnabled } }
-    var ollamaURL: String { didSet { TuningSettings.url = ollamaURL } }
-    var tuningModel: String { didSet { TuningSettings.model = tuningModel } }
+    var ollamaURL: String { didSet { AISettings.url = ollamaURL } }
+    var tuningModel: String { didSet { AISettings.model = tuningModel } }
     var logFileEnabled: Bool { didSet { LogFile.enabled = logFileEnabled } }
     var logRetentionDays: Int { didSet { LogFile.retentionDays = logRetentionDays; LogFile.shared.cleanNow() } }
     var assistantEnabled: Bool { didSet { UserDefaults.standard.set(assistantEnabled, forKey: Self.assistantKey) } }
@@ -21,9 +20,8 @@ final class AppSettings {
 
     init() {
         language = L10n.language
-        tuningEnabled = TuningSettings.enabled
-        ollamaURL = TuningSettings.url
-        tuningModel = TuningSettings.model
+        ollamaURL = AISettings.url
+        tuningModel = AISettings.model
         logFileEnabled = LogFile.enabled
         logRetentionDays = LogFile.retentionDays
         assistantEnabled = UserDefaults.standard.object(forKey: Self.assistantKey) as? Bool ?? true
@@ -38,7 +36,7 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsView()
                 .tabItem { Label(tr("일반"), systemImage: "gearshape") }
-            TuningSettingsView()
+            AISettingsView()
                 .tabItem { Label(tr("AI"), systemImage: "sparkles") }
             UpdateSettingsView()
                 .tabItem { Label(tr("업데이트"), systemImage: "arrow.down.circle") }
@@ -265,8 +263,8 @@ struct LicenseSettingsView: View {
     }
 }
 
-/// 설정 > AI: 로컬 Ollama 연결과 모델, AI 어시스턴트·쿼리 튜닝 각각 켜기
-struct TuningSettingsView: View {
+/// 설정 > AI: 로컬 Ollama 연결과 모델, AI 어시스턴트 켜기
+struct AISettingsView: View {
     @Environment(AppSettings.self) private var settings
     @State private var status: OllamaStatus?
     @State private var checking = false
@@ -284,14 +282,11 @@ struct TuningSettingsView: View {
                 Toggle(tr("AI 어시스턴트 사용"), isOn: $settings.assistantEnabled)
                 Text(tr("끄면 도구 막대의 ✨ AI 어시스턴트 버튼과 오른쪽 패널이 사라져요."))
                     .font(.caption).foregroundStyle(.secondary)
-                Toggle(tr("쿼리 튜닝 사용"), isOn: $settings.tuningEnabled)
-                Text(tr("쿼리 탭의 튜닝 버튼(⌥⌘T)을 누르면 쿼리·테이블 구조·인덱스·실행 계획을 로컬 Ollama 에 보내 개선 SQL 과 추천 인덱스를 받아요. 끄면 튜닝 버튼이 사라져요."))
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 TextField(tr("Ollama 주소"), text: $settings.ollamaURL)
                     .onSubmit { Task { await refresh() } }
-                if !TuningSettings.isLocal {
+                if !AISettings.isLocal {
                     Label(tr("이 Mac 밖의 주소예요. 쿼리와 테이블 구조가 그 서버로 전송돼요."), systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.orange)
                 }
@@ -332,7 +327,7 @@ struct TuningSettingsView: View {
                     }
                 }
                 Text(tr("추천: %@ (코드·SQL 에 강하고 한국어도 잘 알아들어요). 메모리가 넉넉하면 큰 모델일수록 정확해요.",
-                        TuningSettings.recommendedModels.joined(separator: ", ")))
+                        AISettings.recommendedModels.joined(separator: ", ")))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Text("ollama pull qwen2.5-coder:14b").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
@@ -370,7 +365,7 @@ struct TuningSettingsView: View {
 
     private func refresh() async {
         checking = true
-        status = await TuningSettings.client.status()
+        status = await AISettings.client.status()
         checking = false
     }
 }
