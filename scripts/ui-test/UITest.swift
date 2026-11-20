@@ -341,6 +341,31 @@ scenario("cancel") {
 }
 
 /// 결과 빠른 필터 비우기 (× 버튼)
+/// 사이드바 테이블 줄 (목록은 보이는 줄만 손쉬운 사용에 나오므로 '테이블 검색' 으로 좁혀서 찾는다)
+func sidebarTable(_ name: String) -> Node? {
+    let isRow: (Node) -> Bool = { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == name }
+    if let f = app.find(2, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("테이블 검색") }) {
+        click(f)
+        key("a", [cmd])
+        paste(name)
+    }
+    return app.find(5, isRow)
+}
+
+/// 사이드바 '테이블 검색' 비우기
+func clearSidebarSearch() {
+    if let f = app.find(1, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("테이블 검색") }), !f.value.isEmpty {
+        click(f); key("a", [cmd]); key("delete")
+    }
+}
+
+/// 그 자리에서 마우스 휠을 굴린다 (음수 = 아래로)
+func scrollAt(_ n: Node, lines: Int32) {
+    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: n.frame.midX, y: n.frame.midY), mouseButton: .left))
+    post(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0))
+    Thread.sleep(forTimeInterval: 0.4)
+}
+
 func clearFilter() {
     if let x = app.find(0.5, { $0.role == "AXButton" && $0.label.contains("필터 지우기") }) { press(x) }
 }
@@ -612,9 +637,10 @@ scenario("prodIdle") {
 scenario("idSearch") {
     // ID 로 찾기: 사이드바에서 ui_orders 를 고르고 ⌥⌘F → 로그 3줄 붙여넣기 → 3개 추출 → 조회 → 없는 ID 1개
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
-    guard let table = app.find(10, { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == "ui_orders" }) else {
+    guard let table = sidebarTable("ui_orders") else {
         throw Abort(message: "사이드바에 ui_orders 가 없어요")
     }
+    defer { clearSidebarSearch() }
     click(table)
     key("f", [cmd, opt])
     guard let area = app.find(4, { $0.modal && $0.role == "AXTextArea" }) else { check("⌥⌘F ID 로 찾기 열기", false); return }
@@ -644,6 +670,12 @@ scenario("savedQuery") {
     // 저장 쿼리: :id 쿼리를 ⌥⌘S 로 저장 → 편집기 비우기 → ⇧⌘K 목록에서 더블클릭 → 값 2 입력 → 실행 → 다시 열면 2 가 남아 있음
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
     try setEditor("SELECT id, customer FROM ui_orders WHERE id = :id")
+    // 편집기 우클릭에도 '쿼리 저장…' 이 있다
+    if let editor = app.find(2, { !$0.modal && $0.role == "AXTextArea" }) {
+        click(editor, right: true)
+        check("편집기 우클릭 '쿼리 저장…'", findMenuItem(3, { $0.label.contains("쿼리 저장…") }) != nil)
+        key("escape")
+    }
     key("s", [cmd, opt])
     guard let nameField = app.find(4, { $0.modal && $0.role == "AXTextField" && $0.value.hasPrefix("SELECT id, customer") }) else {
         check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", false); return
@@ -772,27 +804,33 @@ scenario("jsonView") {
     check("JSON 칸 위에 보기 전환 (원문 · 정렬 · 트리)",
           app.find(5, { $0.role == "AXRadioButton" && $0.text.contains("트리") }) != nil
           && app.find(1, { $0.role == "AXRadioButton" && $0.text.contains("정렬") }) != nil)
-    check("트리가 2단계까지 펼쳐짐 (coupon.code = \"A-77\", tags[0] = \"new\")",
-          app.find(5, { $0.role == "AXStaticText" && $0.value == "\"A-77\"" }) != nil
-          && app.find(1, { $0.role == "AXStaticText" && $0.value == "\"new\"" }) != nil)
-    guard let code = app.find(3, { $0.role == "AXStaticText" && $0.value == "code" }) else {
-        check("트리에 coupon 아래 code 항목", false); return
+    // 창이 작아 행 상세에는 tags 까지만 보인다 → 배열 항목부터 보고, 휠로 내려 coupon 을 본다
+    guard let first = app.find(5, { $0.role == "AXStaticText" && $0.value == "\"new\"" }) else {
+        check("트리가 펼쳐짐 (tags[0] = \"new\")", false); return
     }
+    check("트리가 펼쳐짐 (tags[0] = \"new\")", true)
     setClipboard("")
-    click(code, right: true)
-    if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) {
-        press(item)
-        check("우클릭 > 경로 복사 → $.coupon.code", clipboard() == "$.coupon.code", clipboard())
-    } else {
-        check("우클릭 > 경로 복사", false)
-        key("escape")
-    }
     if let tag = app.find(3, { $0.role == "AXStaticText" && $0.value == "\"gift\"" }) {
         click(tag, right: true)
         if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) { press(item) } else { key("escape") }
         check("배열 항목 경로 복사 → $.tags[1]", clipboard() == "$.tags[1]", clipboard())
     } else {
         check("트리에 tags[1] = \"gift\"", false)
+    }
+    scrollAt(first, lines: -6)
+    check("2단계까지 펼쳐짐 (coupon.code = \"A-77\")", app.find(5, { $0.role == "AXStaticText" && $0.value == "\"A-77\"" }) != nil)
+    if let code = app.find(3, { $0.role == "AXStaticText" && $0.value == "code" }) {
+        setClipboard("")
+        click(code, right: true)
+        if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) {
+            press(item)
+            check("우클릭 > 경로 복사 → $.coupon.code", clipboard() == "$.coupon.code", clipboard())
+        } else {
+            check("우클릭 > 경로 복사", false)
+            key("escape")
+        }
+    } else {
+        check("트리에 coupon 아래 code 항목", false)
     }
     // 정렬 보기: 들여쓰기 2칸, 원래 키 순서
     if let pretty = app.find(2, { $0.role == "AXRadioButton" && $0.text.contains("정렬") }) {
@@ -821,9 +859,10 @@ scenario("tableNote") {
     // 테이블 메모 (AI 없이): ui_schools 우클릭 > 테이블 메모… → 메모 추가 → 찾는 말 입력 → 저장 → 사이드바 📝 → 지우면 📝 사라짐
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
     clearFilter()
-    guard let table = app.find(10, { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == "ui_schools" }) else {
+    guard let table = sidebarTable("ui_schools") else {
         throw Abort(message: "사이드바에 ui_schools 가 없어요")
     }
+    defer { clearSidebarSearch() }
     click(table, right: true)
     guard let item = findMenuItem(3, { $0.label.contains("테이블 메모…") }) else {
         check("우클릭 '테이블 메모…'", false); key("escape"); return
