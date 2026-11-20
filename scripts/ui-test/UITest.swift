@@ -798,27 +798,33 @@ scenario("jsonView") {
     check("JSON 칸 위에 보기 전환 (원문 · 정렬 · 트리)",
           app.find(5, { $0.role == "AXRadioButton" && $0.text.contains("트리") }) != nil
           && app.find(1, { $0.role == "AXRadioButton" && $0.text.contains("정렬") }) != nil)
-    check("트리가 2단계까지 펼쳐짐 (coupon.code = \"A-77\", tags[0] = \"new\")",
-          app.find(5, { $0.role == "AXStaticText" && $0.value == "\"A-77\"" }) != nil
-          && app.find(1, { $0.role == "AXStaticText" && $0.value == "\"new\"" }) != nil)
-    guard let code = app.find(3, { $0.role == "AXStaticText" && $0.value == "code" }) else {
-        check("트리에 coupon 아래 code 항목", false); return
+    // 창이 작아 행 상세에는 tags 까지만 보인다 → 배열 항목부터 보고, 휠로 내려 coupon 을 본다
+    guard let first = app.find(5, { $0.role == "AXStaticText" && $0.value == "\"new\"" }) else {
+        check("트리가 펼쳐짐 (tags[0] = \"new\")", false); return
     }
+    check("트리가 펼쳐짐 (tags[0] = \"new\")", true)
     setClipboard("")
-    click(code, right: true)
-    if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) {
-        press(item)
-        check("우클릭 > 경로 복사 → $.coupon.code", clipboard() == "$.coupon.code", clipboard())
-    } else {
-        check("우클릭 > 경로 복사", false)
-        key("escape")
-    }
     if let tag = app.find(3, { $0.role == "AXStaticText" && $0.value == "\"gift\"" }) {
         click(tag, right: true)
         if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) { press(item) } else { key("escape") }
         check("배열 항목 경로 복사 → $.tags[1]", clipboard() == "$.tags[1]", clipboard())
     } else {
         check("트리에 tags[1] = \"gift\"", false)
+    }
+    scrollAt(first, lines: -6)
+    check("2단계까지 펼쳐짐 (coupon.code = \"A-77\")", app.find(5, { $0.role == "AXStaticText" && $0.value == "\"A-77\"" }) != nil)
+    if let code = app.find(3, { $0.role == "AXStaticText" && $0.value == "code" }) {
+        setClipboard("")
+        click(code, right: true)
+        if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) {
+            press(item)
+            check("우클릭 > 경로 복사 → $.coupon.code", clipboard() == "$.coupon.code", clipboard())
+        } else {
+            check("우클릭 > 경로 복사", false)
+            key("escape")
+        }
+    } else {
+        check("트리에 coupon 아래 code 항목", false)
     }
     // 정렬 보기: 들여쓰기 2칸, 원래 키 순서
     if let pretty = app.find(2, { $0.role == "AXRadioButton" && $0.text.contains("정렬") }) {
