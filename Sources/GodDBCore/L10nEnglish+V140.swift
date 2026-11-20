@@ -1,6 +1,6 @@
 import Foundation
 
-// 1.4.0 새 기능 번역 (ID 로 찾기 …)
+// 1.4.0 새 기능 번역 (ID 로 찾기 · 저장 쿼리 …)
 extension L10nEnglish {
     static let v140: [String: String] = [
         // ID 로 찾기
@@ -8,6 +8,7 @@ extension L10nEnglish {
         "…외 %@개": "…and %@ more",
         "1,000개까지만 조회해요 (나머지 %@개는 다시 붙여넣으세요)": "Only the first 1,000 are searched (paste the remaining %@ again)",
         "ID 로 찾기": "Find by ID",
+        "쿼리 저장… (⌥⌘S)": "Save Query… (⌥⌘S)",
         "ID 로 찾기…": "Find by ID…",
         "문자 ID 포함 (영문 · 하이픈)": "Include text IDs (letters, hyphens)",
         "붙여넣기": "Paste",
@@ -17,5 +18,37 @@ extension L10nEnglish {
         "조회": "Search",
         "찾은 값 %@개": "%@ values found",
         "테이블을 고르세요": "Choose a table",
+        // 저장 쿼리
+        " 사본": " copy",
+        "'%@' 을(를) 지워요. 되돌릴 수 없어요.": "'%@' will be deleted. This can't be undone.",
+        "↩ · 더블클릭 실행 · 우클릭 메뉴 · esc 닫기": "↩ or double-click to run · right-click for menu · esc to close",
+        "값을 채운 쿼리를 편집기에 넣고 실행하지 않아요": "Puts the filled-in query into the editor without running it",
+        "값을 채워 실행 (⌘↩)": "Fill in and run (⌘↩)",
+        "그대로 넣기": "Insert as is",
+        "넣기만": "Insert Only",
+        "모든 접속": "All connections",
+        "바꾸기": "Change",
+        "보이는 곳": "Show in",
+        "비우면 폴더 없음. 있는 폴더: %@": "Leave empty for no folder. Existing folders: %@",
+        "빈칸 없음": "No parameters",
+        "빈칸: %@": "Parameters: %@",
+        "선택 사항": "Optional",
+        "숫자는 그대로, 그 밖은 따옴표로 감싸요. 쉼표로 나누면 목록(IN (…))이 돼요.": "Numbers go in as is, anything else is quoted. Commas make a list (for IN (…)).",
+        "입력을 SQL 조각으로 그대로 넣어요 (예: NOW(), 1,2,3)": "Inserts the text as a SQL fragment as is (e.g. NOW(), 1,2,3)",
+        "저장 쿼리": "Saved Queries",
+        "저장 쿼리 검색 (이름 · SQL · 폴더)": "Search saved queries (name, SQL, folder)",
+        "저장 쿼리 목록 (⇧⌘K) · 지금 쿼리 저장은 ⌥⌘S": "Saved queries (⇧⌘K) · save the current query with ⌥⌘S",
+        "저장 쿼리…": "Saved Queries…",
+        "저장 쿼리를 지울까요?": "Delete this saved query?",
+        "저장 쿼리에 넣었어요: %@": "Saved query added: %@",
+        "저장한 쿼리가 없어요": "No saved queries yet",
+        "저장할 쿼리가 없어요. 편집기에 쿼리를 쓰고 다시 저장하세요.": "Nothing to save. Write a query in the editor and save again.",
+        "찾는 저장 쿼리가 없어요": "No matching saved queries",
+        "쿼리 저장": "Save Query",
+        "쿼리 저장…": "Save Query…",
+        "편집기에서 ⌥⌘S 로 지금 쿼리를 저장하세요.": "Press ⌥⌘S in the editor to save the current query.",
+        "폴더": "Folder",
+        "폴더 바꾸기": "Change Folder",
+        "폴더 없음": "No folder",
     ]
 }

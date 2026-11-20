@@ -170,6 +170,13 @@ struct QueryTabView: View {
         .onAppear {
             controller.schemaProvider = { [app] in (app.tables, app.routines) }
             controller.focus()
+            app.activeEditor = controller
+        }
+        // 저장 쿼리 [실행]: 넣은 내용을 평소 실행(⌥⌘↩ 와 같은 확인)으로 실행
+        .onChange(of: app.runAllRequest, initial: true) { _, request in
+            guard request == tab.id else { return }
+            app.runAllRequest = nil
+            run(explain: false, all: true)
         }
         .alert(pendingRun?.title ?? "", isPresented: Binding(get: { pendingRun != nil }, set: { if !$0 { pendingRun = nil } }),
                presenting: pendingRun) { confirm in
@@ -241,6 +248,11 @@ struct QueryTabView: View {
                 Label(tr("히스토리"), systemImage: "clock.arrow.circlepath")
             }
             .help(tr("실행한 쿼리 다시 찾기 (⌘Y)"))
+
+            Button { app.openSavedQueries() } label: {
+                Label(tr("저장 쿼리"), systemImage: "bookmark")
+            }
+            .help(tr("저장 쿼리 목록 (⇧⌘K) · 지금 쿼리 저장은 ⌥⌘S"))
 
             // 좁아져도 선택한 값(500 등)은 항상 보이게: 이름표는 compact 에서 숨기고 선택 상자는 줄이지 않는다
             HStack(spacing: 4) {

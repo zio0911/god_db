@@ -118,6 +118,8 @@ struct ContentView: View {
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
         .sheet(isPresented: $app.showQuickOpen) { QuickOpenView() }
         .sheet(item: $app.idSearchRequest) { request in IDSearchView(request: request) }
+        .sheet(item: $app.savedQuerySheet) { sheet in SavedQuerySheetView(sheet: sheet) }
+        .onReceive(NotificationCenter.default.publisher(for: .goddbSaveQuery)) { _ in app.openSaveQuery() }
         .sheet(isPresented: $app.showHistory) { HistoryView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in
