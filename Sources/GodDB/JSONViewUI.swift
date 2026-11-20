@@ -199,9 +199,9 @@ struct JSONTreeView: View {
             Text(verbatim: expanded(line.path) ? "[" : "[…]").foregroundStyle(.secondary)
             Text(verbatim: "\(a.count)").font(.caption2).foregroundStyle(.tertiary)
         case .string(let s):
-            Text(JSONView.quote(s)).foregroundStyle(.green).lineLimit(nil).textSelection(.enabled)
+            Text(JSONView.quote(s)).foregroundStyle(.green).lineLimit(nil)
         case .number(let n):
-            Text(n).foregroundStyle(.blue).textSelection(.enabled)
+            Text(n).foregroundStyle(.blue)
         case .bool(let b):
             Text(verbatim: b ? "true" : "false").foregroundStyle(.purple)
         case .null:
