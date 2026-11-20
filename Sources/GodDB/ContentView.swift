@@ -153,6 +153,11 @@ struct ContentView: View {
         .sheet(item: $app.passwordPrompt) { prompt in
             PasswordPromptView(prompt: prompt)
         }
+        .sheet(item: $app.securityPrompt) { request in
+            SecurityPromptView(prompt: request.prompt, profileName: request.profileName,
+                               onCancel: { app.securityPrompt = nil },
+                               onAccept: { Task { await app.resolveSecurityPrompt(request, accept: true) } })
+        }
         .sheet(isPresented: $app.showExportConnections) {
             ExportConnectionsSheet()
         }

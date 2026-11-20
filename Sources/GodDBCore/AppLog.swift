@@ -120,6 +120,10 @@ public enum ErrorText {
         if let e = error as? DBError {
             return .init(message: e.errorDescription ?? raw, hint: nil, raw: raw)
         }
+        // F9-3: 인증서 (화면이 확인 창을 띄운다)
+        if let e = error as? TLSCertificateError {
+            return .init(message: e.errorDescription ?? raw, hint: nil, raw: raw)
+        }
         if let io = error as? IOError {
             return describeErrno(io.errnoCode, raw: raw)
         }

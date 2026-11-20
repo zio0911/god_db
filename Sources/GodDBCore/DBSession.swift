@@ -31,6 +31,8 @@ public actor DBSession {
     private var cancelRequested = false
     /// 현재 선택된 DB(MySQL/SQL Server) 또는 스키마(PostgreSQL)
     public private(set) var current: String = ""
+    /// 연결의 TLS 상태 (상태창 한 줄 — F9-3)
+    public private(set) var tlsStatus: TLSStatus = .off
 
     // MARK: 트랜잭션 (자동 커밋 / 수동 커밋)
     /// 자동 커밋. 끄면 쓰기 문장을 실행할 때 트랜잭션을 열고, 커밋/롤백할 때까지 반영하지 않는다.
@@ -82,7 +84,8 @@ public actor DBSession {
             host: host, port: port,
             serverName: (profile.ssh == nil && !HostResolver.isIPAddress(profile.host)) ? profile.host : nil,
             username: profile.username, password: password,
-            database: profile.database, useTLS: profile.useTLS)
+            database: profile.database, useTLS: profile.useTLS,
+            tls: TLSPolicy.of(profile))
         self.endpoint = endpoint
         do {
             try await openDriver(endpoint)
@@ -107,6 +110,7 @@ public actor DBSession {
     private func openDriver(_ endpoint: DriverEndpoint) async throws {
         let d = try await Self.makeDriver(profile.kind, endpoint)
         driver = d
+        tlsStatus = profile.kind == .mssql ? (endpoint.useTLS ? .encryptOnly : .off) : d.tlsStatus
         if let sql = dialect.sessionSetupSQL { _ = try? await d.query(sql) }
         if profile.readOnly, let sql = dialect.readOnlySessionSQL {
             // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
