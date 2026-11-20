@@ -202,5 +202,9 @@ extension L10nEnglish {
         "지금 앱이 서명 없는 개발 빌드라 내려받은 앱의 서명을 비교할 수 없어요. GitHub 에서 직접 받아 설치하세요.": "This is an unsigned development build, so the downloaded app's signature can't be compared. Download and install it from GitHub yourself.",
         "코드 서명 확인 실패: %@": "Code signature check failed: %@",
         "트랜잭션을 롤백하지 못해 설치를 멈췄어요": "Couldn't roll back the transaction, so the install was stopped",
+        // 결과 표 칸을 그 자리에서 편집
+        "%@ 편집 가능 · 칸을 더블클릭해 바로 고치거나, 행을 고르면 오른쪽에서 고쳐요": "%@ is editable · double-click a cell to edit it in place, or select a row to edit on the right",
+        "NULL 로 설정 (%@)": "Set to NULL (%@)",
+        "칸 편집": "Edit cell",
     ]
 }

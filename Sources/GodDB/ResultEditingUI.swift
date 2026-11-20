@@ -177,13 +177,15 @@ struct EditBar: View {
             switch target {
             case .success(let t):
                 Image(systemName: "pencil.circle").foregroundStyle(Color.accentColor)
-                Text(tr("%@ 편집 가능 · 행을 고르면 오른쪽에서 값을 고칠 수 있어요", t.table.name))
+                Text(tr("%@ 편집 가능 · 칸을 더블클릭해 바로 고치거나, 행을 고르면 오른쪽에서 고쳐요", t.table.name))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Button {
+                    InlineCellTextField.endActiveEditing()
                     if let id = app.addRow(tab.id) { selection = [id] }
                 } label: { Label(tr("행 추가"), systemImage: "plus") }
                 Button {
+                    InlineCellTextField.endActiveEditing()
                     app.toggleDelete(tab.id, rows: selection)
                 } label: { Label(tr("선택 행 삭제"), systemImage: "minus") }
                     .disabled(selection.isEmpty)
@@ -192,8 +194,12 @@ struct EditBar: View {
                     Divider().frame(height: 14)
                     Text(tr("변경 %@건", "\(tab.edits.count)"))
                         .font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                    Button(tr("되돌리기")) { app.revertEdits(tab.id) }
+                    Button(tr("되돌리기")) {
+                        InlineCellTextField.endActiveEditing()
+                        app.revertEdits(tab.id)
+                    }
                     Button {
+                        InlineCellTextField.endActiveEditing()
                         app.requestApplyEdits(tab.id)
                     } label: { Label(tr("적용…"), systemImage: "checkmark.circle") }
                         .foregroundStyle(Color.accentColor)
@@ -289,4 +295,198 @@ struct RowEditor {
     let edits: PendingEdits
     let set: (Int, String?) -> Void
     let resetToDefault: (Int) -> Void
+}
+
+/// 결과 표에서 고르고 있는 칸 (행 id, 컬럼 번호)
+struct GridCell: Hashable {
+    let row: Int
+    let column: Int
+}
+
+/// 마우스가 올라간 칸. 더블클릭 · 우클릭이 어느 칸인지 알기 위해 쓰며, 바뀌어도 화면을 다시 그리지 않는다.
+final class PointerCell {
+    var cell: GridCell?
+
+    /// 지금 처리 중인 마우스 이벤트가 표의 몇 번째 컬럼(화면 순서)에 떨어졌는지와 그 머리글.
+    /// 마우스를 움직이지 않고 누르면(결과가 새로 그려진 뒤 등) hover 가 오지 않으므로 이벤트 위치로 직접 찾는다.
+    /// 마지막으로 누른 마우스 (창 · 창 안 위치). 더블클릭 처리 시점에는 현재 이벤트가 마우스가 아닐 수 있어 따로 기억한다
+    private static var lastDown: (window: NSWindow, point: NSPoint)?
+    private static var monitor: Any?
+
+    /// 지금 보이는 결과 표 (더블클릭을 받을 곳)
+    nonisolated(unsafe) static weak var active: PointerCell?
+    /// 더블클릭한 칸 (표의 행 번호 · 컬럼 번호 · 머리글). 받으면 doubleClicked 가 불린다
+    var pendingDouble: (row: Int, column: Int, title: String)?
+    var doubleClicked: (() -> Void)?
+
+    /// 결과 표가 처음 나올 때 한 번 건다 (앱 안 마우스 누름만 본다, 이벤트는 그대로 통과).
+    /// 표(NSTableView)는 두 번째 클릭을 칸 안의 SwiftUI 동작에 넘기지 않아서, 더블클릭은 여기서 위치로 칸을 찾는다
+    static func startTracking() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { ev in
+            if let w = ev.window { lastDown = (w, ev.locationInWindow) }
+            if ev.type == .leftMouseDown, ev.clickCount == 2, ev.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+               let w = ev.window, let table = tableView(in: w, at: ev.locationInWindow) {
+                let p = table.convert(ev.locationInWindow, from: nil)
+                let r = table.row(at: p), c = table.column(at: p)
+                if r >= 0, c >= 0, c < table.tableColumns.count, let target = active {
+                    target.pendingDouble = (r, c, table.tableColumns[c].title)
+                    DispatchQueue.main.async { target.doubleClicked?() }
+                }
+            }
+            return ev
+        }
+    }
+
+    private static func tableView(in window: NSWindow, at point: NSPoint) -> NSTableView? {
+        guard var view = window.contentView?.hitTest(point) else { return nil }
+        while !(view is NSTableView) {
+            guard let parent = view.superview else { return nil }
+            view = parent
+        }
+        return view as? NSTableView
+    }
+
+    static func clickedColumn() -> (index: Int, title: String)? {
+        let ev = NSApp.currentEvent
+        let fromEvent = ev.flatMap { e -> (NSWindow, NSPoint)? in
+            guard let w = e.window, [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(e.type) else { return nil }
+            return (w, e.locationInWindow)
+        }
+        guard let (window, point) = fromEvent ?? lastDown.map({ ($0.window, $0.point) }),
+              var view = window.contentView?.hitTest(point) else { return nil }
+        while !(view is NSTableView) {
+            guard let parent = view.superview else { return nil }
+            view = parent
+        }
+        guard let table = view as? NSTableView else { return nil }
+        let index = table.column(at: table.convert(point, from: nil))
+        guard index >= 0, index < table.tableColumns.count else { return nil }
+        return (index, table.tableColumns[index].title)
+    }
+}
+
+/// 그 자리에서 고치는 칸 (칸 뷰가 직접 지켜봐서 바뀌면 그 칸만 다시 그린다)
+@Observable
+final class InlineEditState {
+    var cell: GridCell?
+}
+
+/// 고치는 칸이면 입력란, 아니면 보통 칸. state.cell 을 여기서 읽어 표가 줄을 다시 그리지 않아도 바뀐다
+struct EditableGridCell<Editor: View, Content: View>: View {
+    let state: InlineEditState
+    let here: GridCell
+    @ViewBuilder let editor: () -> Editor
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if state.cell == here { editor() } else { content() }
+    }
+}
+
+/// 결과 표 칸 하나를 그 자리에서 고치는 한 줄 입력란 (고치는 칸에만 하나 만든다)
+/// ↩ 넣기 · Esc 취소 · Tab/⇧Tab 넣고 옆 칸 · 다른 곳 클릭 넣기
+struct InlineCellEditor: NSViewRepresentable {
+    let initial: String
+    /// (입력한 글자, 끝낸 방법, 키보드로 끝냈는지)
+    let onFinish: (String, InlineCellEdit.Finish, Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
+
+    func makeNSView(context: Context) -> InlineCellTextField {
+        let field = InlineCellTextField(string: initial)
+        field.font = .monospacedSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize, weight: .regular)
+        field.isBordered = false
+        field.drawsBackground = true
+        field.backgroundColor = .textBackgroundColor
+        field.focusRingType = .exterior
+        field.usesSingleLineMode = true
+        field.lineBreakMode = .byClipping
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.delegate = context.coordinator
+        field.setAccessibilityLabel(tr("칸 편집"))
+        return field
+    }
+
+    func updateNSView(_ field: InlineCellTextField, context: Context) {
+        context.coordinator.onFinish = onFinish
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var onFinish: (String, InlineCellEdit.Finish, Bool) -> Void
+        private var finished = false
+
+        init(onFinish: @escaping (String, InlineCellEdit.Finish, Bool) -> Void) { self.onFinish = onFinish }
+
+        private func finish(_ text: String, _ how: InlineCellEdit.Finish, keyboard: Bool) {
+            guard !finished else { return }
+            finished = true
+            onFinish(text, how, keyboard)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            let how: InlineCellEdit.Finish
+            switch selector {
+            case #selector(NSResponder.insertNewline(_:)): how = .commit
+            // Esc: 입력란에서는 cancelOperation 대신 complete(자동완성)으로 오기도 한다 → 둘 다 취소
+            case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): how = .cancel
+            case #selector(NSResponder.insertTab(_:)): how = .next
+            case #selector(NSResponder.insertBacktab(_:)): how = .previous
+            default: return false
+            }
+            let table = sequence(first: control.superview, next: { $0?.superview }).lazy.compactMap { $0 as? NSTableView }.first
+            finish(textView.string, how, keyboard: true)
+            // ↩ · Esc 로 끝내면 키보드 포커스를 표로 돌린다 (화살표 · ⌘C 가 이어지게)
+            if how == .commit || how == .cancel, let table {
+                DispatchQueue.main.async {
+                    guard let window = table.window, !(window.firstResponder is NSTextView) else { return }
+                    window.makeFirstResponder(table)
+                }
+            }
+            return true
+        }
+
+        /// 입력란을 연 시각 (열자마자 생기는 포커스 이동은 무시하려고)
+        let openedAt = Date()
+
+        /// 다른 곳을 눌러 포커스가 빠지면 넣는다.
+        /// 단, 연 직후(고르지 않은 행을 더블클릭하면 첫 클릭으로 행 편집 패널이 열리며 표가 다시 배치된다)에
+        /// 마우스 누름 없이 빠진 포커스는 입력란으로 되돌린다 — 그대로 두면 열리자마자 닫힌다
+        func controlTextDidEndEditing(_ note: Notification) {
+            guard let field = note.object as? NSTextField else { return }
+            let userClicked = [.leftMouseDown, .rightMouseDown].contains(NSApp.currentEvent?.type)
+            if Date().timeIntervalSince(openedAt) < 0.8, !userClicked, field.window != nil {
+                DispatchQueue.main.async { [weak field] in
+                    guard let field, let window = field.window else { return }
+                    window.makeFirstResponder(field)
+                }
+                return
+            }
+            finish(field.stringValue, .commit, keyboard: false)
+        }
+    }
+}
+
+final class InlineCellTextField: NSTextField {
+    private var focusOnAttach = true
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard focusOnAttach, window != nil else { return }
+        focusOnAttach = false
+        // 표에 붙은 뒤 포커스 (첫 응답자가 되면 글자 전체가 선택된다)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
+    /// 칸을 고치는 중이면 지금 값을 넣고 끝낸다 (적용 · 되돌리기 · 페이지 이동 등 버튼은 포커스를 가져가지 않으므로)
+    @MainActor
+    static func endActiveEditing() {
+        guard let window = NSApp.keyWindow, let editor = window.firstResponder as? NSTextView,
+              (editor.delegate as? NSObject) is InlineCellTextField else { return }
+        window.makeFirstResponder(nil)
+    }
 }

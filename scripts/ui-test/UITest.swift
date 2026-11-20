@@ -845,6 +845,58 @@ scenario("jsonView") {
     testDefaults(["delete", "local.goddb.app.uitest", "GodDB.json.viewMode"])
 }
 
+/// 결과 표 칸을 더블클릭해 그 자리 입력란을 연다 (먼저 한 번 눌러 행을 고른다 — 오른쪽 패널이 열리며 칸 위치가 바뀌므로)
+func openInlineEditor(_ value: String) -> Node? {
+    // 고르지 않은 행을 바로 더블클릭 (실제로 쓰는 방식 — 첫 클릭에 행 편집 패널이 열리며 표가 다시 배치된다)
+    guard let c = app.find(5, cell(value)) else { return nil }
+    click(c, double: true)
+    return app.find(3, { $0.role == "AXTextField" && $0.label.contains("칸 편집") })
+}
+
+/// 편집 막대 [적용…] → 확인 창 [적용]
+func applyEdits() -> Bool {
+    guard let apply = app.find(3, button("적용…")) else { return false }
+    press(apply)
+    return answer("적용", timeout: 4)
+}
+
+scenario("inlineEdit") {
+    // 칸 그 자리 편집: ui_orders id 5 의 note('last') 더블클릭 → 입력 → ↩ → 변경 1건 → 적용 → 다시 읽은 값 확인
+    // → Esc 는 아무것도 안 바꿈 → 원래 값('last')으로 되돌려 둔다 (다른 시나리오는 'last' 를 쓰지 않지만 시드 그대로 유지)
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    clearFilter()
+    try setEditor("SELECT id, customer, note FROM ui_orders ORDER BY id")
+    guard runAndWait(8, cell("last")) != nil else { throw Abort(message: "결과가 없어요") }
+    guard let field = openInlineEditor("last") else { check("칸 더블클릭 → 그 자리 입력란", false); return }
+    check("칸 더블클릭 → 그 자리 입력란 (지금 값 'last')", field.value == "last", field.value)
+    paste("inline ok")
+    key("return")
+    check("↩ → 입력란 닫힘", app.gone(3, { $0.role == "AXTextField" && $0.label.contains("칸 편집") }))
+    check("↩ → 변경 1건", app.find(3, hasText("변경 1건")) != nil)
+    check("표에 새 값 표시", app.find(3, cell("inline ok")) != nil)
+    check("[적용…] → 확인 창 → 적용", applyEdits())
+    check("적용 후 다시 읽은 값 'inline ok' · 변경 없음",
+          app.find(8, cell("inline ok")) != nil && app.gone(3, hasText("변경 1건")) && app.find(1, cell("last")) == nil)
+
+    // Esc: 입력해도 바뀌지 않는다
+    if let f = openInlineEditor("inline ok") {
+        paste("zzz")
+        key("escape")
+        check("Esc → 입력란 닫힘", app.gone(3, { $0.role == "AXTextField" && $0.label.contains("칸 편집") }))
+        check("Esc → 값 그대로 · 변경 없음",
+              app.find(2, cell("inline ok")) != nil && app.find(1, cell("zzz")) == nil && app.find(1, hasText("변경 1건")) == nil,
+              f.value)
+    } else {
+        check("다시 더블클릭 → 입력란", false)
+    }
+
+    // 원래 값으로 되돌려 둔다
+    guard openInlineEditor("inline ok") != nil else { check("되돌리기용 입력란", false); return }
+    paste("last")
+    key("return")
+    check("원래 값 'last' 로 되돌림", applyEdits() && app.find(8, cell("last")) != nil && app.find(1, cell("inline ok")) == nil)
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {

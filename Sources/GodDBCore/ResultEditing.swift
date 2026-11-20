@@ -1,6 +1,6 @@
 import Foundation
 
-/// 바이너리 값 표시 (DataGrip 처럼 0x 16진수)
+/// 바이너리 값 표시 (0x 16진수)
 public enum BinaryText {
     public static func hex<C: Collection>(_ bytes: C) -> String where C.Element == UInt8 {
         let digits = Array("0123456789ABCDEF".utf8)
