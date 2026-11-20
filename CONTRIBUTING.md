@@ -14,7 +14,7 @@
 brew install freetds
 ./scripts/test.sh                 # 단위 테스트
 ./scripts/test-dbs.sh up && ./scripts/test-dbs.sh test   # Docker DB 통합 테스트
-./scripts/build-app.sh            # build/GodDB.app
+./scripts/build-app.sh            # build/app.noindex/GodDB.app
 ```
 
 ## 공개 저장소 주의

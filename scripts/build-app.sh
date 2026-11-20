@@ -1,5 +1,5 @@
 #!/bin/zsh
-# 릴리스 빌드 후 build/GodDB.app 번들을 만든다. (Finder 더블클릭 / 응용 프로그램 폴더로 복사 가능)
+# 릴리스 빌드 후 build/app.noindex/GodDB.app 번들을 만든다. (Finder 더블클릭 / 응용 프로그램 폴더로 복사 가능)
 set -e
 cd "$(dirname "$0")/.."
 
@@ -113,10 +113,13 @@ xattr -cr "$APP"
 codesign "${SIGN_ARGS[@]}" "$APP"
 codesign --verify --deep --strict "$APP"
 # 로컬 실행용 사본
-rm -rf build/GodDB.app; mkdir -p build
-ditto --norsrc --noextattr "$APP" build/GodDB.app
-# Finder/Dock 아이콘 캐시가 예전 등록(아이콘 없던 때)을 쓰지 않도록 다시 등록
-touch build/GodDB.app
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f build/GodDB.app >/dev/null 2>&1 || true
-echo "서명된 앱: $APP"
-echo "완료: $(pwd)/build/GodDB.app"
+# 개발용 빌드는 Spotlight · 앱 목록에 잡히지 않게 한다 (검색해서 실행하면 설치한 앱 대신 이게 열리던 문제):
+#   - 폴더 이름이 .noindex 로 끝나면 Spotlight 가 건너뛴다
+#   - 이 번들은 LaunchServices 등록을 지운다 (open 으로 경로를 직접 열면 그대로 실행된다)
+OUT=build/app.noindex
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+[[ -d build/GodDB.app ]] && "$LSREGISTER" -u build/GodDB.app >/dev/null 2>&1 || true   # 예전 위치
+rm -rf build/GodDB.app "$OUT/GodDB.app"; mkdir -p "$OUT"
+ditto --norsrc --noextattr "$APP" "$OUT/GodDB.app"
+"$LSREGISTER" -u "$OUT/GodDB.app" >/dev/null 2>&1 || true
+echo "완료: $(pwd)/$OUT/GodDB.app"

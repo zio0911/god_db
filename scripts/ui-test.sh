@@ -2,7 +2,7 @@
 # 화면 자동 테스트: 실제 앱을 띄워 주요 화면 동작을 눌러 보고 결과를 보고한다. (릴리스 전에 실행)
 #
 #   ./scripts/ui-test.sh            # 앱 빌드 → 테스트
-#   ./scripts/ui-test.sh --no-build # build/GodDB.app 그대로 테스트
+#   ./scripts/ui-test.sh --no-build # build/app.noindex/GodDB.app 그대로 테스트
 #   ./scripts/ui-test.sh --keep     # 끝나도 테스트 앱을 닫지 않음 (눈으로 확인)
 #   ./scripts/ui-test.sh --no-build connect run   # 일부 시나리오만
 #
@@ -39,7 +39,7 @@ fi
 echo "▶ 테스트용 앱 복사본 준비"
 pkill -f "$APP/Contents/MacOS/GodDB" 2>/dev/null || true
 rm -rf "$WORK"; mkdir -p "$DATA"
-cp -R build/GodDB.app "$APP"
+cp -R build/app.noindex/GodDB.app "$APP"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist"
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1
 defaults delete $BUNDLE_ID >/dev/null 2>&1 || true

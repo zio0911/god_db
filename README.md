@@ -42,7 +42,7 @@ brew install freetds      # SQL Server 드라이버 (DB-Library)
 
 ```bash
 swift run                 # 개발 실행
-./scripts/build-app.sh    # build/GodDB.app 생성 (응용 프로그램 폴더로 복사해서 사용)
+./scripts/build-app.sh    # build/app.noindex/GodDB.app 생성 (응용 프로그램 폴더로 복사해서 사용)
 ./scripts/test.sh         # 단위 테스트
 ```
 
