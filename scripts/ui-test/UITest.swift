@@ -847,10 +847,9 @@ scenario("jsonView") {
 
 /// 결과 표 칸을 더블클릭해 그 자리 입력란을 연다 (먼저 한 번 눌러 행을 고른다 — 오른쪽 패널이 열리며 칸 위치가 바뀌므로)
 func openInlineEditor(_ value: String) -> Node? {
+    // 고르지 않은 행을 바로 더블클릭 (실제로 쓰는 방식 — 첫 클릭에 행 편집 패널이 열리며 표가 다시 배치된다)
     guard let c = app.find(5, cell(value)) else { return nil }
-    click(c)
-    guard let again = app.find(3, cell(value)) else { return nil }
-    click(again, double: true)
+    click(c, double: true)
     return app.find(3, { $0.role == "AXTextField" && $0.label.contains("칸 편집") })
 }
 

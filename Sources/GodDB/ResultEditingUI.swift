@@ -447,9 +447,22 @@ struct InlineCellEditor: NSViewRepresentable {
             return true
         }
 
-        /// 다른 곳을 눌러 포커스가 빠지면 넣는다
+        /// 입력란을 연 시각 (열자마자 생기는 포커스 이동은 무시하려고)
+        let openedAt = Date()
+
+        /// 다른 곳을 눌러 포커스가 빠지면 넣는다.
+        /// 단, 연 직후(고르지 않은 행을 더블클릭하면 첫 클릭으로 행 편집 패널이 열리며 표가 다시 배치된다)에
+        /// 마우스 누름 없이 빠진 포커스는 입력란으로 되돌린다 — 그대로 두면 열리자마자 닫힌다
         func controlTextDidEndEditing(_ note: Notification) {
             guard let field = note.object as? NSTextField else { return }
+            let userClicked = [.leftMouseDown, .rightMouseDown].contains(NSApp.currentEvent?.type)
+            if Date().timeIntervalSince(openedAt) < 0.8, !userClicked, field.window != nil {
+                DispatchQueue.main.async { [weak field] in
+                    guard let field, let window = field.window else { return }
+                    window.makeFirstResponder(field)
+                }
+                return
+            }
             finish(field.stringValue, .commit, keyboard: false)
         }
     }
