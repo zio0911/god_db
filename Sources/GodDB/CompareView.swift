@@ -140,6 +140,8 @@ struct CompareView: View {
                 .focused($listFocused)
                 .onChange(of: selection) { listFocused = true }
                 .onAppear { listFocused = true }
+                // ⌘A: 보이는 항목 모두 선택 (표 기본 동작이 선택 상태에 반영되지 않아 직접)
+                .onCommand(#selector(NSResponder.selectAll(_:))) { selection = Set(visible.map(\.id)) }
                 // ⌘C: 고른 항목들의 보정 SQL 을 목록 순서대로
                 .onCopyCommand {
                     let text = SchemaDiffReport.fixSQL(of: visible, selected: selection)
