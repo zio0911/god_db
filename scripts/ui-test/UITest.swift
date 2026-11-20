@@ -787,6 +787,58 @@ scenario("fkFollow") {
     key("escape")
 }
 
+scenario("jsonView") {
+    // JSON 보기: ui_orders.meta 가 든 한 행 → 행 상세에 원문 · 정렬 · 트리 (기본 트리, 2단계까지 펼침) → 우클릭 경로 복사
+    testDefaults(["delete", "local.goddb.app.uitest", "GodDB.json.viewMode"])
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    clearFilter()
+    try setEditor("SELECT id, meta FROM ui_orders WHERE id = 1")
+    // 결과 표의 JSON 칸은 원문 한 줄 그대로
+    guard runAndWait(8, { $0.role == "AXStaticText" && $0.value.contains("\"coupon\": {") }) != nil else {
+        throw Abort(message: "결과가 없어요")
+    }
+    // 결과가 1행이라 행 상세가 열려 있다
+    check("JSON 칸 위에 보기 전환 (원문 · 정렬 · 트리)",
+          app.find(5, { $0.role == "AXRadioButton" && $0.text.contains("트리") }) != nil
+          && app.find(1, { $0.role == "AXRadioButton" && $0.text.contains("정렬") }) != nil)
+    // 창이 작아 행 상세에는 tags 까지만 보인다 → 배열 항목부터 보고, 휠로 내려 coupon 을 본다
+    guard let first = app.find(5, { $0.role == "AXStaticText" && $0.value == "\"new\"" }) else {
+        check("트리가 펼쳐짐 (tags[0] = \"new\")", false); return
+    }
+    check("트리가 펼쳐짐 (tags[0] = \"new\")", true)
+    setClipboard("")
+    if let tag = app.find(3, { $0.role == "AXStaticText" && $0.value == "\"gift\"" }) {
+        click(tag, right: true)
+        if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) { press(item) } else { key("escape") }
+        check("배열 항목 경로 복사 → $.tags[1]", clipboard() == "$.tags[1]", clipboard())
+    } else {
+        check("트리에 tags[1] = \"gift\"", false)
+    }
+    scrollAt(first, lines: -6)
+    check("2단계까지 펼쳐짐 (coupon.code = \"A-77\")", app.find(5, { $0.role == "AXStaticText" && $0.value == "\"A-77\"" }) != nil)
+    if let code = app.find(3, { $0.role == "AXStaticText" && $0.value == "code" }) {
+        setClipboard("")
+        click(code, right: true)
+        if let item = findMenuItem(3, { $0.label.contains("경로 복사") }) {
+            press(item)
+            check("우클릭 > 경로 복사 → $.coupon.code", clipboard() == "$.coupon.code", clipboard())
+        } else {
+            check("우클릭 > 경로 복사", false)
+            key("escape")
+        }
+    } else {
+        check("트리에 coupon 아래 code 항목", false)
+    }
+    // 정렬 보기: 들여쓰기 2칸, 원래 키 순서
+    if let pretty = app.find(2, { $0.role == "AXRadioButton" && $0.text.contains("정렬") }) {
+        click(pretty)
+        // MySQL 은 JSON 키를 (길이 → 글자) 순으로 저장해 돌려준다: tags → coupon → channel. 그 순서를 그대로 유지
+        check("정렬 보기 (들여쓰기 2칸, 받은 키 순서 그대로)",
+              app.find(4, { $0.role == "AXStaticText" && $0.value.hasPrefix("{\n  \"tags\": [\n    \"new\",") }) != nil)
+    }
+    testDefaults(["delete", "local.goddb.app.uitest", "GodDB.json.viewMode"])
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {

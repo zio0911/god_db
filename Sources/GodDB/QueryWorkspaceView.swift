@@ -713,20 +713,30 @@ struct RowDetailView: View {
                         .help(tr("값 복사"))
                 }
             }
+            let type = columnType(column)
             if editable, let editor {
                 if state == .insertedDefault {
                     Button(tr("값 입력 (지금은 DB 기본값)")) { editor.set(column.id, "") }
                         .buttonStyle(.hover)
                         .font(.callout)
                 } else {
-                    TextField("", text: Binding(
-                        get: { value ?? "" },
-                        set: { editor.set(column.id, $0) }
-                    ), axis: .vertical)
-                    .font(.system(.callout, design: .monospaced))
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...8)
-                    .disabled(value == nil)
+                    // JSON 칸: 원문 편집만 (정렬 · 트리는 지금 값 보기). JSON 이 깨지면 경고 (저장은 가능)
+                    let jsonColumn = isJSONColumn(column, type)
+                    let detection = jsonColumn ? JSONCache.detect(value, columnType: type) : .notJSON
+                    JSONFieldView(text: value ?? "", detection: detection) {
+                        TextField("", text: Binding(
+                            get: { value ?? "" },
+                            set: { editor.set(column.id, $0) }
+                        ), axis: .vertical)
+                        .font(.system(.callout, design: .monospaced))
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...8)
+                        .disabled(value == nil)
+                    }
+                    if jsonColumn, !JSONView.isValid(value) {
+                        Label(tr("JSON 형식이 아니에요"), systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     HStack(spacing: 10) {
                         Toggle("NULL", isOn: Binding(
                             get: { value == nil },
@@ -740,6 +750,8 @@ struct RowDetailView: View {
                     }
                     .font(.caption)
                 }
+            } else if let value, case let detection = JSONCache.detect(value, columnType: type), detection.isJSON {
+                JSONFieldView(text: value, detection: detection)
             } else {
                 Text(value ?? "NULL")
                     .font(.system(.callout, design: .monospaced))
@@ -750,6 +762,21 @@ struct RowDetailView: View {
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 4))
             }
         }
+    }
+
+    /// 결과 컬럼의 테이블 컬럼 타입 (한 테이블 조회 결과일 때만 알 수 있음)
+    private func columnType(_ column: QueryResult.Column) -> String? {
+        let table = editor?.target.table ?? fk?.source
+        let name = editor?.target.columnMap[column.id] ?? column.name
+        return table?.columns.first { $0.name.lowercased() == name.lowercased() }?.columnType
+    }
+
+    /// 편집 중 JSON 칸으로 다룰지: 타입이 json / jsonb 이거나 원래 값이 JSON
+    private func isJSONColumn(_ column: QueryResult.Column, _ type: String?) -> Bool {
+        if JSONView.isJSONType(type) { return true }
+        guard let values = result.rows.first(where: { $0.id == row.id })?.values, values.indices.contains(column.id),
+              let original = values[column.id] else { return false }
+        return JSONCache.detect(original, columnType: nil).isJSON
     }
 }
 
