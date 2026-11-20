@@ -582,14 +582,15 @@ scenario("noTuning") {
 }
 
 scenario("prodIdle") {
-    // 운영 접속 자동 끊기: 테스트용 5초로 줄이고 운영 접속에 붙은 뒤 기다리면 끊긴다
-    testDefaults(["write", "local.goddb.app.uitest", "GodDB.safety.prodIdleSecondsForTest", "-int", "5"])
+    // 운영 접속 자동 끊기: 운영 접속에서 쿼리를 실행한 뒤 테스트용 5초로 줄이고 기다리면 끊긴다.
+    // (앞 시나리오에서 열어 둔 운영 접속은 이미 오래 쉬었으므로, 먼저 줄이면 누르기 전에 바로 끊긴다 — 그래서 실행 뒤에 줄인다)
     guard let prod = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL Prod" }) else { throw Abort(message: "운영 테스트 접속이 없어요") }
     click(prod)
     _ = app.find(10, hasText("운영 접속 ·"))
     try setEditor("SELECT 1 AS v")
     _ = runAndWait(8, cell("1"))
     hideLog()
+    testDefaults(["write", "local.goddb.app.uitest", "GodDB.safety.prodIdleSecondsForTest", "-int", "5"])
     let cut = app.find(15, hasText("동안 쓰지 않아 끊었어요")) != nil
     testDefaults(["delete", "local.goddb.app.uitest", "GodDB.safety.prodIdleSecondsForTest"])
     check("운영 접속을 쓰지 않으면 자동으로 끊김 (테스트 5초)", cut)
