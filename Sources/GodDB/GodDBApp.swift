@@ -92,6 +92,7 @@ struct GodDBApp: App {
             }
             CommandGroup(after: .appInfo) {
                 Button(tr("업데이트 확인…")) { UpdateController.shared.checkNow() }
+                Button(tr("이전 버전 설치…")) { app.showPreviousVersions = true }
             }
             CommandGroup(after: .sidebar) {
                 Button(tr("레이아웃 초기화")) { Layout.reset(app) }

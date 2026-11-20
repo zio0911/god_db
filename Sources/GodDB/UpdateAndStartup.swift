@@ -190,6 +190,7 @@ final class StartupState {
         try? await Task.sleep(for: .seconds(0.2))   // 마지막 체크가 보이도록 잠깐
         withAnimation(.easeInOut(duration: 0.35)) { finished = true }
         app.showReleaseNotesIfUpdated()
+        PreviousVersionInstaller.reportHelperFailureIfAny(app: app)
     }
 
     static func withTimeout<T: Sendable>(_ seconds: Double, _ work: @escaping @Sendable () async -> T) async -> T? {
