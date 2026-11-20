@@ -145,6 +145,8 @@ final class AppState {
     var releaseNotesSince: String?
     /// 문제 보고 창
     var showProblemReport = false
+    /// 이전 버전 설치 창 (F5)
+    var showPreviousVersions = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
     var txPrompt: TxPrompt?
     /// 메인 창 (⌘W 로 쿼리 탭을 닫을지 판단)

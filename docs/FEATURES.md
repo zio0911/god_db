@@ -390,6 +390,7 @@
 | ID 로 찾기 마지막 선택 | `~/Library/Application Support/GodDB/id-search.json` (접속 · DB 별) |
 | 저장 쿼리 | `~/Library/Application Support/GodDB/saved-queries.json` (이름 · 폴더 · SQL · 범위 · 마지막 입력값, Windows 판과 같은 형식) |
 | 테이블 메모 | `~/Library/Application Support/GodDB/table-notes.json` (찾는 말 · 테이블 · 컬럼 · 설명 · 확인됨, 권한 본인만, Windows 판과 같은 형식, 샘플 값은 저장 안 함) |
+| 이전 버전 설치 전 백업 | `~/Library/Application Support/GodDB-backup-<버전>-<YYYYMMDD-HHmmss>/` (데이터 폴더 통째로, 최근 3개만) |
 
 ## 19. 설정 (언어 · 라이선스)
 
@@ -678,6 +679,28 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - **ssh 실행**: `-o StrictHostKeyChecking=yes -o UserKnownHostsFile="~/.ssh/known_hosts" "<GodDB known_hosts>"` (경로의 공백 때문에 큰따옴표).
 - **키가 바뀌면** ssh 가 거부 (`REMOTE HOST IDENTIFICATION HAS CHANGED`) → "SSH 서버 키가 바뀌었어요 …" + [저장된 키 지우기] — `ssh-keygen -R` 로 **GodDB 전용 파일에서만** 지우고 다시 연결(처음 접속 확인). `~/.ssh/known_hosts` 의 키는 직접 지워야 한다고 안내.
 - **감사 로그**: `설정 | SSH 호스트 키 신뢰 host:port SHA256:…` / `설정 | SSH 호스트 키 지움 host:port`.
+
+## 38. 이전 버전 설치
+
+새 버전에 문제가 있을 때 GitHub 릴리스에서 이전 버전을 골라 되돌린다.
+
+- **여는 곳**: 메뉴 GodDB > **이전 버전 설치…** (업데이트 확인… 바로 아래).
+- **목록**: `GET https://api.github.com/repos/zio0911/god_db/releases` (인증 없음, 15초 제한). 초안 · 사전 릴리스 · 1.1.0 미만 · 지금 버전 · `GodDB-<버전>.dmg` 가 없는 릴리스는 뺀다. 최신순 (1.10.0 > 1.9.2 처럼 숫자로).
+  - 각 줄: 버전 · 날짜 · 변경 사항 첫 3줄. 릴리스 노트의 `## 변경 사항` 목록을 쓰고, 예전 릴리스처럼 제목이 다르면(`## 주요 변경` · `## 변경` · `## 새 기능` · `## 수정`) `## 설치` · `## 개발` 과 자동 생성 부분(`## What's Changed` 이후)을 뺀 목록, 그것도 없으면 자동 생성 목록의 PR 제목.
+  - 네트워크 오류면 "릴리스 목록을 가져오지 못했어요" + [다시 시도] [GitHub 에서 직접 받기].
+  - 목록 아래: "이전 버전에는 이후에 추가된 기능이 없어요. 문제가 해결되면 메뉴에서 업데이트 확인으로 최신으로 돌아오세요."
+  - macOS 버전으로 거르지는 않는다: 최소 macOS 가 26 으로 오른 건 1.3.7 부터이고 그 전 버전은 최소 macOS 가 더 낮아(1.3.6 은 15.0) 26 에서도 돈다. 대신 검증 단계에서 받은 앱의 `LSMinimumSystemVersion` 이 지금 macOS 보다 높으면 설치하지 않는다.
+- **설치 흐름** ([설치…]):
+  1. 확인 창 "1.3.6 으로 되돌릴까요? 앱을 끄고 이전 버전을 설치한 뒤 다시 켭니다. …" + **이 버전에 머물기 (자동 업데이트를 '수동'으로 바꿈)** (기본 체크 — 체크하면 설치 직전에 설정 > 업데이트를 수동으로).
+  2. 커밋하지 않은 트랜잭션이 있으면 앱 종료와 같은 확인 창 ([롤백하고 설치] [취소]).
+  3. 데이터 폴더 `…/GodDB` 를 옆에 `GodDB-backup-<지금 버전>-<YYYYMMDD-HHmmss>` 로 복사. 백업은 최근 3개만 남긴다.
+  4. `GodDB-<버전>.dmg` 를 임시 폴더로 내려받기 (진행률, [취소]).
+  5. 검증 — 하나라도 실패하면 설치하지 않고 이유를 보여 준다: DMG 를 `hdiutil attach -nobrowse -readonly` 로 열고 → `codesign --verify --deep --strict` → 서명 팀 ID 가 지금 앱과 같음 (`codesign -dv` 의 `TeamIdentifier`, 지금 앱은 `SecCodeCopySigningInformation`) → 번들 ID 같음 → `spctl --assess --type execute`(공증) → 최소 macOS · 버전 확인.
+     - 지금 앱이 서명 없는 개발 빌드(`swift run` · ad-hoc)면 비교할 팀 ID 가 없어 설치를 거부한다.
+     - 앱 위치에 쓸 수 없으면(App Translocation 등) 시작 전에 거부.
+  6. 교체: 임시 폴더에 `/bin/sh` 도우미 스크립트를 쓰고 띄운 뒤 앱 종료. 도우미는 앱이 끝나기를 기다렸다가(최대 60초) 새 앱을 `<앱>.goddb-new-…` 로 `ditto` → 격리 속성 제거 → 원래 앱을 옆으로 옮기고 새 앱을 제자리로 → 원래 앱 삭제 → DMG 닫기 → 다시 실행. 경로는 작은따옴표로 인용 (공백 · 따옴표 · 한글 경로).
+     - 실패하면 원래 앱을 제자리에 두고 `previous-version-install-failed.txt` 에 이유를 남기고 원래 앱을 다시 연다. 다음 실행 때 "이전 버전을 설치하지 못했어요" 창 + 상태창 오류로 알리고 표시 파일을 지운다.
+  7. 감사 로그 `설정 | 이전 버전 설치 1.4.0 → 1.3.6`.
 
 ## 17. 알려진 제약
 

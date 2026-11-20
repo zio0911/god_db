@@ -116,6 +116,7 @@ struct ContentView: View {
         }
         .background(WindowReader { app.mainWindow = $0 })
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
+        .sheet(isPresented: $app.showPreviousVersions) { PreviousVersionsView() }
         .sheet(isPresented: $app.showQuickOpen) { QuickOpenView() }
         .sheet(item: $app.idSearchRequest) { request in IDSearchView(request: request) }
         .sheet(item: $app.savedQuerySheet) { sheet in SavedQuerySheetView(sheet: sheet) }
