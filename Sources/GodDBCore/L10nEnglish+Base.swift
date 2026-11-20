@@ -51,7 +51,6 @@ extension L10nEnglish {
         "%@페이지": "Page %@",
         "%@행": "%@ rows",
         "%@행 선택": "%@ rows selected",
-        "-- 기존 기본값 제약조건을 먼저 지워야 해요: ALTER TABLE %@ DROP CONSTRAINT <기본값 제약조건 이름>;": "-- Drop the existing default constraint first: ALTER TABLE %@ DROP CONSTRAINT <default constraint name>;",
         "-- 변경 사항이 없어요.": "-- No changes.",
         "-- 스키마 보정 SQL (실행 전 반드시 검토하세요)\n\n": "-- Schema fix SQL (review before running)\n\n",
         "-- 참고용 항목이라 SQL을 만들지 않아요.": "-- Reference only, so no SQL is generated.",

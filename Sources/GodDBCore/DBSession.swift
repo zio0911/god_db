@@ -64,11 +64,19 @@ public actor DBSession {
         self.dialect = Dialects.of(profile.kind)
     }
 
-    public static func connect(profile: ConnectionProfile, password: String?) async throws -> DBSession {
+    /// DB 서버 연결(로그인 · 세션 설정까지)에 기다리는 최대 시간. SSH 터널은 따로 15초.
+    public static let defaultConnectTimeout: Double = 15
+
+    public static func connect(profile: ConnectionProfile, password: String?,
+                               timeout: Double = defaultConnectTimeout) async throws -> DBSession {
         let session = DBSession(profile: profile)
+        await session.setConnectTimeout(timeout)
         try await session.open(password: password)
         return session
     }
+
+    private var connectTimeout = defaultConnectTimeout
+    private func setConnectTimeout(_ t: Double) { connectTimeout = t }
 
     private func open(password: String?) async throws {
         var host = profile.host
@@ -107,16 +115,39 @@ public actor DBSession {
         }
     }
 
+    /// 드라이버 연결 + 세션 설정. 드라이버들은 서버가 응답하지 않으면 끝없이 기다리므로 시간 제한을 둔다.
     private func openDriver(_ endpoint: DriverEndpoint) async throws {
-        let d = try await Self.makeDriver(profile.kind, endpoint)
-        driver = d
-        tlsStatus = profile.kind == .mssql ? (endpoint.useTLS ? .encryptOnly : .off) : d.tlsStatus
-        if let sql = dialect.sessionSetupSQL { _ = try? await d.query(sql) }
-        if profile.readOnly, let sql = dialect.readOnlySessionSQL {
-            // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
-            _ = try await d.query(sql)
+        let kind = profile.kind
+        let dialect = dialect
+        let readOnly = profile.readOnly
+        let opened = try await ConnectDeadline.run(seconds: connectTimeout, late: { await $0.driver.close() }) {
+            try await Self.prepareDriver(kind, endpoint, dialect: dialect, readOnly: readOnly)
         }
-        serverSessionID = try? await d.query(dialect.sessionIDSQL).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
+        driver = opened.driver
+        tlsStatus = profile.kind == .mssql ? (endpoint.useTLS ? .encryptOnly : .off) : opened.driver.tlsStatus
+        serverSessionID = opened.sessionID
+    }
+
+    private struct OpenedDriver: Sendable {
+        let driver: any DBDriver
+        let sessionID: Int?
+    }
+
+    private static func prepareDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint,
+                                      dialect: any SQLDialect, readOnly: Bool) async throws -> OpenedDriver {
+        let d = try await makeDriver(kind, endpoint)
+        do {
+            if let sql = dialect.sessionSetupSQL { _ = try? await d.query(sql) }
+            if readOnly, let sql = dialect.readOnlySessionSQL {
+                // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
+                _ = try await d.query(sql)
+            }
+        } catch {
+            await d.close()
+            throw error
+        }
+        let id = try? await d.query(dialect.sessionIDSQL).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
+        return OpenedDriver(driver: d, sessionID: id)
     }
 
     /// 실행 중인 쿼리가 있는지

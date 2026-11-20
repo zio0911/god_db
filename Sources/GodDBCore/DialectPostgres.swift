@@ -140,7 +140,11 @@ public struct PostgresDialect: SQLDialect {
         if let pk = table.indexes.first(where: \.isPrimary) {
             lines.append("  CONSTRAINT \(quoteIdent(pk.name)) PRIMARY KEY \(indexColumns(pk))")
         }
-        var out = ["CREATE TABLE \(quoteIdent(table.name)) (\n" + lines.joined(separator: ",\n") + "\n);"]
+        let sequences = table.columns.compactMap { c in Self.sequenceName(c).map { (c, $0) } }
+        var out = sequences.map { createSequenceSQL($1, column: $0) }
+        out.append("CREATE TABLE \(quoteIdent(table.name)) (\n" + lines.joined(separator: ",\n") + "\n);")
+        // serial 처럼 테이블을 지우면 시퀀스도 함께 지워지게
+        out += sequences.map { "ALTER SEQUENCE \($1) OWNED BY \(quoteIdent(table.name)).\(quoteIdent($0.name));" }
         for i in table.indexes where !i.isPrimary {
             out.append("CREATE \(i.unique ? "UNIQUE " : "")INDEX \(quoteIdent(i.name)) ON \(quoteIdent(table.name)) \(indexColumns(i));")
         }
@@ -189,7 +193,10 @@ public struct PostgresDialect: SQLDialect {
             case .modifyColumn(let old, let new):
                 out += alterColumn(t, old: old, new: new)
             case .addColumn(let c, _):
+                let sequence = Self.sequenceName(c)
+                if let sequence { out.append(createSequenceSQL(sequence, column: c)) }
                 out.append("ALTER TABLE \(t) ADD COLUMN \(columnDefinition(c));")
+                if let sequence { out.append("ALTER SEQUENCE \(sequence) OWNED BY \(t).\(quoteIdent(c.name));") }
                 if !c.comment.isEmpty {
                     out.append("COMMENT ON COLUMN \(t).\(quoteIdent(c.name)) IS \(quoteString(c.comment));")
                 }
@@ -204,6 +211,22 @@ public struct PostgresDialect: SQLDialect {
             }
         }
         return out.joined(separator: "\n")
+    }
+
+    /// 기본값이 `nextval('시퀀스'::regclass)` (serial 컬럼)이면 시퀀스 이름 (SQL 에 그대로 쓸 수 있는 형태).
+    /// 다른 스키마에 테이블을 만들 때 시퀀스가 없으면 CREATE TABLE 이 실패하므로 먼저 만든다.
+    static func sequenceName(_ c: ColumnMeta) -> String? {
+        guard let d = c.defaultValue,
+              let m = d.range(of: #"^nextval\('((?:[^']|'')+)'(::regclass)?\)$"#, options: .regularExpression) else { return nil }
+        let inner = d[m].dropFirst("nextval('".count)
+        guard let end = inner.range(of: "'", options: .backwards) else { return nil }
+        return String(inner[..<end.lowerBound]).replacingOccurrences(of: "''", with: "'")
+    }
+
+    func createSequenceSQL(_ name: String, column c: ColumnMeta) -> String {
+        let type = c.columnType.lowercased()
+        let asType = ["smallint", "integer", "bigint"].contains(type) ? " AS \(type)" : ""
+        return "CREATE SEQUENCE IF NOT EXISTS \(name)\(asType);"
     }
 
     private func alterColumn(_ t: String, old: ColumnMeta, new: ColumnMeta) -> [String] {

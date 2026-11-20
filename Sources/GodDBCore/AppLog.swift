@@ -117,6 +117,10 @@ public enum ErrorText {
         if let e = error as? RedisCommandError {
             return .init(message: e.errorDescription ?? raw, hint: nil, raw: raw)
         }
+        if let e = error as? DBConnectTimeoutError {
+            return .init(message: e.errorDescription ?? raw,
+                         hint: tr("네트워크(VPN) 연결이나 보안 그룹에서 이 IP가 허용돼 있는지 확인해 주세요."), raw: raw)
+        }
         if let e = error as? DBError {
             return .init(message: e.errorDescription ?? raw, hint: nil, raw: raw)
         }

@@ -5,6 +5,7 @@ public struct SchemaDiffItem: Identifiable, Hashable, Sendable {
     public enum Kind: String, Sendable {
         case missingTable      // 대상에 테이블 없음
         case extraTable        // 대상에만 있는 테이블 (참고용)
+        case differentTable    // 테이블 자체 속성(코멘트)이 다름
         case missingColumn
         case differentColumn
         case extraColumn       // 대상에만 있는 컬럼 (참고용, 자동 삭제 안 함)
@@ -24,7 +25,7 @@ public struct SchemaDiffItem: Identifiable, Hashable, Sendable {
     public var severity: Severity {
         switch kind {
         case .missingTable, .missingColumn, .missingIndex: return .missing
-        case .differentColumn, .differentIndex: return .different
+        case .differentTable, .differentColumn, .differentIndex: return .different
         case .extraTable, .extraColumn, .extraIndex: return .extra
         }
     }
@@ -42,11 +43,51 @@ public struct SchemaDiffReport: Sendable {
 
     /// 실행 가능한 보정 SQL 전체 (DROP TABLE/COLUMN 은 생성하지 않는다)
     public var fixScript: String {
-        items.compactMap(\.fixSQL).joined(separator: "\n\n")
+        Self.grouped(items)
+    }
+
+    /// 고른 항목들의 보정 SQL 을 목록(`items`) 순서대로 테이블별로 묶어 이어 붙인다.
+    /// 고른 순서와 관계없이 목록 순서를 따르고, 참고용(SQL 없음) 항목은 건너뛴다.
+    public static func fixSQL(of items: [SchemaDiffItem], selected: Set<SchemaDiffItem.ID>) -> String {
+        grouped(items.filter { selected.contains($0.id) })
+    }
+
+    /// 테이블마다 "-- 테이블" 한 줄 뒤에 그 테이블의 SQL 을 줄바꿈으로 잇고, 테이블 사이는 빈 줄로 띄운다
+    static func grouped(_ items: [SchemaDiffItem]) -> String {
+        var order: [String] = []
+        var byTable: [String: [String]] = [:]
+        for item in items {
+            guard let sql = item.fixSQL else { continue }
+            if byTable[item.table] == nil { order.append(item.table) }
+            byTable[item.table, default: []].append(sql)
+        }
+        return order.map { table in
+            (["-- \(table)"] + byTable[table]!).joined(separator: "\n")
+        }.joined(separator: "\n\n")
     }
 }
 
 public enum SchemaDiff {
+
+    /// 스키마 비교 창이 쓰는 경로. 두 접속에서 비교할 DB(PostgreSQL 은 스키마)로 옮겨 읽고,
+    /// 대상 DB 문법으로 보정 SQL 을 만든다. 대상 접속도 대상 DB 로 옮겨 두므로 보정 SQL 을 그 접속에서 바로 실행할 수 있다.
+    public static func compare(source ss: DBSession, sourceContainer sdb: String,
+                               target ts: DBSession, targetContainer tdb: String) async throws -> SchemaDiffReport {
+        try await ss.use(sdb)
+        // PostgreSQL 은 search_path 에 따라 기본값 표기가 달라진다 (예: nextval('스키마.시퀀스')). 양쪽 모두 비교할 곳으로 옮긴다.
+        try await ts.use(tdb)
+        let source = try await ss.loadSchema(sdb)
+        let target = try await ts.loadSchema(tdb)
+        var creates: [String: String] = [:]
+        // 대상에 없는 테이블은 MySQL 이면 기준 DB 의 SHOW CREATE TABLE 을 쓴다. 종류가 다르면 대상 문법으로 만든다.
+        if ss.profile.kind == ts.profile.kind {
+            let targetNames = Set(target.map { $0.name.lowercased() })
+            for table in source where !targetNames.contains(table.name.lowercased()) {
+                creates[table.name] = try await ss.showCreateTable(table.name)
+            }
+        }
+        return compare(source: source, target: target, createStatements: creates, dialect: ts.dialect)
+    }
 
     /// - Parameters:
     ///   - createStatements: 대상에 없는 테이블의 CREATE 문 (MySQL 은 기준 DB 의 SHOW CREATE TABLE). 없으면 메타데이터로 만든다.
@@ -81,6 +122,11 @@ public enum SchemaDiff {
         let tCols = Dictionary(t.columns.map { ($0.name.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
         let sColNames = Set(s.columns.map { $0.name.lowercased() })
         func sql(_ change: SchemaChange) -> String { dialect.render([change], table: t.name) }
+
+        if s.comment != t.comment {
+            items.append(.init(kind: .differentTable, table: s.name, object: nil, detail: tr("테이블 코멘트 변경"),
+                               fixSQL: sql(.tableComment(old: t.comment, new: s.comment))))
+        }
 
         var previous: String? = nil
         for c in s.columns.sorted(by: { $0.position < $1.position }) {

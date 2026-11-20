@@ -216,15 +216,26 @@ public struct MSSQLDialect: SQLDialect {
         return out.joined(separator: "\n")
     }
 
+    /// 컬럼의 기본값 제약조건을 이름을 몰라도 지운다. 기본값 제약조건은 서버가 붙인 이름(DF__…)인 경우가 많다.
+    /// 쿼리 탭은 세미콜론으로 문장을 나누므로 세미콜론 없이 한 문장(한 배치)으로 만든다.
+    func dropDefaultSQL(_ t: String, column: String) -> String {
+        let v = "@df_" + String(column.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == "_" })
+        let alter = "ALTER TABLE \(t) DROP CONSTRAINT ".replacingOccurrences(of: "'", with: "''")
+        return """
+        DECLARE \(v) nvarchar(300) = (SELECT QUOTENAME(dc.name) FROM sys.default_constraints dc \
+        JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id \
+        WHERE dc.parent_object_id = OBJECT_ID(\(quoteString(t))) AND c.name = \(quoteString(column))) \
+        IF \(v) IS NOT NULL EXEC (N'\(alter)' + \(v));
+        """
+    }
+
     private func alterColumn(_ t: String, table: String, old: ColumnMeta, new: ColumnMeta) -> [String] {
         var out: [String] = []
         if old.columnType.lowercased() != new.columnType.lowercased() || old.nullable != new.nullable {
             out.append("ALTER TABLE \(t) ALTER COLUMN \(quoteIdent(new.name)) \(new.columnType) \(new.nullable ? "NULL" : "NOT NULL");")
         }
         if old.defaultValue != new.defaultValue {
-            if old.defaultValue != nil {
-                out.append(tr("-- 기존 기본값 제약조건을 먼저 지워야 해요: ALTER TABLE %@ DROP CONSTRAINT <기본값 제약조건 이름>;", "\(t)"))
-            }
+            if old.defaultValue != nil { out.append(dropDefaultSQL(t, column: new.name)) }
             if let d = new.defaultValue {
                 out.append("ALTER TABLE \(t) ADD DEFAULT \(d) FOR \(quoteIdent(new.name));")
             }

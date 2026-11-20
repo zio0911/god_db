@@ -447,6 +447,109 @@ scenario("compareLayout") {
     if let q = app.find(2, { $0.role == "AXRadioButton" && $0.label == "쿼리" }) { click(q) }
 }
 
+/// 스키마 비교 창의 기준 · 대상 선택 상자 (위 → 아래)
+func comparePickers() -> [Node] {
+    app.snapshot().filter { $0.role == "AXPopUpButton" && ($0.value == "선택" || $0.value.hasPrefix("UI ")) }
+        .sorted { $0.frame.minY < $1.frame.minY }
+}
+
+/// 선택 상자를 열고 항목을 고른다
+func pick(_ popup: Node, _ title: String) -> Bool {
+    press(popup)
+    guard let item = app.find(3, { $0.role == "AXMenuItem" && $0.label.contains(title) }) else { key("escape"); return false }
+    press(item)
+    return true
+}
+
+/// 비교 결과 표에서 테이블 이름과 내용이 함께 있는 줄
+func diffRow(_ table: String, _ detail: String) -> (Node) -> Bool {
+    { n in
+        guard n.role == "AXRow" else { return false }
+        let t = texts(under: n.el)
+        return t.contains(table) && t.contains(detail)
+    }
+}
+
+/// 기준 · 대상 접속과 DB 를 고르고 [비교]
+func startCompare(target: String, sourceDB: String, targetDB: String) throws {
+    let pops = comparePickers()
+    guard pops.count >= 2 else { throw Abort(message: "기준 · 대상 선택 상자가 없어요 (\(pops.count)개)") }
+    guard pick(pops[0], "UI MySQL · 개발") else { throw Abort(message: "기준 접속을 고를 수 없어요") }
+    guard pick(comparePickers()[1], target) else { throw Abort(message: "대상 접속 \(target) 을 고를 수 없어요") }
+    let fields = app.snapshot().filter { $0.role == "AXTextField" && $0.label.contains("DB/스키마") }
+        .sorted { $0.frame.minY < $1.frame.minY }
+    guard fields.count >= 2 else { throw Abort(message: "DB 입력란이 없어요") }
+    for (field, db) in zip(fields, [sourceDB, targetDB]) {
+        click(field)
+        key("a", cmd)
+        paste(db)
+    }
+    guard let go = app.find(2, button("비교")) else { throw Abort(message: "[비교] 버튼이 없어요") }
+    press(go)
+}
+
+/// 열린 우클릭 메뉴에서 항목 찾기 (SwiftUI 우클릭 메뉴는 누른 뷰 안쪽에 AXMenu 로 붙는다)
+func openMenuItem(_ timeout: Double, _ pred: (Node) -> Bool) -> Node? {
+    let end = Date().addingTimeInterval(timeout)
+    repeat {
+        var queue: [(AXUIElement, Int)] = [(app.ax, 0)]
+        while !queue.isEmpty {
+            let (el, d) = queue.removeFirst()
+            let role = (attr(el, kAXRoleAttribute) as? String) ?? ""
+            if role == "AXMenuBar" { continue }
+            if role == "AXMenuItem" { let n = node(el); if pred(n) { return n } }
+            if d < 40, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
+        }
+        Thread.sleep(forTimeInterval: 0.25)
+    } while Date() < end
+    return nil
+}
+
+scenario("schemaCompare") {
+    guard let seg = app.find(3, { $0.role == "AXRadioButton" && $0.label == "스키마 비교" }) else { throw Abort(message: "모드 버튼 없음") }
+    click(seg)
+    defer { if let q = app.find(2, { $0.role == "AXRadioButton" && $0.label == "쿼리" }) { click(q) } }
+
+    // shop → shop_cmp: shop_cmp 는 shop 을 복사하고 ui_orders.note 를 지우고 ui_customers.name 코멘트만 바꿨다
+    try startCompare(target: "UI MySQL · 개발", sourceDB: "shop", targetDB: "shop_cmp")
+    // 사이드바에도 같은 테이블 이름이 있으므로 차이 내용이 함께 있는 결과 줄을 찾는다
+    let orders = app.find(20, diffRow("ui_orders", "컬럼 없음"))
+    let customers = app.find(2, diffRow("ui_customers", "코멘트 변경"))
+    check("스키마 비교: 다른 테이블 두 개가 차이 내용과 함께 나옴 (ui_customers 코멘트 변경, ui_orders 컬럼 없음)",
+          orders != nil && customers != nil)
+    check("스키마 비교: 복사한 나머지 테이블은 일치 (다름 1 · 누락 1)",
+          app.find(2, hasText("다름 1")) != nil && app.find(2, hasText("누락 1")) != nil)
+    guard let first = customers, let second = orders else { return }
+
+    // ⇧클릭으로 두 줄을 골라 ⌘C → 두 테이블의 보정 SQL 이 목록 순서대로
+    let wantCustomers = "ALTER TABLE `ui_customers` MODIFY COLUMN `name` varchar(50) NULL COMMENT '고객 이름';"
+    let wantOrders = "ALTER TABLE `ui_orders` ADD COLUMN `note` varchar(100) NULL AFTER `amount`;"
+    click(first)
+    clickAt(CGPoint(x: second.frame.midX, y: second.frame.midY), flags: shift)
+    check("스키마 비교: ⇧클릭으로 두 개 선택 (보정 SQL · 2개 선택)", app.find(3, hasText("보정 SQL · 2개 선택")) != nil)
+    setClipboard("")
+    key("c", cmd)
+    var copied = clipboard()
+    check("스키마 비교: ⌘C 로 두 테이블 SQL 복사 (목록 순서)",
+          copied == "-- ui_customers\n" + wantCustomers + "\n\n-- ui_orders\n" + wantOrders, copied)
+
+    // 우클릭 '모두 선택' 후 ⌘C (보이는 항목이 두 개뿐)
+    click(second)
+    click(second, right: true)
+    if let all = openMenuItem(3, { $0.label.contains("모두 선택") }) { press(all) } else { key("escape") }
+    setClipboard("")
+    key("c", cmd)
+    copied = clipboard()
+    check("스키마 비교: 우클릭 '모두 선택' · ⌘C 로 전체 복사", copied.contains(wantCustomers) && copied.contains(wantOrders), copied)
+
+    // 대상이 닫힌 포트면 계속 돌지 않고 오류와 [다시 시도]
+    try startCompare(target: "UI 닫힌 포트 · 개발", sourceDB: "shop", targetDB: "shop")
+    let failed = app.find(20, hasText("대상 접속 UI 닫힌 포트 연결 실패"))
+    check("스키마 비교: 연결 안 되는 대상은 오류 표시", failed != nil)
+    check("스키마 비교: 오류 화면에 [다시 시도]", app.find(2, button("다시 시도")) != nil)
+    check("스키마 비교: 읽는 중 표시가 남지 않음", app.gone(2, hasText("두 DB 스키마를 읽는 중")))
+}
+
 /// 테스트 앱 창을 PNG 로 저장 (GODDB_UI_SHOT_DIR 이 있을 때만, 눈으로 확인용)
 func shot(_ name: String) {
     guard let dir = ProcessInfo.processInfo.environment["GODDB_UI_SHOT_DIR"] else { return }

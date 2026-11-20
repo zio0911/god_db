@@ -47,14 +47,14 @@ rm -rf "$HOME/Library/Saved Application State/$BUNDLE_ID.savedState"
 defaults write $BUNDLE_ID GodDB.update.mode manual
 
 echo "▶ 테스트 DB · 접속 준비"
-docker exec -i goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop 2>/dev/null <<'SQL'
+docker exec -i goddb-mysql-test mysql --default-character-set=utf8mb4 -uroot -p$MYSQL_PASSWORD shop 2>/dev/null <<'SQL'
 DROP TABLE IF EXISTS ui_orders;
 DROP TABLE IF EXISTS ui_customers;
 DROP TABLE IF EXISTS ui_students;
 DROP TABLE IF EXISTS ui_schools;
 DROP TABLE IF EXISTS ui_points;
 DROP TABLE IF EXISTS ui_members;
-CREATE TABLE ui_customers (id INT PRIMARY KEY, name VARCHAR(50), grade VARCHAR(10));
+CREATE TABLE ui_customers (id INT PRIMARY KEY, name VARCHAR(50) NULL COMMENT '고객 이름', grade VARCHAR(10));
 INSERT INTO ui_customers VALUES (10,'kim','gold'),(20,'lee','silver'),(30,'park','bronze');
 CREATE TABLE ui_orders (id INT PRIMARY KEY, customer VARCHAR(50), amount INT, note VARCHAR(100),
   customer_id INT NULL, meta JSON NULL,
@@ -73,12 +73,20 @@ INSERT INTO ui_members VALUES (1001,'neo'),(1002,'trinity');
 CREATE TABLE ui_points (id INT PRIMARY KEY, member_no INT, point INT);
 INSERT INTO ui_points VALUES (1,1001,50),(2,1002,70);
 SQL
+# 스키마 비교용 shop_cmp: shop 의 테이블을 그대로 복사한 뒤 두 테이블만 다르게 (컬럼 하나 없음, 코멘트 다름)
+CMP_COPY=$(docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD -N -e "SELECT CONCAT('CREATE TABLE shop_cmp.', CHAR(96), table_name, CHAR(96), ' LIKE shop.', CHAR(96), table_name, CHAR(96), ';') FROM information_schema.tables WHERE table_schema = 'shop' AND table_type = 'BASE TABLE'" 2>/dev/null)
+printf '%s\n' "DROP DATABASE IF EXISTS shop_cmp;" "CREATE DATABASE shop_cmp;" "$CMP_COPY" \
+  "ALTER TABLE shop_cmp.ui_orders DROP COLUMN note;" \
+  "ALTER TABLE shop_cmp.ui_customers MODIFY name VARCHAR(50) NULL COMMENT '이름';" \
+  | docker exec -i goddb-mysql-test mysql --default-character-set=utf8mb4 -uroot -p$MYSQL_PASSWORD 2>/dev/null
 cat > "$DATA/profiles.json" <<JSON
 [
  {"id":"00000000-0000-4000-8000-0000000000A1","kind":"mysql","name":"UI MySQL","host":"127.0.0.1","port":$MYSQL_PORT,
   "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development"},
  {"id":"00000000-0000-4000-8000-0000000000A2","kind":"mysql","name":"UI MySQL Prod","host":"127.0.0.1","port":$MYSQL_PORT,
-  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"production","group":"UI 그룹"}
+  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"production","group":"UI 그룹"},
+ {"id":"00000000-0000-4000-8000-0000000000A3","kind":"mysql","name":"UI 닫힌 포트","host":"127.0.0.1","port":1,
+  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 그룹"}
 ]
 JSON
 
@@ -98,7 +106,7 @@ set -e
 if [[ $KEEP == 0 ]]; then
   kill $APP_PID 2>/dev/null || true
   docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop \
-    -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools, ui_points, ui_members" 2>/dev/null || true
+    -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools, ui_points, ui_members; DROP DATABASE IF EXISTS shop_cmp" 2>/dev/null || true
 fi
 echo
 echo "보고서: $WORK/report.txt"
