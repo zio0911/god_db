@@ -11,7 +11,8 @@ final class AppSettings {
         didSet { L10n.language = language }
     }
 
-    var ollamaURL: String { didSet { AISettings.url = ollamaURL } }
+    /// 입력 중인 주소. 이 PC(localhost) 주소일 때만 저장한다 (다른 서버로 구조 · SQL · 샘플 값이 나가지 않게)
+    var ollamaURL: String { didSet { if AISettings.isLocalURL(ollamaURL) { AISettings.url = ollamaURL } } }
     var tuningModel: String { didSet { AISettings.model = tuningModel } }
     var logFileEnabled: Bool { didSet { LogFile.enabled = logFileEnabled } }
     var logRetentionDays: Int { didSet { LogFile.retentionDays = logRetentionDays; LogFile.shared.cleanNow() } }
@@ -286,9 +287,18 @@ struct AISettingsView: View {
             Section {
                 TextField(tr("Ollama 주소"), text: $settings.ollamaURL)
                     .onSubmit { Task { await refresh() } }
-                if !AISettings.isLocal {
-                    Label(tr("이 Mac 밖의 주소예요. 쿼리와 테이블 구조가 그 서버로 전송돼요."), systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(.orange)
+                if !AISettings.isLocalURL(settings.ollamaURL) || !AISettings.isLocal {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(tr("AI 는 이 PC 의 Ollama 만 쓸 수 있어요. 다른 서버로는 구조 · SQL · 샘플 값이 나가므로 막아 두었어요. 이 주소는 저장되지 않아요."),
+                              systemImage: "lock.shield")
+                            .font(.caption).foregroundStyle(.red)
+                        Button(tr("기본값(localhost)으로")) {
+                            settings.ollamaURL = AISettings.defaultURL
+                            AISettings.url = AISettings.defaultURL
+                            Task { await refresh() }
+                        }
+                        .controlSize(.small)
+                    }
                 }
                 HStack {
                     statusLabel

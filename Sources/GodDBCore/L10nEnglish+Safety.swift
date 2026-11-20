@@ -4,6 +4,10 @@ import Foundation
 extension L10nEnglish {
     static let safety: [String: String] = [
         "'%@' 접속을 삭제할까요?": "Delete the connection '%@'?",
+        "AI 는 이 PC 의 Ollama 만 쓸 수 있어요 (%@ 는 다른 서버예요). 설정 > AI 에서 주소를 localhost 로 바꿔 주세요.": "AI can only use Ollama on this PC (%@ is another server). Change the address to localhost in Settings > AI.",
+        "AI 는 이 PC 의 Ollama 만 쓸 수 있어요. 다른 서버로는 구조 · SQL · 샘플 값이 나가므로 막아 두었어요. 이 주소는 저장되지 않아요.": "AI can only use Ollama on this PC. Other servers would receive structures, SQL and sample values, so they are blocked. This address isn't saved.",
+        "기본값(localhost)으로": "Reset to localhost",
+        "SQL Server 는 앱에서만 막아요(서버에서 강제되지 않음). 운영 DB 는 읽기 권한만 있는 DB 계정을 쓰세요.": "SQL Server is blocked by the app only (not enforced by the server). For production, use a database account with read-only permissions.",
         "편집기의 모든 문장(%@개, 변경 문 %@개)을 위에서부터 실행해요. 한 문장만 실행하려면 그 문장에 커서를 두고 ⌘↩ 를 누르세요.": "All statements in the editor (%@, including %@ that change data) run from the top. To run just one, put the cursor in it and press ⌘↩.",
         "선택 영역만 실행, 선택이 없으면 커서가 있는 문장(강조된 문장)만 실행 (⌘↩)": "Run the selection, or only the statement at the cursor (the highlighted one) if nothing is selected (⌘↩)",
         "전체 실행": "Run All",
