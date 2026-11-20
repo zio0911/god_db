@@ -533,7 +533,13 @@ struct ResultGrid: View {
     @State private var sortOrder: [ColumnSortComparator] = []
     @State private var hoveredRow: Int?
     /// 그 자리에서 고치고 있는 칸 (이 칸에만 입력란을 만든다)
-    @State private var editingCell: GridCell?
+    /// 그 자리에서 고치는 칸. 표(NSTableView)는 줄 값이 그대로면 칸을 다시 그리지 않으므로,
+    /// 칸마다 이 상태를 직접 지켜보게(@Observable) 해서 Esc 로 취소해도 입력란이 사라지게 한다
+    @State private var editState = InlineEditState()
+    private var editingCell: GridCell? {
+        get { editState.cell }
+        nonmutating set { editState.cell = newValue }
+    }
     @State private var pointer = PointerCell()
     @State private var doubleTick = 0
     /// 행을 고르면 결과 표로 키보드 포커스를 옮긴다 (⌘C 가 편집기가 아니라 표에 가도록)
@@ -697,12 +703,12 @@ struct ResultGrid: View {
     @ViewBuilder
     private func cellOrEditor(_ row: QueryResult.Row, _ column: QueryResult.Column) -> some View {
         let here = GridCell(row: row.id, column: column.id)
-        if editingCell == here {
-            let original = row.values[column.id]
+        let original = row.values[column.id]
+        EditableGridCell(state: editState, here: here) {
             InlineCellEditor(initial: InlineCellEdit.initialText(original)) { text, how, keyboard in
                 finishEditing(here, original: original, text: text, how: how, keyboard: keyboard)
             }
-        } else {
+        } content: {
             cell(row, column)
         }
     }

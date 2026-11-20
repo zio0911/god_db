@@ -366,6 +366,24 @@ final class PointerCell {
     }
 }
 
+/// 그 자리에서 고치는 칸 (칸 뷰가 직접 지켜봐서 바뀌면 그 칸만 다시 그린다)
+@Observable
+final class InlineEditState {
+    var cell: GridCell?
+}
+
+/// 고치는 칸이면 입력란, 아니면 보통 칸. state.cell 을 여기서 읽어 표가 줄을 다시 그리지 않아도 바뀐다
+struct EditableGridCell<Editor: View, Content: View>: View {
+    let state: InlineEditState
+    let here: GridCell
+    @ViewBuilder let editor: () -> Editor
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if state.cell == here { editor() } else { content() }
+    }
+}
+
 /// 결과 표 칸 하나를 그 자리에서 고치는 한 줄 입력란 (고치는 칸에만 하나 만든다)
 /// ↩ 넣기 · Esc 취소 · Tab/⇧Tab 넣고 옆 칸 · 다른 곳 클릭 넣기
 struct InlineCellEditor: NSViewRepresentable {
