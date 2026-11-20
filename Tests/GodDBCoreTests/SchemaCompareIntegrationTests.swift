@@ -154,8 +154,7 @@ struct CompareFixture {
         // 여러 개 골라 복사: 고른 순서와 관계없이 목록 순서, 참고용 항목은 건너뜀
         if let n = nick, let m = memo, let extra = find(.extraColumn, "cmp_member", "extra_b") {
             let joined = SchemaDiffReport.fixSQL(of: report.items, selected: [n.id, m.id, extra.id])
-            let ordered = report.items.filter { [n.id, m.id].contains($0.id) }.compactMap(\.fixSQL)
-            #expect(joined == ordered.joined(separator: "\n\n"))
+            #expect(joined == SchemaDiffReport.grouped(report.items.filter { [n.id, m.id].contains($0.id) }))
             #expect(joined.contains(n.fixSQL!) && joined.contains(m.fixSQL!))
         }
 

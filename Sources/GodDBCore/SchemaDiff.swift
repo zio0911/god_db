@@ -43,13 +43,27 @@ public struct SchemaDiffReport: Sendable {
 
     /// 실행 가능한 보정 SQL 전체 (DROP TABLE/COLUMN 은 생성하지 않는다)
     public var fixScript: String {
-        items.compactMap(\.fixSQL).joined(separator: "\n\n")
+        Self.grouped(items)
     }
 
-    /// 고른 항목들의 보정 SQL 을 목록(`items`) 순서대로 빈 줄로 이어 붙인다.
+    /// 고른 항목들의 보정 SQL 을 목록(`items`) 순서대로 테이블별로 묶어 이어 붙인다.
     /// 고른 순서와 관계없이 목록 순서를 따르고, 참고용(SQL 없음) 항목은 건너뛴다.
     public static func fixSQL(of items: [SchemaDiffItem], selected: Set<SchemaDiffItem.ID>) -> String {
-        items.filter { selected.contains($0.id) }.compactMap(\.fixSQL).joined(separator: "\n\n")
+        grouped(items.filter { selected.contains($0.id) })
+    }
+
+    /// 테이블마다 "-- 테이블" 한 줄 뒤에 그 테이블의 SQL 을 줄바꿈으로 잇고, 테이블 사이는 빈 줄로 띄운다
+    static func grouped(_ items: [SchemaDiffItem]) -> String {
+        var order: [String] = []
+        var byTable: [String: [String]] = [:]
+        for item in items {
+            guard let sql = item.fixSQL else { continue }
+            if byTable[item.table] == nil { order.append(item.table) }
+            byTable[item.table, default: []].append(sql)
+        }
+        return order.map { table in
+            (["-- \(table)"] + byTable[table]!).joined(separator: "\n")
+        }.joined(separator: "\n\n")
     }
 }
 

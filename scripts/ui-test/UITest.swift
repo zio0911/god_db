@@ -493,7 +493,7 @@ scenario("schemaCompare") {
     key("c", cmd)
     var copied = clipboard()
     check("스키마 비교: ⌘C 로 두 테이블 SQL 복사 (목록 순서)",
-          copied == wantCustomers + "\n\n" + wantOrders, copied)
+          copied == "-- ui_customers\n" + wantCustomers + "\n\n-- ui_orders\n" + wantOrders, copied)
 
     // 우클릭 '모두 선택' 후 ⌘C (보이는 항목이 두 개뿐)
     click(second)

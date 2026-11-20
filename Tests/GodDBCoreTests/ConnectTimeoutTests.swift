@@ -111,20 +111,26 @@ struct SchemaDiffCopyTests {
     ]
 
     @Test func joinsSelectedInListOrderWithBlankLines() {
-        // 고른 순서가 아니라 목록 순서
+        // 고른 순서가 아니라 목록 순서, 테이블마다 "-- 테이블" 머리줄 + 테이블 사이 빈 줄
         let selected: Set = [items[3].id, items[0].id]
         #expect(SchemaDiffReport.fixSQL(of: items, selected: selected)
-                == "CREATE TABLE a (id int);\n\nALTER TABLE d DROP INDEX ix, ADD INDEX ix (y);")
+                == "-- a\nCREATE TABLE a (id int);\n\n-- d\nALTER TABLE d DROP INDEX ix, ADD INDEX ix (y);")
+    }
+
+    @Test func sameTableStaysTogetherOnConsecutiveLines() {
+        let more = items + [SchemaDiffItem(kind: .missingColumn, table: "c", object: "z", detail: "", fixSQL: "ALTER TABLE c ADD COLUMN z int;")]
+        #expect(SchemaDiffReport.fixSQL(of: more, selected: [more[2].id, more[4].id])
+                == "-- c\nALTER TABLE c ADD COLUMN x int;\nALTER TABLE c ADD COLUMN z int;")
     }
 
     @Test func singleSelectionMatchesItsSQL() {
-        #expect(SchemaDiffReport.fixSQL(of: items, selected: [items[2].id]) == items[2].fixSQL)
+        #expect(SchemaDiffReport.fixSQL(of: items, selected: [items[2].id]) == "-- c\n" + items[2].fixSQL!)
     }
 
     @Test func skipsReferenceOnlyItems() {
         #expect(SchemaDiffReport.fixSQL(of: items, selected: [items[1].id]) == "")
         #expect(SchemaDiffReport.fixSQL(of: items, selected: Set(items.map(\.id)))
-                == items.compactMap(\.fixSQL).joined(separator: "\n\n"))
+                == "-- a\nCREATE TABLE a (id int);\n\n-- c\nALTER TABLE c ADD COLUMN x int;\n\n-- d\nALTER TABLE d DROP INDEX ix, ADD INDEX ix (y);")
         #expect(SchemaDiffReport.fixSQL(of: items, selected: []) == "")
     }
 }
