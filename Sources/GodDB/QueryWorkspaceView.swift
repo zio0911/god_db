@@ -535,6 +535,7 @@ struct ResultGrid: View {
     /// 그 자리에서 고치고 있는 칸 (이 칸에만 입력란을 만든다)
     @State private var editingCell: GridCell?
     @State private var pointer = PointerCell()
+    @State private var doubleTick = 0
     /// 행을 고르면 결과 표로 키보드 포커스를 옮긴다 (⌘C 가 편집기가 아니라 표에 가도록)
     @FocusState private var gridFocused: Bool
 
@@ -549,20 +550,13 @@ struct ResultGrid: View {
                         .simultaneousGesture(TapGesture().modifiers(.command).onEnded {
                             fk?.follow(column: column.id, row: row.values)
                         }, including: fk?.byColumn[column.id] == nil ? .subviews : .all)
-                        // 칸 더블클릭: 이 칸을 그 자리에서 고친다 (어느 칸인지 여기서 바로 안다. 행 선택 · 다중 선택은 그대로)
-                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                            let c = GridCell(row: row.id, column: column.id)
-                            if canEditInline(c) {
-                                selection = [row.id]
-                                editingCell = c
-                            }
-                        })
                         .background(hoveredRow == row.id ? Color.accentColor.opacity(0.12) : Color.clear)
                         .onHover { inside in
                             let here = GridCell(row: row.id, column: column.id)
                             if inside {
                                 hoveredRow = row.id
                                 pointer.cell = here
+                                PointerCell.active = pointer
                             } else {
                                 if hoveredRow == row.id { hoveredRow = nil }
                                 if pointer.cell == here { pointer.cell = nil }
@@ -578,6 +572,22 @@ struct ResultGrid: View {
         .onAppear {
             syncSortOrder()
             PointerCell.startTracking()
+            PointerCell.active = pointer
+            pointer.doubleClicked = { doubleTick &+= 1 }
+        }
+        // 칸 더블클릭 (앱 이벤트에서 받은 표 위치) → 그 칸을 그 자리에서 고친다
+        .onChange(of: doubleTick) {
+            guard let hit = pointer.pendingDouble, rows.indices.contains(hit.row) else { return }
+            pointer.pendingDouble = nil
+            let rowID = rows[hit.row].id
+            let named = result.columns.filter { hit.title == $0.name || hit.title.hasPrefix($0.name + " ↗") }
+            let column = named.count == 1 ? named[0].id : (hit.column < result.columns.count ? result.columns[hit.column].id : nil)
+            guard let column else { return }
+            let c = GridCell(row: rowID, column: column)
+            if canEditInline(c) {
+                selection = [rowID]
+                editingCell = c
+            }
         }
         .onChange(of: result.id) {
             syncSortOrder()

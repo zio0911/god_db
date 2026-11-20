@@ -313,13 +313,38 @@ final class PointerCell {
     private static var lastDown: (window: NSWindow, point: NSPoint)?
     private static var monitor: Any?
 
-    /// 결과 표가 처음 나올 때 한 번 건다 (앱 안 마우스 누름만 본다, 이벤트는 그대로 통과)
+    /// 지금 보이는 결과 표 (더블클릭을 받을 곳)
+    nonisolated(unsafe) static weak var active: PointerCell?
+    /// 더블클릭한 칸 (표의 행 번호 · 컬럼 번호 · 머리글). 받으면 doubleClicked 가 불린다
+    var pendingDouble: (row: Int, column: Int, title: String)?
+    var doubleClicked: (() -> Void)?
+
+    /// 결과 표가 처음 나올 때 한 번 건다 (앱 안 마우스 누름만 본다, 이벤트는 그대로 통과).
+    /// 표(NSTableView)는 두 번째 클릭을 칸 안의 SwiftUI 동작에 넘기지 않아서, 더블클릭은 여기서 위치로 칸을 찾는다
     static func startTracking() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { ev in
             if let w = ev.window { lastDown = (w, ev.locationInWindow) }
+            if ev.type == .leftMouseDown, ev.clickCount == 2, ev.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+               let w = ev.window, let table = tableView(in: w, at: ev.locationInWindow) {
+                let p = table.convert(ev.locationInWindow, from: nil)
+                let r = table.row(at: p), c = table.column(at: p)
+                if r >= 0, c >= 0, c < table.tableColumns.count, let target = active {
+                    target.pendingDouble = (r, c, table.tableColumns[c].title)
+                    DispatchQueue.main.async { target.doubleClicked?() }
+                }
+            }
             return ev
         }
+    }
+
+    private static func tableView(in window: NSWindow, at point: NSPoint) -> NSTableView? {
+        guard var view = window.contentView?.hitTest(point) else { return nil }
+        while !(view is NSTableView) {
+            guard let parent = view.superview else { return nil }
+            view = parent
+        }
+        return view as? NSTableView
     }
 
     static func clickedColumn() -> (index: Int, title: String)? {
