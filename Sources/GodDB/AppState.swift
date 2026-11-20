@@ -84,7 +84,10 @@ struct ConnectionInfo {
     var session: DBSession?
     var databases: [String] = []
     var currentDatabase = ""
-    var tables: [TableMeta] = []
+    /// 스키마 (외래 키 포함 — DBSession.loadSchema 가 함께 읽는다)
+    var tables: [TableMeta] = [] { didSet { inferredRelations = FKFollow.inferredRelations(tables) } }
+    /// 컬럼 이름으로 추정한 관계 (외래 키 따라가기용, 스키마가 바뀔 때만 다시 계산)
+    private(set) var inferredRelations: [ForeignKeyMeta] = []
     var routines: [RoutineMeta] = []
     var schemaLoading = false
     /// 자동 커밋 / 열린 트랜잭션 상태 (세션에서 읽어 둔 값)

@@ -99,14 +99,19 @@ public enum ResultEditing {
         return parts.joined(separator: ".")
     }
 
+    /// SQL 에 쓴 테이블 이름으로 스키마의 테이블을 찾는다 (대소문자 무시, `db.t` · `dbo.t` 도)
+    public static func table(named name: String, in tables: [TableMeta]) -> TableMeta? {
+        let lower = name.lowercased()
+        let last = name.split(separator: ".").last.map { String($0).lowercased() } ?? lower
+        return tables.first(where: { $0.name.lowercased() == lower })
+            ?? tables.first(where: { $0.name.lowercased() == last })
+            ?? tables.first(where: { $0.name.lowercased() == "dbo." + last })
+    }
+
     /// 편집할 수 있는지 확인하고 대상 정보를 만든다.
     public static func target(sql: String, columns: [String], tables: [TableMeta]) throws -> EditTarget {
         guard let name = singleTable(in: sql) else { throw ResultEditingError.notSingleTable }
-        let lower = name.lowercased()
-        let last = name.split(separator: ".").last.map { String($0).lowercased() } ?? lower
-        guard let table = tables.first(where: { $0.name.lowercased() == lower })
-                ?? tables.first(where: { $0.name.lowercased() == last })
-                ?? tables.first(where: { $0.name.lowercased() == "dbo." + last }) else {
+        guard let table = table(named: name, in: tables) else {
             throw ResultEditingError.tableNotFound(name)
         }
         guard let pk = table.indexes.first(where: \.isPrimary), !pk.columns.isEmpty else {
