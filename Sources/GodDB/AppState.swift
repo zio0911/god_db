@@ -53,6 +53,8 @@ struct QueryTab: Identifiable {
     /// 실행 계획(EXPLAIN) 결과인지
     var isPlan = false
     var planTree: String?
+    /// ID 로 찾기로 연 탭이면 요청한 값 (결과 아래 "없는 ID" 표시)
+    var idSearch: IDSearchRun?
 
     var title: String { customTitle ?? tr("쿼리 %@", "\(number)") }
     /// 연 .sql 파일 (저장하면 이 파일에 쓴다)
@@ -144,6 +146,8 @@ final class AppState {
     @ObservationIgnored weak var mainWindow: NSWindow?
     /// 객체 빠른 찾기 (⌘O)
     var showQuickOpen = false
+    /// ID 로 찾기 (⌥⌘F)
+    var idSearchRequest: IDSearchRequest?
     /// 적용하지 않은 결과 편집을 버리기 전 확인
     var discardPrompt: DiscardEditsPrompt?
     /// 결과 내보내기 설정 창
@@ -645,7 +649,8 @@ final class AppState {
     }
 
     /// 선택된 탭에서 sql 실행. explain 이면 실행 계획을 보여준다.
-    func run(sql: String, explain: Bool = false) async {
+    /// rowLimitOverride: 이번 실행만 다른 행 수 제한 (ID 로 찾기 — 값 개수 이상)
+    func run(sql: String, explain: Bool = false, rowLimitOverride: Int? = nil) async {
         guard let i = selectedTabIndex else { return }
         let tab = tabs[i]
         let tabID = tab.id
@@ -658,8 +663,9 @@ final class AppState {
         tabs[i].running = true
         armRunTimeout(tabs[i].id)
         tabs[i].error = nil
-        let streaming = rowLimit == 0
-        let limit = streaming ? Self.streamPageSize : rowLimit
+        let effectiveLimit = rowLimitOverride ?? rowLimit
+        let streaming = effectiveLimit == 0
+        let limit = streaming ? Self.streamPageSize : effectiveLimit
         do {
             guard let session = try await session(for: tab) else {
                 update(tabID) { $0.error = notConnectedMessage(tab); $0.running = false }

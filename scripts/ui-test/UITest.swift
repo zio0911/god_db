@@ -596,6 +596,37 @@ scenario("prodIdle") {
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
 }
 
+scenario("idSearch") {
+    // ID 로 찾기: 사이드바에서 ui_orders 를 고르고 ⌥⌘F → 로그 3줄 붙여넣기 → 3개 추출 → 조회 → 없는 ID 1개
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    guard let table = app.find(10, { !$0.modal && $0.role == "AXStaticText" && $0.value == "ui_orders" }) else {
+        throw Abort(message: "사이드바에 ui_orders 가 없어요")
+    }
+    click(table)
+    key("f", [cmd, opt])
+    guard let area = app.find(4, { $0.modal && $0.role == "AXTextArea" }) else { check("⌥⌘F ID 로 찾기 열기", false); return }
+    check("⌥⌘F ID 로 찾기 열기 · 고른 테이블이 미리 선택됨",
+          app.find(2, { $0.modal && $0.role == "AXPopUpButton" && $0.value == "ui_orders" }) != nil)
+    check("컬럼 기본값은 기본 키 (이름 (타입))", app.find(2, { $0.modal && $0.role == "AXPopUpButton" && $0.value.hasPrefix("id (int") }) != nil)
+    click(area)
+    paste("""
+    2026-11-20 10:01:02 ERROR orderId=2 payment failed
+    2026-11-20 10:01:03 WARN orderId=4 retry orderId=2
+    2026-11-20 10:01:04 INFO orderId=99 done
+    """)
+    check("로그 3줄에서 숫자 ID 3개 추출 (날짜 · 시각 · 중복 제외)",
+          app.find(3, { $0.modal && $0.text.contains("찾은 값 3개 (중복 1개 제외) : 2, 4, 99") }) != nil,
+          app.snapshot().filter { $0.modal && $0.text.contains("찾은 값") }.map(\.value).joined(separator: " / "))
+    guard let run = app.find(2, { $0.modal && button("조회")($0) }) else { check("[조회] 버튼", false); return }
+    press(run)
+    check("새 탭 'ID: ui_orders.id (3)' 에서 조회", app.find(10, hasText("ID: ui_orders.id (3)")) != nil)
+    check("찾은 행 표시 (lee · choi)", app.find(8, cell("lee")) != nil && app.find(2, cell("choi")) != nil)
+    check("없는 ID 표시 (요청 3 · 찾음 2 · 없음 1)", app.find(5, hasText("요청 3 · 찾음 2 · 없음 1")) != nil)
+    setClipboard("")
+    if let copy = app.find(2, button("없는 ID 복사")) { press(copy) }
+    check("[없는 ID 복사] → 99", clipboard() == "99", clipboard())
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {
