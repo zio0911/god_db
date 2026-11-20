@@ -114,6 +114,10 @@ struct ModelListView: View {
                 }
             }
             .listStyle(.sidebar)
+            // 줄은 두 줄(이름 + 정보)이라 기본 줄 높이보다 높다. 맨 위에 끼워 넣을 때(불러오기 · 새 모델) 목록이 줄 높이를
+            // 다시 재지 않아 줄끼리 겹쳐 그려졌다 → 최소 높이를 주고, 모델 수가 바뀌면 목록을 새로 그린다
+            .environment(\.defaultMinListRowHeight, 40)
+            .id(modeling.models.count)
             Divider()
             Text(tr("자동 저장돼요. 파일로 내보내면 다른 사람과 공유할 수 있어요."))
                 .font(.caption2).foregroundStyle(.secondary)
