@@ -39,7 +39,7 @@ struct CompareFixture {
         switch kind {
         case .mysql:
             let p = ConnectionProfile(name: "cmp", host: "127.0.0.1", port: Int(env["GODDB_IT_PORT"]!)!,
-                                      username: "root", database: "shop", useTLS: true)
+                                      username: "root", database: "shop", useTLS: false)   // 비교만 본다 (TLS 는 따로 테스트)
             return try await DBSession.connect(profile: p, password: env["GODDB_IT_PASSWORD"] ?? "")
         case .postgres, .mssql:
             let (p, pw) = MultiDB.profile(kind, database: kind == .mssql ? "master" : "shop")!
