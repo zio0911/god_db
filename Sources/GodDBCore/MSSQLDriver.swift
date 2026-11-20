@@ -89,7 +89,7 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
             }
         }
         // DB-Library 기본 세션은 ANSI_PADDING 등이 꺼져 있다 (varbinary 끝의 0 이 잘리고, 컬럼 기본값이 NOT NULL 등).
-        // DataGrip(JDBC)·SSMS(ODBC) 와 같은 표준 설정으로 맞춘다.
+        // JDBC · ODBC 드라이버와 같은 표준 설정으로 맞춘다.
         _ = try await driver.query("""
             SET ANSI_NULLS ON; SET ANSI_PADDING ON; SET ANSI_WARNINGS ON; SET ANSI_NULL_DFLT_ON ON;
             SET CONCAT_NULL_YIELDS_NULL ON; SET QUOTED_IDENTIFIER ON; SET ARITHABORT ON
