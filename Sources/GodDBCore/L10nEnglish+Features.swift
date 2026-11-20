@@ -4,7 +4,6 @@ import Foundation
 extension L10nEnglish {
     static let features: [String: String] = [
         "%@ 생성문 새로고침": "Refreshed %@ definition",
-        "%@ 편집 가능 · 행을 고르면 오른쪽에서 값을 고칠 수 있어요": "%@ is editable · select a row to edit values on the right",
         "%@초": "%@s",
         "(기본값)": "(default)",
         "(요약 없음)": "(no summary)",

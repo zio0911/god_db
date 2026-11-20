@@ -383,8 +383,13 @@ struct ResultPane: View {
                     GeometryReader { geo in
                         HStack(spacing: 0) {
                             ResultGrid(result: result, rows: rows, edits: tab.edits, selection: $selection,
-                                       onSort: { column, ascending in onSort(column, ascending) },
+                                       onSort: { column, ascending in
+                                           InlineCellTextField.endActiveEditing()
+                                           onSort(column, ascending)
+                                       },
                                        editable: { if case .success = target { return true } else { return false } }(),
+                                       editableColumns: { if case .success(let t) = target { return Set(t.columnMap.keys) } else { return [] } }(),
+                                       onSetCell: { row, column, value in app.setCell(tab.id, row: row, column: column, value: value) },
                                        onAddRow: { if let id = app.addRow(tab.id) { selection = [id] } },
                                        onDeleteRows: { ids in app.toggleDelete(tab.id, rows: ids) },
                                        onReachEnd: result.appendMode ? { Task { await app.loadMore(in: tab.id) } } : nil,
@@ -408,7 +413,10 @@ struct ResultPane: View {
                 Divider()
                 StatusBar(result: result, selectedCount: selection.count, loading: tab.pageLoading || !tab.edits.isEmpty,
                           exportProgress: tab.exportProgress, appendCapped: tab.appendCapped,
-                          onPage: onPage, onCount: onCount, onExport: { app.exportResult(tab.id) },
+                          onPage: { page in
+                              InlineCellTextField.endActiveEditing()
+                              onPage(page)
+                          }, onCount: onCount, onExport: { app.exportResult(tab.id) },
                           onCancelExport: { app.cancelExport(tab.id) })
             } else {
                 Text(tr("쿼리를 실행하면 결과가 여기 나와요."))
@@ -509,6 +517,10 @@ struct ResultGrid: View {
     var onSort: ((String, Bool) -> Void)?
     /// 편집 가능한 결과면 우클릭 메뉴에 편집 항목을 보여준다
     var editable = false
+    /// 그 자리에서 고칠 수 있는 컬럼 (테이블 컬럼과 이어진 결과 컬럼)
+    var editableColumns: Set<Int> = []
+    /// 칸 값 바꾸기 (행 id, 컬럼, 새 값 — nil 은 NULL)
+    var onSetCell: ((Int, Int, String?) -> Void)?
     var onAddRow: (() -> Void)?
     var onDeleteRows: ((Set<Int>) -> Void)?
     /// 끝 근처 행이 보이면 (보이지 않는 페이징: 다음 행 이어 붙이기)
@@ -520,6 +532,9 @@ struct ResultGrid: View {
     var fk: FKContext?
     @State private var sortOrder: [ColumnSortComparator] = []
     @State private var hoveredRow: Int?
+    /// 그 자리에서 고치고 있는 칸 (이 칸에만 입력란을 만든다)
+    @State private var editingCell: GridCell?
+    @State private var pointer = PointerCell()
     /// 행을 고르면 결과 표로 키보드 포커스를 옮긴다 (⌘C 가 편집기가 아니라 표에 가도록)
     @FocusState private var gridFocused: Bool
 
@@ -527,7 +542,7 @@ struct ResultGrid: View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumnForEach(result.columns) { column in
                 TableColumn(header(column), sortUsing: ColumnSortComparator(column: column.id)) { (row: QueryResult.Row) in
-                    cell(row, column)
+                    cellOrEditor(row, column)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         // ⌘ 클릭: 참조 따라가기 (외래 키 칸에서만 — 다른 칸의 ⌘ 클릭 여러 행 선택은 그대로)
@@ -536,7 +551,14 @@ struct ResultGrid: View {
                         }, including: fk?.byColumn[column.id] == nil ? .subviews : .all)
                         .background(hoveredRow == row.id ? Color.accentColor.opacity(0.12) : Color.clear)
                         .onHover { inside in
-                            if inside { hoveredRow = row.id } else if hoveredRow == row.id { hoveredRow = nil }
+                            let here = GridCell(row: row.id, column: column.id)
+                            if inside {
+                                hoveredRow = row.id
+                                pointer.cell = here
+                            } else {
+                                if hoveredRow == row.id { hoveredRow = nil }
+                                if pointer.cell == here { pointer.cell = nil }
+                            }
                         }
                         .onAppear {
                             if let onReachEnd, column.id == 0, row.id < newRowBase, row.id >= result.rows.count - 40 { onReachEnd() }
@@ -546,7 +568,10 @@ struct ResultGrid: View {
             }
         }
         .onAppear { syncSortOrder() }
-        .onChange(of: result.id) { syncSortOrder() }
+        .onChange(of: result.id) {
+            syncSortOrder()
+            editingCell = nil
+        }
         .onChange(of: sortOrder) {
             guard let first = sortOrder.first, result.columns.indices.contains(first.column) else { return }
             let sort = ResultSort(column: result.columns[first.column].name, ascending: first.order == .forward)
@@ -568,6 +593,16 @@ struct ResultGrid: View {
             if editable {
                 Button(tr("이 행 편집")) { selection = ids }
                     .disabled(ids.count != 1)
+                // 우클릭한 칸을 NULL 로 (고른 행이 여러 개면 모두, 삭제 표시한 행은 빼고)
+                if let c = pointer.cell, ids.contains(c.row), editableColumns.contains(c.column),
+                   result.columns.indices.contains(c.column) {
+                    let targets = ids.filter { !edits.deletes.contains($0) }
+                    Button(tr("NULL 로 설정 (%@)", result.columns[c.column].name)) {
+                        InlineCellTextField.endActiveEditing()
+                        for id in targets { onSetCell?(id, c.column, nil) }
+                    }
+                    .disabled(targets.isEmpty)
+                }
                 Button(tr("행 추가")) { onAddRow?() }
                 Button(edits.deletes.isSuperset(of: ids.filter { $0 < newRowBase }) && !ids.isEmpty
                        ? tr("삭제 표시 해제") : tr("선택 행 삭제")) { onDeleteRows?(ids) }
@@ -592,8 +627,13 @@ struct ResultGrid: View {
             }
             .disabled(ids.isEmpty)
         } primaryAction: { ids in
-            // 더블클릭: 그 행을 골라 오른쪽 상세(편집 가능하면 편집) 패널을 연다
+            // 편집 가능한 결과에서 칸 더블클릭: 그 칸을 그 자리에서 고친다.
+            // 그 밖(편집 불가 결과 · 테이블 컬럼이 아닌 칸 · 여러 줄 값 · 칸 밖 · ↩ 키): 행을 골라 오른쪽 상세 패널을 연다
             selection = ids
+            if NSApp.currentEvent?.type != .keyDown, ids.count == 1, let c = pointer.cell, ids.contains(c.row),
+               canEditInline(c) {
+                editingCell = c
+            }
         }
     }
 
@@ -620,6 +660,43 @@ struct ResultGrid: View {
         }
         let wanted = [ColumnSortComparator(column: i, order: s.ascending ? .forward : .reverse)]
         if sortOrder != wanted { sortOrder = wanted }
+    }
+
+    /// 고치는 칸이면 입력란, 아니면 보통 칸
+    @ViewBuilder
+    private func cellOrEditor(_ row: QueryResult.Row, _ column: QueryResult.Column) -> some View {
+        let here = GridCell(row: row.id, column: column.id)
+        if editingCell == here {
+            let original = row.values[column.id]
+            InlineCellEditor(initial: InlineCellEdit.initialText(original)) { text, how, keyboard in
+                finishEditing(here, original: original, text: text, how: how, keyboard: keyboard)
+            }
+        } else {
+            cell(row, column)
+        }
+    }
+
+    /// 그 자리에서 고칠 수 있는 칸인지: 테이블 컬럼, 삭제 표시 안 한 행, 한 줄 값
+    private func canEditInline(_ c: GridCell) -> Bool {
+        guard editable, onSetCell != nil, editableColumns.contains(c.column), !edits.deletes.contains(c.row),
+              let row = rows.first(where: { $0.id == c.row }), row.values.indices.contains(c.column) else { return false }
+        return InlineCellEdit.canEditInline(row.values[c.column])
+    }
+
+    /// 칸 편집을 끝낸다: 바뀌었으면 변경에 넣고, Tab/⇧Tab 이면 같은 행 옆 칸으로
+    private func finishEditing(_ c: GridCell, original: String?, text: String, how: InlineCellEdit.Finish, keyboard: Bool) {
+        guard editingCell == c else { return }
+        if let value = InlineCellEdit.committedValue(original: original, text: text, finish: how) {
+            onSetCell?(c.row, c.column, value)
+        }
+        if let next = InlineCellEdit.neighbor(of: c.column, editable: Array(editableColumns), finish: how),
+           case let nextCell = GridCell(row: c.row, column: next), canEditInline(nextCell) {
+            editingCell = nextCell
+        } else {
+            editingCell = nil
+            // 키보드로 끝냈으면 표로 포커스를 돌려 화살표 · ⌘C 가 이어지게 (다른 곳을 눌렀으면 그대로)
+            if keyboard { gridFocused = true }
+        }
     }
 
     @ViewBuilder

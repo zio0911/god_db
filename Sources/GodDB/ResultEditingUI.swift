@@ -177,13 +177,15 @@ struct EditBar: View {
             switch target {
             case .success(let t):
                 Image(systemName: "pencil.circle").foregroundStyle(Color.accentColor)
-                Text(tr("%@ 편집 가능 · 행을 고르면 오른쪽에서 값을 고칠 수 있어요", t.table.name))
+                Text(tr("%@ 편집 가능 · 칸을 더블클릭해 바로 고치거나, 행을 고르면 오른쪽에서 고쳐요", t.table.name))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Button {
+                    InlineCellTextField.endActiveEditing()
                     if let id = app.addRow(tab.id) { selection = [id] }
                 } label: { Label(tr("행 추가"), systemImage: "plus") }
                 Button {
+                    InlineCellTextField.endActiveEditing()
                     app.toggleDelete(tab.id, rows: selection)
                 } label: { Label(tr("선택 행 삭제"), systemImage: "minus") }
                     .disabled(selection.isEmpty)
@@ -192,8 +194,12 @@ struct EditBar: View {
                     Divider().frame(height: 14)
                     Text(tr("변경 %@건", "\(tab.edits.count)"))
                         .font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                    Button(tr("되돌리기")) { app.revertEdits(tab.id) }
+                    Button(tr("되돌리기")) {
+                        InlineCellTextField.endActiveEditing()
+                        app.revertEdits(tab.id)
+                    }
                     Button {
+                        InlineCellTextField.endActiveEditing()
                         app.requestApplyEdits(tab.id)
                     } label: { Label(tr("적용…"), systemImage: "checkmark.circle") }
                         .foregroundStyle(Color.accentColor)
@@ -289,4 +295,108 @@ struct RowEditor {
     let edits: PendingEdits
     let set: (Int, String?) -> Void
     let resetToDefault: (Int) -> Void
+}
+
+/// 결과 표에서 고르고 있는 칸 (행 id, 컬럼 번호)
+struct GridCell: Hashable {
+    let row: Int
+    let column: Int
+}
+
+/// 마우스가 올라간 칸. 더블클릭 · 우클릭이 어느 칸인지 알기 위해 쓰며, 바뀌어도 화면을 다시 그리지 않는다.
+final class PointerCell {
+    var cell: GridCell?
+}
+
+/// 결과 표 칸 하나를 그 자리에서 고치는 한 줄 입력란 (고치는 칸에만 하나 만든다)
+/// ↩ 넣기 · Esc 취소 · Tab/⇧Tab 넣고 옆 칸 · 다른 곳 클릭 넣기
+struct InlineCellEditor: NSViewRepresentable {
+    let initial: String
+    /// (입력한 글자, 끝낸 방법, 키보드로 끝냈는지)
+    let onFinish: (String, InlineCellEdit.Finish, Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
+
+    func makeNSView(context: Context) -> InlineCellTextField {
+        let field = InlineCellTextField(string: initial)
+        field.font = .monospacedSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .callout).pointSize, weight: .regular)
+        field.isBordered = false
+        field.drawsBackground = true
+        field.backgroundColor = .textBackgroundColor
+        field.focusRingType = .exterior
+        field.usesSingleLineMode = true
+        field.lineBreakMode = .byClipping
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.delegate = context.coordinator
+        field.setAccessibilityLabel(tr("칸 편집"))
+        return field
+    }
+
+    func updateNSView(_ field: InlineCellTextField, context: Context) {
+        context.coordinator.onFinish = onFinish
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var onFinish: (String, InlineCellEdit.Finish, Bool) -> Void
+        private var finished = false
+
+        init(onFinish: @escaping (String, InlineCellEdit.Finish, Bool) -> Void) { self.onFinish = onFinish }
+
+        private func finish(_ text: String, _ how: InlineCellEdit.Finish, keyboard: Bool) {
+            guard !finished else { return }
+            finished = true
+            onFinish(text, how, keyboard)
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            let how: InlineCellEdit.Finish
+            switch selector {
+            case #selector(NSResponder.insertNewline(_:)): how = .commit
+            case #selector(NSResponder.cancelOperation(_:)): how = .cancel
+            case #selector(NSResponder.insertTab(_:)): how = .next
+            case #selector(NSResponder.insertBacktab(_:)): how = .previous
+            default: return false
+            }
+            let table = sequence(first: control.superview, next: { $0?.superview }).lazy.compactMap { $0 as? NSTableView }.first
+            finish(textView.string, how, keyboard: true)
+            // ↩ · Esc 로 끝내면 키보드 포커스를 표로 돌린다 (화살표 · ⌘C 가 이어지게)
+            if how == .commit || how == .cancel, let table {
+                DispatchQueue.main.async {
+                    guard let window = table.window, !(window.firstResponder is NSTextView) else { return }
+                    window.makeFirstResponder(table)
+                }
+            }
+            return true
+        }
+
+        /// 다른 곳을 눌러 포커스가 빠지면 넣는다
+        func controlTextDidEndEditing(_ note: Notification) {
+            guard let field = note.object as? NSTextField else { return }
+            finish(field.stringValue, .commit, keyboard: false)
+        }
+    }
+}
+
+final class InlineCellTextField: NSTextField {
+    private var focusOnAttach = true
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard focusOnAttach, window != nil else { return }
+        focusOnAttach = false
+        // 표에 붙은 뒤 포커스 (첫 응답자가 되면 글자 전체가 선택된다)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
+    /// 칸을 고치는 중이면 지금 값을 넣고 끝낸다 (적용 · 되돌리기 · 페이지 이동 등 버튼은 포커스를 가져가지 않으므로)
+    @MainActor
+    static func endActiveEditing() {
+        guard let window = NSApp.keyWindow, let editor = window.firstResponder as? NSTextView,
+              (editor.delegate as? NSObject) is InlineCellTextField else { return }
+        window.makeFirstResponder(nil)
+    }
 }
