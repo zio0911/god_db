@@ -52,13 +52,23 @@ DROP TABLE IF EXISTS ui_orders;
 CREATE TABLE ui_orders (id INT PRIMARY KEY, customer VARCHAR(50), amount INT, note VARCHAR(100));
 INSERT INTO ui_orders VALUES (1,'kim',1200,'first'),(2,'lee',3400,'apple, pie'),(3,'park',560,NULL),
   (4,'choi',7800,'second'),(5,'jung',90,'last');
+DROP TABLE IF EXISTS ui_customers;
+CREATE TABLE ui_customers (id INT PRIMARY KEY, name VARCHAR(50) NULL COMMENT '고객 이름', grade CHAR(1) NULL);
 SQL
+# 스키마 비교용 shop_cmp: shop 의 테이블을 그대로 복사한 뒤 두 테이블만 다르게 (컬럼 하나 없음, 코멘트 다름)
+CMP_COPY=$(docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD -N -e "SELECT CONCAT('CREATE TABLE shop_cmp.', CHAR(96), table_name, CHAR(96), ' LIKE shop.', CHAR(96), table_name, CHAR(96), ';') FROM information_schema.tables WHERE table_schema = 'shop' AND table_type = 'BASE TABLE'" 2>/dev/null)
+printf '%s\n' "DROP DATABASE IF EXISTS shop_cmp;" "CREATE DATABASE shop_cmp;" "$CMP_COPY" \
+  "ALTER TABLE shop_cmp.ui_orders DROP COLUMN note;" \
+  "ALTER TABLE shop_cmp.ui_customers MODIFY name VARCHAR(50) NULL COMMENT '이름';" \
+  | docker exec -i goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD 2>/dev/null
 cat > "$DATA/profiles.json" <<JSON
 [
  {"id":"00000000-0000-4000-8000-0000000000A1","kind":"mysql","name":"UI MySQL","host":"127.0.0.1","port":$MYSQL_PORT,
   "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development"},
  {"id":"00000000-0000-4000-8000-0000000000A2","kind":"mysql","name":"UI MySQL Prod","host":"127.0.0.1","port":$MYSQL_PORT,
-  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"production","group":"UI 그룹"}
+  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"production","group":"UI 그룹"},
+ {"id":"00000000-0000-4000-8000-0000000000A3","kind":"mysql","name":"UI 닫힌 포트","host":"127.0.0.1","port":1,
+  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 그룹"}
 ]
 JSON
 
@@ -77,7 +87,7 @@ set -e
 
 if [[ $KEEP == 0 ]]; then
   kill $APP_PID 2>/dev/null || true
-  docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop -e "DROP TABLE IF EXISTS ui_orders" 2>/dev/null || true
+  docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop -e "DROP TABLE IF EXISTS ui_orders, ui_customers; DROP DATABASE IF EXISTS shop_cmp" 2>/dev/null || true
 fi
 echo
 echo "보고서: $WORK/report.txt"

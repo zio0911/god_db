@@ -310,10 +310,13 @@
 | 테이블 없음 | 기준 DB 의 `SHOW CREATE TABLE` |
 | 컬럼 없음 | `ADD COLUMN … AFTER` |
 | 컬럼 다름 (타입/NULL/기본값/Extra/코멘트) | `MODIFY COLUMN` |
+| 테이블 코멘트 다름 | `COMMENT =` (PostgreSQL `COMMENT ON TABLE`, SQL Server `MS_Description` 확장 속성) |
 | 인덱스 없음 / 다름 | `ADD INDEX` / `DROP INDEX, ADD INDEX` |
 | 대상에만 있음 | 없음 (참고용, **DROP 은 만들지 않음**) |
 
 - **자동 실행하지 않는다.** 전체 SQL 복사 또는 쿼리 탭으로 열어 검토 후 실행.
+- PostgreSQL 은 DB 대신 스키마를 비교한다 (비우면 `public`). serial 컬럼이 있는 테이블 · 컬럼을 만들 때는 시퀀스도 함께 만든다.
+- SQL Server 는 기본값을 바꿀 때 기존 기본값 제약조건을 이름으로 찾아 지운 뒤 새로 단다.
 
 ## 14. 상태창 (로그)
 
