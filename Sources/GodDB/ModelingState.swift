@@ -10,6 +10,8 @@ import UniformTypeIdentifiers
 final class ModelingState {
     var models: [DataModel] = []
     var selectedID: UUID?
+    /// 테이블 명세서 저장 시트를 띄울 모델
+    var tableSpecModel: DataModel?
     private(set) var loaded = false
     /// 모델별 되돌리기 기록 (구조 변경 전 스냅샷)
     private var undo: [UUID: [DataModel]] = [:]
@@ -125,8 +127,10 @@ final class ModelingState {
 
     // MARK: - 파일
 
+    /// 모델 파일(.goddbmodel) 종류. JSON 하위 종류로 만들면(conformingTo: .json) 디스크의 파일이 받는 종류와 달라져
+    /// 불러오기 창에서 파일을 고를 수 없었다 → 확장자로만 만든다 (macOS 가 파일에 붙이는 종류와 같음)
     static var fileType: UTType {
-        UTType(filenameExtension: DataModel.fileExtension, conformingTo: .json) ?? .json
+        UTType(filenameExtension: DataModel.fileExtension) ?? .data
     }
 
     func exportFile(_ id: UUID) {
@@ -138,6 +142,11 @@ final class ModelingState {
         do { try ModelStore.encode(m).write(to: url, options: .atomic) } catch {
             NSAlert(error: error).runModal()
         }
+    }
+
+    /// 테이블 명세서(엑셀) 저장: 시스템명 · 작성자 · 작성일을 묻는 시트부터
+    func exportTableSpec(_ id: UUID) {
+        tableSpecModel = models.first { $0.id == id }
     }
 
     func importFile() {

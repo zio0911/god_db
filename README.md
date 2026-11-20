@@ -1,6 +1,6 @@
 # GodDB (갓디비)
 
-무료 macOS DB 클라이언트 — **MySQL / PostgreSQL / SQL Server / Redis**. **macOS 26 이상** (Apple 실리콘).
+심플하고 강력한 데이터 도구를 목표로 만든 macOS 앱 — **MySQL / PostgreSQL / SQL Server / Redis**. **macOS 26 이상** (Apple 실리콘).
 SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https://github.com/vapor/postgres-nio)(텍스트 결과 패치본, `Vendor/`) + [FreeTDS](https://www.freetds.org).
 
 상세 기능 명세: [docs/FEATURES.md](docs/FEATURES.md) · 한국어 / English (설정 `⌘,`)
@@ -11,19 +11,26 @@ SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https
 
 | 기능 | 내용 |
 |---|---|
-| 접속 관리 | 여러 접속 저장 (`~/Library/Application Support/GodDB/profiles.json`), 비밀번호는 macOS 키체인 |
+| 접속 관리 | 여러 접속 저장 (`~/Library/Application Support/GodDB/profiles.json`), 비밀번호는 macOS 키체인(볼 때 Touch ID), 접속 그룹 · 운영/개발 표시 |
 | SSH 터널 | `/usr/bin/ssh -N -L` 로 바스티온 경유. 키 파일 또는 ssh-agent 인증 |
-| 읽기전용 | SELECT/SHOW/DESC/EXPLAIN 만 허용 + 서버 세션 `TRANSACTION READ ONLY` |
-| 스키마 브라우저 | DB 선택, 테이블/컬럼/인덱스 트리, 검색, 더블클릭 시 SELECT |
-| 쿼리 | 탭, 하이라이트, ⌘↩ (선택 영역 또는 커서 위치 구문 실행), 기본 LIMIT 500, CSV 복사 |
+| 읽기전용 | SELECT/SHOW/DESC/EXPLAIN 만 허용 + 서버 세션 `TRANSACTION READ ONLY` (MySQL · PostgreSQL) |
+| 스키마 브라우저 | DB 선택, 테이블/컬럼/인덱스 트리, 검색, 더블클릭 시 SELECT, ⌘O 객체 빠른 찾기 |
+| 쿼리 편집기 | 탭(다시 켜도 남음), 하이라이트, **Tab 자동완성**(키워드 · 테이블 · 컬럼 · 별칭), ⌘↩ 커서 문장 / ⌥⌘↩ 전체 실행, SQL 정렬, 주석 토글, SQL 파일 열기 · 저장 |
+| 쿼리 히스토리 | ⌘Y 로 실행한 SQL 검색 · 편집기에 다시 넣기 |
+| 결과 표 | 페이지 · 전체 행 수, 빠른 필터, 정렬, 행 상세, ⌘C 복사, IN 목록 복사, CSV · TSV · JSON · Excel · SQL INSERT 내보내기 |
+| **결과 데이터 편집** | 한 테이블 조회 결과에서 값 수정 · 행 추가 · 삭제 → 실행할 SQL 미리보기 → 한 트랜잭션으로 적용 |
+| 안전 장치 | 운영 접속 빨간 띠 + 변경 전 확인, 위험 명령(WHERE 없는 UPDATE/DELETE, DROP 등) 확인, 수동 커밋 모드 |
 | 스키마 비교 | 기준 → 대상 차이 (누락/다름/대상에만 있음), 보정 `ALTER`/`CREATE` SQL 생성. **자동 실행 안 함, DROP 생성 안 함** |
 | 테이블 수정 | 컬럼/인덱스/코멘트 편집 → ALTER 미리보기 → 확인 후 실행 |
+| ER 다이어그램 · 모델링 | 스키마 / 선택 테이블 ER 다이어그램, 모델에서 DDL 만들기 · 역공학 |
 | Redis | 키 브라우저(SCAN), 타입별 값 편집, 콘솔, Pub/Sub, Streams(소비자 그룹·PEL·실시간), INFO |
 | 접속 공유 | 접속 정보 내보내기/가져오기(비밀번호 암호화 선택), DataGrip ⌘C → ⌘V 붙여넣기 |
-| 감사 로그 | 상태창 기록을 `~/Library/Logs/GodDB` 에 날짜별 영구 보관 |
+| 감사 로그 | 누가 · 언제 · 어느 DB 에 · 무엇을 했는지 `~/Library/Logs/GodDB` 에 날짜별 보관 |
 | 실행 계획 | EXPLAIN + 풀스캔/filesort 등 주의사항, 트리 보기 |
 | 객체 보기 | 인덱스, 뷰, 프로시저, 함수, 트리거 정의 |
+| AI 어시스턴트 | **이 PC 의 Ollama 만** 사용 (데이터 행은 보내지 않음) |
 | 상태창 | 모든 이벤트/오류 기록, 오류 해결 방법 안내 (⇧⌘L) |
+| 업데이트 | Developer ID 서명 · Apple 공증 DMG, 자동 업데이트(Sparkle) |
 
 ## 준비
 
@@ -98,6 +105,6 @@ GODDB_IT_PORT=33306 GODDB_IT_PASSWORD=goddbtest ./scripts/test.sh
 - `Sources/GodDB` — SwiftUI 앱
 - `Tests/GodDBCoreTests` — swift-testing 단위·통합 테스트
 
-## 이후 후보
+## 지원하지 않는 것
 
-MSSQL / PostgreSQL 지원, 표에서 데이터 편집, 자동완성, 쿼리 히스토리, 비밀번호 방식 SSH.
+비밀번호 방식 SSH, Oracle, SQL Server Windows 통합 인증. 그 밖의 제약은 [docs/FEATURES.md](docs/FEATURES.md) 의 "알려진 제약".

@@ -58,6 +58,10 @@ extension PostgresConnection {
             }
             let base: Base
             private init(base: Base) { self.base = base }
+
+            /// GodDB 패치: 서버 인증서 확인을 대신할 콜백 (GODDB_PATCH.md 변경 3).
+            /// nil 이면 NIOSSL 기본 확인. 콜백은 `TLSConfiguration.certificateVerification` 이 `.none` 이 아닐 때만 불린다.
+            public var customVerificationCallback: (@Sendable ([NIOSSLCertificate], EventLoopPromise<NIOSSLVerificationResult>) -> Void)?
         }
         
         // MARK: - Connection options

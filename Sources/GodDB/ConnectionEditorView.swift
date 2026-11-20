@@ -18,6 +18,8 @@ struct ConnectionEditorView: View {
     /// 칸에 들어 있는 값이 아직 저장된 비밀번호에서 온 것인지 (칸을 한 번 완전히 비우면 false).
     /// 한 글자만 지우고 보기를 눌러 본인 확인을 건너뛰지 못하게 한다.
     @State private var showsSavedPassword = false
+    /// 연결 테스트에서 만난 인증서 · SSH 호스트 키 확인 창 (F9-3 · F9-4)
+    @State private var securityPrompt: EditorSecurityPrompt?
 
     init(profile: ConnectionProfile, isNew: Bool) {
         _profile = State(initialValue: profile)
@@ -68,8 +70,16 @@ struct ConnectionEditorView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if profile.readOnly && profile.kind == .mssql {
-                        Text(tr("SQL Server 는 세션 단위 읽기전용 설정이 없어서 앱에서만 막아요. 운영 DB 는 읽기 전용 계정을 쓰는 걸 권장해요."))
-                            .font(.caption).foregroundStyle(.secondary)
+                        // SQL Server 는 세션 읽기전용이 없어 서버에서 강제할 수 없다 (MySQL · PostgreSQL 은 세션 READ ONLY 로 이중 차단)
+                        Label(tr("SQL Server 는 앱에서만 막아요(서버에서 강제되지 않음). 운영 DB 는 읽기 권한만 있는 DB 계정을 쓰세요."),
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                    if profile.kind == .mssql {
+                        // FreeTDS(DB-Library) 는 인증서 · 지문 확인을 할 수 없어 암호화만 강제한다 (F9-3)
+                        Label(tr("SQL Server 는 암호화만 하고 서버 인증서는 확인하지 못해요. 외부망에서는 SSH 터널이나 VPN 을 쓰세요."),
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
                     }
                 }
                 Section(profile.kind.title) {
@@ -144,6 +154,9 @@ struct ConnectionEditorView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Toggle(tr("TLS 사용"), isOn: $profile.useTLS)
+                    if profile.useTLS && profile.kind != .mssql {
+                        tlsVerifyRows
+                    }
                 }
                 Section {
                     Toggle(tr("SSH 바스티온 경유"), isOn: $useSSH)
@@ -192,6 +205,50 @@ struct ConnectionEditorView: View {
             .padding(16)
         }
         .frame(width: 540, height: 700)
+        .sheet(item: $securityPrompt) { item in
+            SecurityPromptView(prompt: item.prompt, profileName: draft.name,
+                               onCancel: { securityPrompt = nil },
+                               onAccept: { acceptSecurityPrompt(item.prompt) })
+        }
+    }
+
+    /// 연결 테스트 중 확인 창에서 [신뢰] · [지우기]: 고정 지문은 편집 중인 값에 넣고(저장할 때 감사 로그), 다시 테스트
+    private func acceptSecurityPrompt(_ prompt: SecurityPrompt) {
+        securityPrompt = nil
+        switch app.applySecurityAccept(prompt, profileName: draft.name) {
+        case .set(let pin): profile.tlsPinSHA256 = pin
+        case .clear: profile.tlsPinSHA256 = nil
+        case .none: break
+        }
+        Task { await test() }
+    }
+
+    /// "서버 인증서 확인" 과 고정한 인증서 (F9-3)
+    @ViewBuilder private var tlsVerifyRows: some View {
+        Toggle(tr("서버 인증서 확인"), isOn: $profile.tlsVerify)
+        if !profile.tlsVerify {
+            Text(tr("인증서를 확인하지 않으면 중간에서 가로채도 알 수 없어요. 암호화만 해요."))
+                .font(.caption).foregroundStyle(.orange)
+        } else if useSSH {
+            Text(tr("SSH 터널 안쪽은 127.0.0.1 이라 이름은 확인하지 않고, 고정한 인증서가 있으면 지문만 확인해요."))
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            Text(tr("시스템 신뢰 저장소로 인증서와 호스트 이름을 확인해요. 사설 인증서면 처음 연결할 때 지문을 보여 주고 고정할지 물어봐요."))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        if let pin = profile.tlsPinSHA256, !pin.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "pin.fill").foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tr("고정한 인증서")).font(.caption).foregroundStyle(.secondary)
+                    Text(pin).font(.system(.caption2, design: .monospaced)).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button(tr("저장된 인증서 지우기")) { profile.tlsPinSHA256 = nil }
+                    .controlSize(.small)
+            }
+        }
     }
 
     private var draft: ConnectionProfile {
@@ -224,7 +281,8 @@ struct ConnectionEditorView: View {
         do {
             if draft.kind == .redis {
                 let session = try await RedisSession.connect(profile: draft, password: password)
-                let version = (try? await session.info("server").first?.1.first { $0.0 == "redis_version" }?.1).map { "Redis \($0)" } ?? "Redis"
+                var version = (try? await session.info("server").first?.1.first { $0.0 == "redis_version" }?.1).map { "Redis \($0)" } ?? "Redis"
+                version += " · " + (await session.tlsStatus).text
                 await session.close()
                 testMessage = (true, tr("연결 성공 · %@", "\(version)"))
                 app.log(.success, .connection, tr("%@ 연결 테스트 성공 · %@", "\(draft.name)", "\(version)"))
@@ -232,12 +290,13 @@ struct ConnectionEditorView: View {
             }
             let session = try await DBSession.connect(profile: draft, password: password)
             // 연결은 이미 성공. 버전 조회가 안 되더라도(권한 등) 실패로 보지 않는다.
-            let version = (try? await session.serverVersion()) ?? draft.kind.title
+            let version = ((try? await session.serverVersion()) ?? draft.kind.title) + " · " + (await session.tlsStatus).text
             await session.close()
             testMessage = (true, tr("연결 성공 · %@", "\(version)"))
             app.log(.success, .connection, tr("%@ 연결 테스트 성공 · %@", "\(draft.name)", "\(version)"))
         } catch {
             testMessage = (false, app.logError(error, .connection, context: tr("%@ 연결 테스트 실패", "\(draft.name)")))
+            securityPrompt = SecurityPrompt.from(error).map(EditorSecurityPrompt.init)
         }
     }
 
@@ -251,4 +310,10 @@ struct ConnectionEditorView: View {
             ssh.keyPath = url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         }
     }
+}
+
+/// 접속 편집 안의 확인 창 (sheet(item:) 용)
+private struct EditorSecurityPrompt: Identifiable {
+    let id = UUID()
+    let prompt: SecurityPrompt
 }
