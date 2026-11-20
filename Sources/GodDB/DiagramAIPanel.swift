@@ -288,13 +288,16 @@ struct DiagramAIPanel: View {
 }
 
 /// AI 대화 내용 (말풍선 + 진행 표시). 비어 있으면 intro 를 보여준다.
-struct AIChatTranscript<Intro: View, Extra: View>: View {
+struct AIChatTranscript<Intro: View, Extra: View, Card: View>: View {
     @Environment(AppState.self) private var app
     @Bindable var chat: DiagramChat
     let sqlLabel: String
     @ViewBuilder var intro: () -> Intro
     /// 답변 아래 추가 버튼 (예: 물리명 적용)
     @ViewBuilder var extra: (DiagramChat.Message) -> Extra
+    /// 답변 말풍선 대신 보여줄 카드가 있는지 (예: AI 데이터 찾기 답 카드)
+    var hasCard: (DiagramChat.Message) -> Bool = { _ in false }
+    @ViewBuilder var card: (DiagramChat.Message) -> Card
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -304,7 +307,14 @@ struct AIChatTranscript<Intro: View, Extra: View>: View {
                         intro()
                     }
                     ForEach(chat.messages) { m in
-                        bubble(m).id(m.id)
+                        Group {
+                            if m.role != "user", hasCard(m) {
+                                card(m)
+                            } else {
+                                bubble(m)
+                            }
+                        }
+                        .id(m.id)
                     }
                     if chat.running {
                         HStack(spacing: 6) {
@@ -375,9 +385,9 @@ struct AIChatTranscript<Intro: View, Extra: View>: View {
     }
 }
 
-extension AIChatTranscript where Extra == EmptyView {
+extension AIChatTranscript where Extra == EmptyView, Card == EmptyView {
     init(chat: DiagramChat, sqlLabel: String, @ViewBuilder intro: @escaping () -> Intro) {
-        self.init(chat: chat, sqlLabel: sqlLabel, intro: intro, extra: { _ in EmptyView() })
+        self.init(chat: chat, sqlLabel: sqlLabel, intro: intro, extra: { _ in EmptyView() }, card: { _ in EmptyView() })
     }
 }
 
