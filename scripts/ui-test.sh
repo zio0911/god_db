@@ -52,6 +52,8 @@ DROP TABLE IF EXISTS ui_orders;
 DROP TABLE IF EXISTS ui_customers;
 DROP TABLE IF EXISTS ui_students;
 DROP TABLE IF EXISTS ui_schools;
+DROP TABLE IF EXISTS ui_points;
+DROP TABLE IF EXISTS ui_members;
 CREATE TABLE ui_customers (id INT PRIMARY KEY, name VARCHAR(50), grade VARCHAR(10));
 INSERT INTO ui_customers VALUES (10,'kim','gold'),(20,'lee','silver'),(30,'park','bronze');
 CREATE TABLE ui_orders (id INT PRIMARY KEY, customer VARCHAR(50), amount INT, note VARCHAR(100),
@@ -65,6 +67,11 @@ INSERT INTO ui_schools VALUES (1,'한빛초등학교'),(2,'푸른중학교');
 CREATE TABLE ui_students (id INT PRIMARY KEY, name VARCHAR(50) COMMENT '학생 이름',
   school_id INT COMMENT '학교 번호', grade_level INT COMMENT '학년') COMMENT '학생';
 INSERT INTO ui_students VALUES (1,'student1',1,3),(2,'student2',2,1);
+-- 외래 키 따라가기 추정 관계: ui_points.member_no → ui_members(member_no) (외래 키 제약 없음)
+CREATE TABLE ui_members (member_no INT PRIMARY KEY, nickname VARCHAR(50));
+INSERT INTO ui_members VALUES (1001,'neo'),(1002,'trinity');
+CREATE TABLE ui_points (id INT PRIMARY KEY, member_no INT, point INT);
+INSERT INTO ui_points VALUES (1,1001,50),(2,1002,70);
 SQL
 cat > "$DATA/profiles.json" <<JSON
 [
@@ -91,7 +98,7 @@ set -e
 if [[ $KEEP == 0 ]]; then
   kill $APP_PID 2>/dev/null || true
   docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop \
-    -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools" 2>/dev/null || true
+    -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools, ui_points, ui_members" 2>/dev/null || true
 fi
 echo
 echo "보고서: $WORK/report.txt"

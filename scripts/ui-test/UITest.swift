@@ -101,7 +101,7 @@ func click(_ n: Node, right: Bool = false, double: Bool = false) {
     clickAt(p, right: right, double: double)
 }
 
-func clickAt(_ p: CGPoint, right: Bool = false, double: Bool = false) {
+func clickAt(_ p: CGPoint, right: Bool = false, double: Bool = false, flags: CGEventFlags = []) {
     let down: CGEventType = right ? .rightMouseDown : .leftMouseDown
     let up: CGEventType = right ? .rightMouseUp : .leftMouseUp
     let button: CGMouseButton = right ? .right : .left
@@ -109,12 +109,25 @@ func clickAt(_ p: CGPoint, right: Bool = false, double: Bool = false) {
     for i in 1...(double ? 2 : 1) {
         let d = CGEvent(mouseEventSource: nil, mouseType: down, mouseCursorPosition: p, mouseButton: button)
         d?.setIntegerValueField(.mouseEventClickState, value: Int64(i))
+        if !flags.isEmpty { d?.flags = flags }
         post(d)
         let u = CGEvent(mouseEventSource: nil, mouseType: up, mouseCursorPosition: p, mouseButton: button)
         u?.setIntegerValueField(.mouseEventClickState, value: Int64(i))
+        if !flags.isEmpty { u?.flags = flags }
         post(u)
     }
     Thread.sleep(forTimeInterval: 0.4)
+}
+
+/// ⌘ 를 실제로 누른 채 클릭
+func cmdClick(_ n: Node) {
+    let down = CGEvent(keyboardEventSource: nil, virtualKey: 55, keyDown: true)
+    down?.flags = .maskCommand
+    post(down)
+    Thread.sleep(forTimeInterval: 0.05)
+    clickAt(CGPoint(x: n.frame.midX, y: n.frame.midY), flags: .maskCommand)
+    post(CGEvent(keyboardEventSource: nil, virtualKey: 55, keyDown: false))
+    Thread.sleep(forTimeInterval: 0.2)
 }
 
 func press(_ n: Node) {
@@ -700,6 +713,78 @@ scenario("savedQuery") {
     let remembered = app.find(4, { $0.modal && $0.role == "AXTextField" && $0.label.contains(":id") })
     check("다음에 열면 마지막 값 기억 (2)", remembered?.value == "2", remembered?.value ?? "입력 창 없음")
     answer("취소")
+}
+
+/// 열린 우클릭 메뉴의 항목. SwiftUI 우클릭 메뉴는 앱 바로 아래가 아니라 누른 뷰(표 · 목록) 안쪽에 AXMenu 로 붙는다
+func contextMenuItems() -> [Node] {
+    var out: [Node] = []
+    var queue: [(AXUIElement, Int)] = [(app.ax, 0)]
+    while !queue.isEmpty {
+        let (el, d) = queue.removeFirst()
+        let role = (attr(el, kAXRoleAttribute) as? String) ?? ""
+        if role == "AXMenuBar" { continue }
+        if role == "AXMenuItem" { out.append(node(el)) }
+        if d < 40, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
+    }
+    return out
+}
+
+func findMenuItem(_ timeout: Double = 3, _ pred: (Node) -> Bool) -> Node? {
+    let end = Date().addingTimeInterval(timeout)
+    repeat {
+        if let hit = contextMenuItems().first(where: pred) { return hit }
+        Thread.sleep(forTimeInterval: 0.25)
+    } while Date() < end
+    return nil
+}
+
+scenario("fkFollow") {
+    // 외래 키 따라가기: ui_orders.customer_id 칸 ⌘ 클릭 → '↗ ui_customers' 탭 → 행 상세 '참조하는 테이블' → '↙ ui_orders'
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    clearFilter()
+    try setEditor("SELECT id, customer, customer_id FROM ui_orders ORDER BY id")
+    guard let fkCell = runAndWait(8, cell("20")) else { throw Abort(message: "결과가 없어요") }
+    check("외래 키 컬럼 머리글에 ↗", app.find(2, { $0.text.contains("customer_id ↗") }) != nil)
+    cmdClick(fkCell)
+    check("⌘ 클릭 → 새 탭 '↗ ui_customers'", app.find(8, hasText("↗ ui_customers")) != nil)
+    check("참조하는 행 조회 (id 20 · lee · silver)", app.find(8, cell("silver")) != nil && app.find(1, cell("gold")) == nil)
+
+    // 결과가 1행이라 행 상세가 열려 있다 → 맨 아래 '참조하는 테이블'
+    guard let back = app.find(5, { $0.role == "AXButton" && $0.label.contains("↙ ui_orders (customer_id)") }) else {
+        check("행 상세 '참조하는 테이블' 에 ↙ ui_orders (customer_id)", false); return
+    }
+    check("행 상세 '참조하는 테이블' 에 ↙ ui_orders (customer_id)", true)
+    press(back)
+    check("새 탭 '↙ ui_orders'", app.find(8, hasText("↙ ui_orders")) != nil)
+    check("이 고객을 참조하는 주문 (apple, pie)", app.find(8, cell("apple, pie")) != nil && app.find(1, cell("first")) == nil)
+
+    // 우클릭 > 참조 따라가기 → ui_customers (customer_id)
+    try setEditor("SELECT id, customer, customer_id FROM ui_orders ORDER BY id")
+    guard let park = runAndWait(8, cell("30")) else { throw Abort(message: "결과가 없어요") }
+    click(park, right: true)
+    if let item = findMenuItem(3, { $0.label.contains("참조 따라가기 → ui_customers (customer_id)") }) {
+        check("우클릭 '참조 따라가기 → ui_customers (customer_id)'", true)
+        press(item)
+        check("우클릭으로 따라가기 (bronze)", app.find(8, cell("bronze")) != nil)
+    } else {
+        check("우클릭 '참조 따라가기 → ui_customers (customer_id)'", false)
+        key("escape")
+    }
+
+    // 추정 관계: ui_points.member_no → ui_members (외래 키 제약 없음)
+    try setEditor("SELECT id, member_no, point FROM ui_points ORDER BY id")
+    guard let member = runAndWait(8, cell("1002")) else { throw Abort(message: "ui_points 결과가 없어요") }
+    cmdClick(member)
+    check("추정 관계 ⌘ 클릭 → '↗ ui_members' (trinity)", app.find(8, hasText("↗ ui_members")) != nil && app.find(8, cell("trinity")) != nil)
+
+    // 조인 결과에는 메뉴가 없다
+    try setEditor("SELECT o.id, c.grade FROM ui_orders o JOIN ui_customers c ON c.id = o.customer_id ORDER BY o.id")
+    guard let gold = runAndWait(8, cell("silver")) else { throw Abort(message: "조인 결과가 없어요") }
+    click(gold, right: true)
+    let opened = findMenuItem(2, { $0.label.contains("복사") }) != nil
+    check("조인 결과 우클릭에는 '참조 따라가기' 가 없음",
+          opened && !contextMenuItems().contains { $0.label.contains("참조 따라가기") || $0.label.contains("이 행을 참조하는 행") })
+    key("escape")
 }
 
 // MARK: - 실행

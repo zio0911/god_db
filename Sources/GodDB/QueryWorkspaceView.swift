@@ -379,6 +379,7 @@ struct ResultPane: View {
                         : allRows.filter { $0.id >= newRowBase || ResultCopy.matches($0.values, words: words) }
                     QuickFilterBar(text: $filterText, shown: rows.count, total: allRows.count)
                     Divider()
+                    let fk = app.fkContext(for: tab)
                     GeometryReader { geo in
                         HStack(spacing: 0) {
                             ResultGrid(result: result, rows: rows, edits: tab.edits, selection: $selection,
@@ -388,13 +389,13 @@ struct ResultPane: View {
                                        onDeleteRows: { ids in app.toggleDelete(tab.id, rows: ids) },
                                        onReachEnd: result.appendMode ? { Task { await app.loadMore(in: tab.id) } } : nil,
                                        copyTableName: { if case .success(let t) = target { return t.table.name } else { return "table" } }(),
-                                       dialect: app.connections[tab.profileID]?.session?.dialect)
+                                       dialect: app.connections[tab.profileID]?.session?.dialect, fk: fk)
                             if let row = selectedRow(rows) {
                                 ResizeHandle(axis: .vertical, size: $detailWidth.cgFloat,
                                              range: 240...max(240, geo.size.width - 200))
                                 RowDetailView(result: result, row: row,
                                               rowNumber: row.id >= newRowBase ? nil : result.rowOffset + row.id + 1,
-                                              editor: rowEditor(target)) { selection = [] }
+                                              editor: rowEditor(target), fk: fk) { selection = [] }
                                     .frame(width: min(CGFloat(detailWidth), max(240, geo.size.width - 200)))
                             }
                         }
@@ -515,6 +516,8 @@ struct ResultGrid: View {
     /// INSERT 로 복사할 때 쓸 테이블 이름 / 문법
     var copyTableName = "table"
     var dialect: (any SQLDialect)?
+    /// 외래 키 따라가기 (한 테이블 조회 결과일 때만)
+    var fk: FKContext?
     @State private var sortOrder: [ColumnSortComparator] = []
     @State private var hoveredRow: Int?
     /// 행을 고르면 결과 표로 키보드 포커스를 옮긴다 (⌘C 가 편집기가 아니라 표에 가도록)
@@ -523,10 +526,14 @@ struct ResultGrid: View {
     var body: some View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumnForEach(result.columns) { column in
-                TableColumn(column.name, sortUsing: ColumnSortComparator(column: column.id)) { (row: QueryResult.Row) in
+                TableColumn(header(column), sortUsing: ColumnSortComparator(column: column.id)) { (row: QueryResult.Row) in
                     cell(row, column)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                        // ⌘ 클릭: 참조 따라가기 (외래 키 칸에서만 — 다른 칸의 ⌘ 클릭 여러 행 선택은 그대로)
+                        .simultaneousGesture(TapGesture().modifiers(.command).onEnded {
+                            fk?.follow(column: column.id, row: row.values)
+                        }, including: fk?.byColumn[column.id] == nil ? .subviews : .all)
                         .background(hoveredRow == row.id ? Color.accentColor.opacity(0.12) : Color.clear)
                         .onHover { inside in
                             if inside { hoveredRow = row.id } else if hoveredRow == row.id { hoveredRow = nil }
@@ -554,6 +561,10 @@ struct ResultGrid: View {
             return text.isEmpty ? [] : [NSItemProvider(object: text as NSString)]
         }
         .contextMenu(forSelectionType: QueryResult.Row.ID.self) { ids in
+            if let fk, ids.count == 1, let row = rows.first(where: { ids.contains($0.id) }), fk.hasMenu(row: row.values) {
+                FKFollowMenuItems(context: fk, row: row.values)
+                Divider()
+            }
             if editable {
                 Button(tr("이 행 편집")) { selection = ids }
                     .disabled(ids.count != 1)
@@ -584,6 +595,13 @@ struct ResultGrid: View {
             // 더블클릭: 그 행을 골라 오른쪽 상세(편집 가능하면 편집) 패널을 연다
             selection = ids
         }
+    }
+
+    /// 머리글: 외래 키 컬럼이면 이름 옆에 ↗ (추정 관계만 있으면 흐리게)
+    private func header(_ column: QueryResult.Column) -> Text {
+        guard let inferred = fk?.inferredOnly(column: column.id) else { return Text(column.name) }
+        let arrow = Text(verbatim: "↗").foregroundStyle(inferred ? Color.secondary.opacity(0.5) : Color.accentColor)
+        return Text("\(column.name) \(arrow)")
     }
 
     /// 고른 행을 화면 순서대로 글자로
@@ -637,6 +655,8 @@ struct RowDetailView: View {
     /// 새 행이면 nil
     var rowNumber: Int?
     var editor: RowEditor?
+    /// 외래 키 따라가기 (↗ 버튼 · 참조하는 테이블)
+    var fk: FKContext?
     let onClose: () -> Void
 
     var body: some View {
@@ -660,6 +680,9 @@ struct RowDetailView: View {
                     ForEach(result.columns) { column in
                         field(column)
                     }
+                    if let fk {
+                        FKReferencingList(context: fk, row: row.values)
+                    }
                 }
                 .padding(8)
             }
@@ -678,6 +701,9 @@ struct RowDetailView: View {
                     .foregroundStyle(state == .modified ? .orange : state == .inserted ? .green : .secondary)
                 if editor?.target.primaryKey.contains(where: { $0.lowercased() == column.name.lowercased() }) == true {
                     Image(systemName: "key.fill").font(.caption2).foregroundStyle(.yellow)
+                }
+                if let fk {
+                    FKFollowButtons(context: fk, column: column.id, row: row.values)
                 }
                 Spacer()
                 if let value {

@@ -99,7 +99,7 @@ public enum IDSearch {
 
     /// `SELECT * FROM <테이블> WHERE <컬럼> IN (…)`. 숫자 컬럼은 따옴표 없이, 그 밖은 다이얼렉트 문자열 인용.
     public static func sql(table: String, column: String, values: [String], numeric: Bool, dialect: any SQLDialect) -> String {
-        let list = values.map { numeric && isNumberLiteral($0) ? $0 : dialect.quoteString($0) }
+        let list = values.map { literal($0, numeric: numeric, dialect: dialect) }
         return "SELECT * FROM \(dialect.quoteTable(table)) WHERE \(dialect.quoteIdent(column)) IN (\(list.joined(separator: ", ")))"
     }
 
@@ -112,6 +112,11 @@ public enum IDSearch {
     public static func rowLimit(current: Int, valueCount: Int) -> Int {
         guard current > 0 else { return 0 }
         return max(current, min(valueCount, maxRowLimit))
+    }
+
+    /// 값 하나의 SQL 글자: 숫자 컬럼이고 숫자 꼴이면 그대로, 그 밖은 다이얼렉트 문자열 인용 (MSSQL 은 N'…')
+    public static func literal(_ value: String, numeric: Bool, dialect: any SQLDialect) -> String {
+        numeric && isNumberLiteral(value) ? value : dialect.quoteString(value)
     }
 
     private static func isNumberLiteral(_ s: String) -> Bool {

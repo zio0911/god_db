@@ -1,6 +1,6 @@
 import Foundation
 
-// 1.4.0 새 기능 번역 (ID 로 찾기 · 저장 쿼리 …)
+// 1.4.0 새 기능 번역 (ID 로 찾기 · 저장 쿼리 · 외래 키 따라가기 …)
 extension L10nEnglish {
     static let v140: [String: String] = [
         // ID 로 찾기
@@ -50,5 +50,11 @@ extension L10nEnglish {
         "폴더": "Folder",
         "폴더 바꾸기": "Change Folder",
         "폴더 없음": "No folder",
+        // 외래 키 따라가기
+        "이 행을 참조하는 행": "Rows Referencing This Row",
+        "이 행을 참조하는 행을 새 탭에서 조회해요": "Opens the rows that reference this row in a new tab",
+        "참조 따라가기 → %@ (%@)": "Follow Reference → %@ (%@)",
+        "참조하는 테이블": "Referencing tables",
+        "추정": "inferred",
     ]
 }
