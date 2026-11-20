@@ -2,7 +2,7 @@ import AppKit
 import GodDBCore
 import SwiftUI
 
-/// 모델링 모드: 왼쪽 모델 목록 + 가운데 다이어그램 + 아래 테이블/관계 편집기 (MySQL Workbench 모델과 비슷)
+/// 모델링 모드: 왼쪽 모델 목록 + 가운데 다이어그램 + 아래 테이블/관계 편집기
 struct ModelingView: View {
     @Environment(AppState.self) private var app
     @AppStorage(Layout.modelListWidth) private var listWidth: Double = 220
