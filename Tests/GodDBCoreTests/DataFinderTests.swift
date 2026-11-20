@@ -147,7 +147,8 @@ struct DataFinderTests {
 
     @Test func fallbackRanksByKeyword() {
         let c = DataFinder.fallbackCandidates(terms: ["학년"], tables: Self.tables)
-        #expect(c.map(\.location) == ["ui_students.grade_level"])
+        // 코멘트 '학년' 이 먼저, 약어 사전(학년 → grade)으로 ui_customers.grade 도 후보
+        #expect(c.map(\.location) == ["ui_students.grade_level", "ui_customers.grade"])
         let school = DataFinder.fallbackCandidates(terms: ["학교"], tables: Self.tables)
         // 코멘트 일치(학교 이름 · 학교 번호), 테이블 코멘트도 맞는 ui_schools 가 먼저
         #expect(school.map(\.table) == ["ui_schools", "ui_students"])
@@ -164,7 +165,7 @@ struct DataFinderTests {
         #expect(DataFinder.sampleSQL(table: "ui_students", column: "grade_level", dialect: PostgresDialect())
                 == "SELECT \"grade_level\" FROM \"ui_students\" WHERE \"grade_level\" IS NOT NULL LIMIT 200")
         #expect(DataFinder.sampleSQL(table: "sales.orders", column: "grade", dialect: MSSQLDialect())
-                == "SELECT TOP 200 [grade] FROM [sales].[orders] WHERE [grade] IS NOT NULL")
+                == "SELECT TOP 200 [grade] FROM [sales].[orders] WITH (NOLOCK) WHERE [grade] IS NOT NULL")
     }
 
     @Test func cleansSamples() {
@@ -281,7 +282,7 @@ struct DataFinderTests {
         let fake = FakeTransport(["몰라요", "정말 몰라요"])
         let p = try await ai(fake).pickCandidates(question: "q", terms: ["학년"], tables: Self.tables, notes: [])
         #expect(p.fallback)
-        #expect(p.candidates.map(\.location) == ["ui_students.grade_level"])
+        #expect(p.candidates.first?.location == "ui_students.grade_level")
         #expect(fake.calls == 2)
     }
 
@@ -293,14 +294,21 @@ struct DataFinderTests {
         #expect(fake.calls == 1)
     }
 
-    @Test func ollamaErrorReplyCountsAsBadFormat() async throws {
-        // 모델이 답을 만들다 실패(HTTP 500)하면 다시 묻고, 그래도 안 되면 키워드 일치
-        let ai = DataFinderAI(kind: .mysql, english: false) { _ in throw OllamaError.http(500, "token repeat limit reached") }
+    @Test func ollamaErrorFallsBackWithReason() async throws {
+        // 모델이 답을 만들다 실패(HTTP 500)하면 다시 묻지 않고 사전 점수로, 이유를 남긴다
+        let fake = FakeTransport([])
+        let ai = DataFinderAI(kind: .mysql, english: false) { m in
+            _ = fake.complete(m)
+            throw OllamaError.http(500, "{\"error\":\"prediction aborted, token repeat limit reached\"}")
+        }
         let p = try await ai.pickCandidates(question: "q", terms: ["학년"], tables: Self.tables, notes: [])
         #expect(p.fallback)
+        #expect(p.aiError == "prediction aborted, token repeat limit reached")
+        #expect(fake.calls == 1)
         #expect(p.candidates.first?.location == "ui_students.grade_level")
         let v = try await ai.judge(question: "q", sampled: [.init(candidate: p.candidates[0])], tables: Self.tables)
         #expect(v?.confidence == .low)
+        #expect(v?.fallback == true)
         // Ollama 가 꺼져 있으면 그대로 오류
         let off = DataFinderAI(kind: .mysql, english: false) { _ in throw OllamaError.notRunning }
         await #expect(throws: OllamaError.self) {
@@ -315,6 +323,6 @@ struct DataFinderTests {
         let v = try await ai(fake).judge(question: "학년 정보는 어디 있어?", sampled: sampled, tables: Self.tables)
         #expect(fake.sent[0][1].content.contains("samples: 1 | 2 | 3"))
         #expect(v == .init(table: "ui_students", columns: ["grade_level"], confidence: .low, explain: "학년 코멘트",
-                           sql: "SELECT * FROM `ui_students`"))
+                           sql: "SELECT * FROM `ui_students`", fallback: true))
     }
 }
