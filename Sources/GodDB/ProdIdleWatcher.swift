@@ -22,12 +22,10 @@ extension AppState {
         guard idleWatcher == nil else { return }
         idleWatcher = Task { [weak self] in
             while !Task.isCancelled {
-                let limit = AppState.prodIdleLimit
-                // 테스트처럼 짧게 잡으면 1초마다, 평소에는 1분마다 본다
-                let interval: Duration = (limit > 0 && limit < 120) ? .seconds(1) : .seconds(60)
-                try? await Task.sleep(for: interval)
+                // 설정을 바꾸면 바로 반영되게 짧게 자주 본다 (화면 테스트는 1초, 평소 15초 — 확인은 가벼움)
+                try? await Task.sleep(for: AppPaths.uiTest ? .seconds(1) : .seconds(15))
                 guard let self, !Task.isCancelled else { return }
-                await self.checkIdleProduction(limit: limit)
+                await self.checkIdleProduction(limit: AppState.prodIdleLimit)
             }
         }
     }
