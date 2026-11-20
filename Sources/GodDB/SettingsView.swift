@@ -54,6 +54,7 @@ struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppState.self) private var app
     @AppStorage(AppState.confirmDangerousKey) private var confirmDangerous = true
+    @AppStorage(AppState.prodIdleMinutesKey) private var prodIdleMinutes = 30
     @State private var versionTaps = 0
     @State private var showDotZero = false
     @State private var auditToolUnlocked = false
@@ -103,6 +104,17 @@ struct GeneralSettingsView: View {
                                                    result: on ? "위험한 명령 확인 켬" : "위험한 명령 확인 끔"))
                     }
                 Text(tr("WHERE 없는 DELETE · UPDATE, TRUNCATE, DROP, Redis 의 FLUSHALL · FLUSHDB · KEYS 등을 실행하기 전에 한 번 더 물어봐요. 운영 접속에서 데이터를 바꾸는 확인은 이 설정과 관계없이 항상 떠요."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker(tr("운영 접속 자동 끊기"), selection: $prodIdleMinutes) {
+                    Text(tr("끔")).tag(0)
+                    ForEach(AppState.prodIdleChoices.filter { $0 > 0 }, id: \.self) { m in Text(tr("%@분", "\(m)")).tag(m) }
+                }
+                .onChange(of: prodIdleMinutes) { _, m in
+                    app.log(.info, .app, m == 0 ? tr("운영 접속 자동 끊기를 껐어요") : tr("운영 접속 자동 끊기: %@분", "\(m)"),
+                            audit: AuditRecord(.settings, target: "GodDB", result: m == 0 ? "운영 자동 끊기 끔" : "운영 자동 끊기 \(m)분"))
+                }
+                Text(tr("운영 접속을 이 시간 동안 쓰지 않으면 연결을 끊어요. 커밋하지 않은 변경이 있으면 끊지 않고 알려 줘요. 쿼리 탭은 남고, 다시 실행하면 다시 연결해요."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

@@ -243,7 +243,13 @@ public actor RedisSession {
     }
 
     /// 명령을 맞는 노드로 보낸다. MOVED/ASK 면 따라간다. raw 면 서버 오류도 값으로 돌려준다.
+    /// 자동 새로고침처럼 사람이 하지 않은 명령 — 마지막 사용 시각을 바꾸지 않는다
+    @TaskLocal public static var passive = false
+    /// 마지막으로 사람이 이 접속을 쓴 시각 — 운영 접속 자동 끊기에 쓴다
+    public private(set) var lastActivity = Date()
+
     private func exec(_ args: [String], raw: Bool = false) async throws -> RESPValue {
+        if !Self.passive { lastActivity = Date() }
         var addr = address(forKey: RedisCluster.routingKey(args))
         var asking = false
         for _ in 0..<5 {

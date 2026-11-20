@@ -103,7 +103,10 @@ struct ContentView: View {
                 SplashView(startup: app.startup).transition(.opacity)
             }
         }
-        .task { await app.startup.run(app: app) }
+        .task {
+            await app.startup.run(app: app)
+            app.startIdleWatcher()
+        }
         // 새로운 기능은 별도 창으로 (설정 창 위에서 눌러도 앞에 보이도록)
         .onChange(of: app.showReleaseNotes) {
             guard app.showReleaseNotes else { return }
