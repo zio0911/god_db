@@ -91,6 +91,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         username: String = "",
         database: String = "",
         useTLS: Bool = true,
+        tlsVerify: Bool = true,
         readOnly: Bool = false,
         ssh: SSHConfig? = nil,
         savePassword: Bool = true
@@ -103,6 +104,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         self.username = username
         self.database = database
         self.useTLS = useTLS
+        self.tlsVerify = tlsVerify
         self.readOnly = readOnly
         self.ssh = ssh
         self.savePassword = savePassword
