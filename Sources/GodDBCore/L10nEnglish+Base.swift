@@ -338,7 +338,6 @@ extension L10nEnglish {
         "비밀번호는 넣지 않아요. 가져온 쪽에서 처음 연결할 때 입력해요.": "Passwords are not included. They are entered on first connect after import.",
         "비밀번호를 넣으려면 암호를 정해 주세요.": "Set a passphrase to include passwords.",
         "새로 추가": "New",
-        "설정 > 쿼리 튜닝에서 Ollama 를 켜 주세요. (같은 모델을 써요)": "Turn on Ollama in Settings > Query Tuning (the same model is used).",
         "암호 (8자 이상)": "Passphrase (8+ characters)",
         "암호 (비우면 비밀번호 없이 가져옴)": "Passphrase (leave empty to import without passwords)",
         "암호 확인": "Confirm passphrase",

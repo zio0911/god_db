@@ -11,6 +11,9 @@ public final class MySQLConnection: MySQLDatabase, Sendable {
         password: String? = nil,
         tlsConfiguration: TLSConfiguration? = .makeClientConfiguration(),
         serverHostname: String? = nil,
+        // GodDB 패치: 인증서 확인 콜백 · TLS 필수 (GODDB_PATCH.md 3)
+        customVerificationCallback: (@Sendable ([NIOSSLCertificate], EventLoopPromise<NIOSSLVerificationResult>) -> Void)? = nil,
+        requireTLS: Bool = false,
         logger: Logger = .init(label: "codes.vapor.mysql"),
         on eventLoop: any EventLoop
     ) -> EventLoopFuture<MySQLConnection> {
@@ -41,6 +44,8 @@ public final class MySQLConnection: MySQLDatabase, Sendable {
                         password: password,
                         tlsConfiguration: tlsConfiguration,
                         serverHostname: serverHostname,
+                        customVerificationCallback: customVerificationCallback,
+                        requireTLS: requireTLS,
                         done: done
                     )), sequence: sequence),
                     ErrorHandler()
@@ -53,6 +58,9 @@ public final class MySQLConnection: MySQLDatabase, Sendable {
         }
     }
     
+    /// GodDB 패치: TLS 필수인데 서버가 TLS 를 지원하지 않을 때 `MySQLError.unsupportedServer` 에 담기는 메시지
+    public static let tlsNotSupportedMessage = "GODDB_TLS_NOT_SUPPORTED"
+
     public let channel: any Channel
     
     public var eventLoop: any EventLoop {

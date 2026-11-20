@@ -129,7 +129,8 @@ final class RedisWorkspace {
                 let seconds = self?.autoRefreshSeconds ?? 5
                 try? await Task.sleep(for: .seconds(seconds))
                 guard !Task.isCancelled, let self else { return }
-                await self.refreshAll(quiet: true)
+                // 자동 새로고침은 '사용'이 아니다 (운영 접속 자동 끊기)
+                await RedisSession.$passive.withValue(true) { await self.refreshAll(quiet: true) }
             }
         }
     }
@@ -709,12 +710,14 @@ extension AppState {
                                    result: "성공 · Redis \(version)" + (ws.topologyText.isEmpty ? "" : " · " + ws.topologyText)
                                        + (profile.readOnly ? " (읽기전용)" : ""),
                                    statement: route))
+            logTLSStatus(profile.name, await s.tlsStatus)
             await ws.loadDatabases()
             await ws.reloadKeys()
         } catch {
             let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"),
                                    audit: AuditRecord(.connect, target: profile.name, statement: route))
             updateConnection(id) { $0.state = .failed(message) }
+            if presentSecurityPrompt(for: error, profile: profile) { return }
             if ErrorText.isAuthFailure(error) {
                 sessionPasswords[id] = nil
                 passwordPrompt = PasswordPrompt(profile: profile, message: tr("비밀번호가 틀렸어요. 다시 입력해 주세요."))
@@ -722,11 +725,12 @@ extension AppState {
         }
     }
 
-    func disconnectRedis(_ id: UUID) async {
+    func disconnectRedis(_ id: UUID, reason: String? = nil, auditResult: String = "") async {
         guard let ws = redisWorkspaces[id] else { return }
         await ws.close()
         await ws.session.close()
         redisWorkspaces[id] = nil
-        log(.info, .connection, tr("%@ 연결 끊음", ws.name), audit: AuditRecord(.disconnect, target: ws.name))
+        log(reason == nil ? .info : .warning, .connection, reason ?? tr("%@ 연결 끊음", ws.name),
+            audit: AuditRecord(.disconnect, target: ws.name, result: auditResult))
     }
 }

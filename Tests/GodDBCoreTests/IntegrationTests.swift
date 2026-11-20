@@ -8,7 +8,8 @@ struct IntegrationTests {
     var profile: ConnectionProfile {
         let env = ProcessInfo.processInfo.environment
         return ConnectionProfile(name: "it", host: "127.0.0.1", port: Int(env["GODDB_IT_PORT"]!)!,
-                                 username: "root", database: "shop", useTLS: true)
+                                 username: "root", database: "shop", useTLS: true,
+                                 tlsVerify: false)   // 테스트 MySQL 은 자체 서명 인증서
     }
     var password: String { ProcessInfo.processInfo.environment["GODDB_IT_PASSWORD"] ?? "" }
 

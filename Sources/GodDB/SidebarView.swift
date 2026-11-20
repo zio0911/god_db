@@ -8,7 +8,8 @@ struct SidebarView: View {
     var body: some View {
         @Bindable var app = app
         VStack(spacing: 0) {
-            List(selection: $app.selectedTables) {
+            // 기본 목록 선택색(진한 파랑)이 눈이 아프다는 의견으로, 선택은 직접 그린다 (TableNode)
+            List {
                 Section(tr("접속")) {
                     ProfileList()
                     HStack {
@@ -54,7 +55,6 @@ struct SidebarView: View {
                         }
                         ForEach(app.filteredTables) { table in
                             TableNode(table: table)
-                                .tag(table.name)
                         }
                     } header: {
                         HStack {
@@ -90,6 +90,8 @@ struct SidebarView: View {
                             .buttonStyle(.borderless)
                             .help(tr("스키마 새로고침 (⇧⌘R)"))
                         }
+                        // 오른쪽 세로 스크롤바와 겹치지 않게
+                        .padding(.trailing, 14)
                     }
 
                     ForEach(RoutineMeta.Kind.allCases, id: \.self) { kind in
@@ -289,17 +291,28 @@ struct TableNode: View {
                 }
             }
         } label: {
-            Label(table.name, systemImage: "tablecells")
-                .lineLimit(1)
+            HStack(spacing: 3) {
+                Label(table.name, systemImage: "tablecells")
+                    .lineLimit(1)
+                if app.tablesWithNotes.contains(table.name.lowercased()) { TableNoteBadge(table: table.name) }
+            }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 1)
+                .padding(.horizontal, 4)
+                .background(app.selectedTables.contains(table.name) ? Color.accentColor.opacity(0.15) : .clear,
+                            in: RoundedRectangle(cornerRadius: 5))
                 .help(table.comment.isEmpty ? table.name : table.comment)
                 .contentShape(Rectangle())
                 // 한 번 클릭은 목록 선택(⌘/⇧ 다중 선택)에 맡기고, 두 번 클릭만 가로챈다
                 .simultaneousGesture(TapGesture(count: 2).onEnded { app.openTableQuery(table.name) })
+                .simultaneousGesture(TapGesture(count: 1).onEnded { app.clickTable(table.name) })
                 .contextMenu {
                     Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(table.name) }
                     Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }
                     Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }
                     Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
+                    Button(tr("ID 로 찾기…")) { app.openIDSearch(table: table.name) }
+                    Button(tr("테이블 메모…")) { app.openTableNotes(table: table.name) }
                     // 여러 개를 골랐고 그중 하나를 우클릭했으면 → 고른 테이블 전부 (관계 없는 테이블도 따로)
                     // 아니면 → 이 테이블 + 바로 이어진 테이블
                     let useSelection = app.selectedTables.count > 1 && app.selectedTables.contains(table.name)

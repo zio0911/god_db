@@ -247,6 +247,42 @@ struct AuditIntegrityTests {
         } else { Issue.record("다시 계산한 위조가 통과함") }
     }
 
+    @Test func twoAppInstancesKeepOneChain() throws {
+        // 앱이 동시에 두 개 켜져 같은 파일에 번갈아 써도 체인이 갈라지지 않는다
+        let dir = tmp(); defer { try? FileManager.default.removeItem(at: dir) }
+        let key = AuditChain.Signer.software()
+        let a = LogFile(directory: dir, retention: { 0 }, signer: { key })
+        let b = LogFile(directory: dir, retention: { 0 }, signer: { key })
+        for i in 0..<6 {
+            let file = i.isMultiple(of: 2) ? a : b
+            file.append(LogEntry(date: day1.addingTimeInterval(Double(i)), level: .success, source: .query, message: "",
+                                 audit: AuditRecord(.read, target: "dev", result: "\(i)", statement: "SELECT \(i)")))
+            file.flush()
+        }
+        let r = AuditChain.verify(directory: dir)
+        #expect(r.first?.status == .ok)
+        #expect(r.first?.lines == 7)   // 체인 + 6줄
+    }
+
+    @Test func forkFromConcurrentWriterIsSuspectNotTampered() throws {
+        // 예전 버전처럼 각자 기억한 마지막 값에 이어 쓴 줄: 앞의 다른 줄 값에 이어져 있고 서명도 맞다 → "의심"
+        let dir = tmp(); defer { try? FileManager.default.removeItem(at: dir) }
+        let key = AuditChain.Signer.software()
+        write(dir, key: key, days: [day1], perDay: 3)
+        let f = try #require(try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil).first)
+        var rows = try String(contentsOf: f, encoding: .utf8).components(separatedBy: "\n")
+        if rows.last == "" { rows.removeLast() }
+        let forkFrom = rows[3].components(separatedBy: "\t")[6]                     // 파일 4번째 줄 값
+        let line = ["2027-01-15 08:00:09.000", "u@pc", "접속", "dev", "성공", "x"].joined(separator: "\t")
+        let sealed = AuditChain.seal(prev: forkFrom, line: line, signer: key)
+        rows.append(line + "\t" + sealed.suffix)                                   // 파일 6번째 줄 (5번째가 아닌 4번째에 이어짐)
+        try (rows.joined(separator: "\n") + "\n").write(to: f, atomically: true, encoding: .utf8)
+        let r = AuditChain.verify(directory: dir)
+        if case .unlinked(let reason) = r.first?.status {
+            #expect(reason.contains("6번째 줄") && reason.contains("동시에"))
+        } else { Issue.record("동시 쓰기를 의심으로 못 봄: \(String(describing: r.first?.status))") }
+    }
+
     @Test func legacyFilesAreReported() throws {
         let dir = tmp(); defer { try? FileManager.default.removeItem(at: dir) }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -1,7 +1,8 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// MSSQL 은 Homebrew FreeTDS(brew install freetds)의 DB-Library 를 사용한다. (사내 전용, 외부 배포 안 함)
+// MSSQL 은 FreeTDS(LGPL-2.0)의 DB-Library 를 사용한다. 빌드할 때는 Homebrew FreeTDS(brew install freetds)가 필요하고,
+// 배포 앱에는 libsybdb 를 동적 라이브러리로 함께 넣는다 (THIRD_PARTY_NOTICES.md 참고).
 let freetdsLib = "/opt/homebrew/opt/freetds/lib"
 
 let package = Package(

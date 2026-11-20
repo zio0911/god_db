@@ -26,6 +26,9 @@ final class MySQLConnectionHandler: ChannelDuplexHandler {
         let password: String?
         let tlsConfiguration: TLSConfiguration?
         let serverHostname: String?
+        // GodDB 패치 (GODDB_PATCH.md 3)
+        let customVerificationCallback: (@Sendable ([NIOSSLCertificate], EventLoopPromise<NIOSSLVerificationResult>) -> Void)?
+        let requireTLS: Bool
         let done: EventLoopPromise<Void>
     }
     
@@ -128,13 +131,22 @@ final class MySQLConnectionHandler: ChannelDuplexHandler {
 
             promise.futureResult.assumeIsolated().flatMapThrowing {
                 let sslContext = try NIOSSLContext(configuration: tlsConfiguration)
-                let handler = try NIOSSLClientHandler(context: sslContext, serverHostname: state.serverHostname)
+                let handler: NIOSSLClientHandler
+                if let callback = state.customVerificationCallback {
+                    handler = try NIOSSLClientHandler(context: sslContext, serverHostname: state.serverHostname,
+                                                      customVerificationCallback: callback)
+                } else {
+                    handler = try NIOSSLClientHandler(context: sslContext, serverHostname: state.serverHostname)
+                }
 
                 try context.channel.pipeline.syncOperations.addHandler(handler, position: .first)
                 try self.writeHandshakeResponse(context: context, handshakeRequest: handshakeRequest, state: state, isTLS: true)
             }.whenFailure { error in
                 state.done.fail(error)
             }
+        } else if state.tlsConfiguration != nil && state.requireTLS {
+            // GodDB 패치: TLS 를 요청했는데 서버가 TLS 를 하지 않으면 평문으로 내려가지 않고 실패한다
+            throw MySQLError.unsupportedServer(message: MySQLConnection.tlsNotSupportedMessage)
         } else {
             try self.writeHandshakeResponse(context: context, handshakeRequest: handshakeRequest, state: state, isTLS: false)
         }

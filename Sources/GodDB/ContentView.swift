@@ -103,7 +103,10 @@ struct ContentView: View {
                 SplashView(startup: app.startup).transition(.opacity)
             }
         }
-        .task { await app.startup.run(app: app) }
+        .task {
+            await app.startup.run(app: app)
+            app.startIdleWatcher()
+        }
         // 새로운 기능은 별도 창으로 (설정 창 위에서 눌러도 앞에 보이도록)
         .onChange(of: app.showReleaseNotes) {
             guard app.showReleaseNotes else { return }
@@ -113,7 +116,12 @@ struct ContentView: View {
         }
         .background(WindowReader { app.mainWindow = $0 })
         .sheet(isPresented: $app.showProblemReport) { ProblemReportView() }
+        .sheet(isPresented: $app.showPreviousVersions) { PreviousVersionsView() }
         .sheet(isPresented: $app.showQuickOpen) { QuickOpenView() }
+        .sheet(item: $app.idSearchRequest) { request in IDSearchView(request: request) }
+        .sheet(item: $app.savedQuerySheet) { sheet in SavedQuerySheetView(sheet: sheet) }
+        .sheet(item: $app.tableNotesRequest) { request in TableNotesView(request: request) }
+        .onReceive(NotificationCenter.default.publisher(for: .goddbSaveQuery)) { _ in app.openSaveQuery() }
         .sheet(isPresented: $app.showHistory) { HistoryView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in
@@ -144,11 +152,13 @@ struct ContentView: View {
         .sheet(item: $app.tableAction) { request in
             TableActionSheet(request: request)
         }
-        .sheet(item: $app.tuningJob) { job in
-            TuningSheet(job: job)
-        }
         .sheet(item: $app.passwordPrompt) { prompt in
             PasswordPromptView(prompt: prompt)
+        }
+        .sheet(item: $app.securityPrompt) { request in
+            SecurityPromptView(prompt: request.prompt, profileName: request.profileName,
+                               onCancel: { app.securityPrompt = nil },
+                               onAccept: { Task { await app.resolveSecurityPrompt(request, accept: true) } })
         }
         .sheet(isPresented: $app.showExportConnections) {
             ExportConnectionsSheet()

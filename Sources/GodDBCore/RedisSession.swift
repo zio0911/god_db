@@ -216,11 +216,25 @@ public actor RedisSession {
             }
             h = "127.0.0.1"
         }
-        return RedisConnection.Options(
+        var o = RedisConnection.Options(
             host: h, port: p,
             serverName: (profile.ssh == nil && !HostResolver.isIPAddress(host)) ? host : nil,
             useTLS: profile.useTLS, username: profile.username, password: password, database: database,
             timeout: timeout)
+        o.tls = TLSPolicy.of(profile, host: Self.certificateHost(node: host, configured: profile.host))
+        return o
+    }
+
+    /// 인증서 이름 확인에 쓸 호스트: 노드 주소가 이름이면 그 이름, IP 면(Cluster · Sentinel 이 알려 준 노드) 접속 정보의 이름
+    static func certificateHost(node: String, configured: String) -> String {
+        if !HostResolver.isIPAddress(node) { return node }
+        let first = RedisCluster.sentinelAddresses(configured, defaultPort: 0).first?.host ?? configured
+        return HostResolver.isIPAddress(first) || first.isEmpty ? node : first
+    }
+
+    /// 첫 연결의 TLS 상태 (상태창 — F9-3)
+    public var tlsStatus: TLSStatus {
+        conns[primary]?.tlsStatus ?? (profile.useTLS ? .unchecked : .off)
     }
 
     /// 노드 연결 (없거나 끊겼으면 연다)
@@ -243,7 +257,13 @@ public actor RedisSession {
     }
 
     /// 명령을 맞는 노드로 보낸다. MOVED/ASK 면 따라간다. raw 면 서버 오류도 값으로 돌려준다.
+    /// 자동 새로고침처럼 사람이 하지 않은 명령 — 마지막 사용 시각을 바꾸지 않는다
+    @TaskLocal public static var passive = false
+    /// 마지막으로 사람이 이 접속을 쓴 시각 — 운영 접속 자동 끊기에 쓴다
+    public private(set) var lastActivity = Date()
+
     private func exec(_ args: [String], raw: Bool = false) async throws -> RESPValue {
+        if !Self.passive { lastActivity = Date() }
         var addr = address(forKey: RedisCluster.routingKey(args))
         var asking = false
         for _ in 0..<5 {
