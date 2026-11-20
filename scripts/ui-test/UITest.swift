@@ -1007,10 +1007,10 @@ scenario("dataFinder") {
     click(ai)
     defer { click(ai) }
     func ask(_ question: String, expect: [String], timeout: Double = 150) -> Bool {
-        guard let finder = app.find(5, { $0.role == "AXButton" && $0.text.contains("데이터 위치 찾기") }) else { return false }
-        press(finder)
-        // 데이터 찾기 모드의 입력란 (안내 글: "찾을 데이터 (예: 학년 정보)")
-        guard let field = app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role) && $0.label.contains("찾을 데이터") }) else { return false }
+        // 첫 질문은 🔎 버튼으로 데이터 찾기 모드, 그 뒤(버튼이 메뉴 안으로 들어감)는 "…어디 있어?" 자동 판단으로
+        if let finder = app.find(3, { $0.role == "AXButton" && $0.text.contains("데이터 위치 찾기") }) { press(finder) }
+        guard let field = app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role)
+            && ($0.label.contains("찾을 데이터") || $0.label.contains("질문을 입력")) }) else { return false }
         click(field)
         paste(question)
         key("return")
