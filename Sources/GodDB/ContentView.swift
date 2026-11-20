@@ -119,6 +119,7 @@ struct ContentView: View {
         .sheet(isPresented: $app.showQuickOpen) { QuickOpenView() }
         .sheet(item: $app.idSearchRequest) { request in IDSearchView(request: request) }
         .sheet(item: $app.savedQuerySheet) { sheet in SavedQuerySheetView(sheet: sheet) }
+        .sheet(item: $app.tableNotesRequest) { request in TableNotesView(request: request) }
         .sheet(isPresented: $app.showHistory) { HistoryView() }
         .alert(tr("커밋하지 않은 변경이 있어요"), isPresented: Binding(get: { app.txPrompt != nil }, set: { if !$0 { app.txPrompt = nil } }),
                presenting: app.txPrompt) { prompt in

@@ -66,7 +66,6 @@ extension L10nEnglish {
         "관계 삭제": "Delete relationship",
         "관계가 없어요. 위 도구 막대의 1:N / 1:1 도구로 부모 → 자식 순서로 테이블을 누르세요.": "No relationships. Use the 1:N / 1:1 tools in the toolbar and click the parent, then the child table.",
         "관계로 생긴 FK 컬럼": "FK column created by a relationship",
-        "구조·코멘트·통계·SQL 만 로컬 Ollama 에 보내요. 데이터 행은 보내지 않아요.": "Only structure, comments, statistics and SQL go to local Ollama. Row data is never sent.",
         "그룹 없음": "No group",
         "그룹 이름 (예: 운영, 개발, 프로젝트명)": "Group name (e.g. Production, Dev, project name)",
         "그룹 이름 바꾸기": "Rename group",

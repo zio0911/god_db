@@ -817,6 +817,40 @@ if CommandLine.arguments.dropFirst(2).first == "--click", let t = CommandLine.ar
     if let f = attr(app.ax, kAXFocusedUIElementAttribute) { let n = node(f as! AXUIElement); print("focused:", n.role, n.value.prefix(40)) }
     exit(0)
 }
+scenario("tableNote") {
+    // 테이블 메모 (AI 없이): ui_schools 우클릭 > 테이블 메모… → 메모 추가 → 찾는 말 입력 → 저장 → 사이드바 📝 → 지우면 📝 사라짐
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    clearFilter()
+    guard let table = app.find(10, { !$0.modal && $0.role == "AXStaticText" && $0.value == "ui_schools" }) else {
+        throw Abort(message: "사이드바에 ui_schools 가 없어요")
+    }
+    click(table, right: true)
+    guard let item = findMenuItem(3, { $0.label.contains("테이블 메모…") }) else {
+        check("우클릭 '테이블 메모…'", false); key("escape"); return
+    }
+    press(item)
+    guard let add = app.find(4, { $0.modal && button("메모 추가")($0) }) else { check("테이블 메모 창 열기", false); return }
+    check("테이블 메모 창 열기 (메모 없음)", app.find(2, { $0.modal && $0.text.contains("메모가 없어요") }) != nil)
+    press(add)
+    guard let terms = app.find(3, { $0.modal && $0.role == "AXTextField" && $0.label.contains("찾는 말") }) else {
+        check("[메모 추가] → 찾는 말 칸", false); return
+    }
+    click(terms)
+    paste("학교명, 학교 이름")
+    guard let save = app.find(2, { $0.modal && button("저장")($0) }) else { check("[저장] 버튼", false); return }
+    press(save)
+    check("저장하면 창이 닫힘", app.gone(3, { $0.modal && $0.role == "AXTextField" }))
+    check("사이드바 ui_schools 옆 📝", app.find(4, { !$0.modal && $0.label.contains("테이블 메모 있음") }) != nil)
+
+    // 📝 를 누르면 같은 창 → 삭제 → 저장 → 📝 사라짐
+    guard let badge = app.find(2, { !$0.modal && $0.label.contains("테이블 메모 있음") }) else { return }
+    press(badge)
+    check("📝 → 메모 창에 저장한 찾는 말", app.find(4, { $0.modal && $0.role == "AXTextField" && $0.value == "학교명, 학교 이름" }) != nil)
+    if let del = app.find(2, { $0.modal && $0.label.contains("메모 삭제") }) { press(del) }
+    if let save = app.find(2, { $0.modal && button("저장")($0) }) { press(save) }
+    check("메모를 지우면 📝 사라짐", app.gone(4, { !$0.modal && $0.label.contains("테이블 메모 있음") }))
+}
+
 // 디버그: uitest <pid> --dump  → 지금 화면 요소 목록
 if CommandLine.arguments.dropFirst(2).first == "--dump" {
     for n in app.snapshot() where !["AXRow", "AXCell", "AXColumn", "AXScrollBar", "AXValueIndicator"].contains(n.role)

@@ -21,7 +21,8 @@ public struct TableStats: Hashable, Sendable {
 }
 
 /// 메인 창 오른쪽 AI 어시스턴트 (로컬 Ollama)
-/// 보내는 것: 테이블 구조·코멘트·인덱스·관계, 테이블 크기 통계, 자동 점검 결과, 편집기의 SQL. 데이터 행은 보내지 않는다.
+/// 보내는 것: 테이블 구조·코멘트·인덱스·관계, 테이블 크기 통계, 자동 점검 결과, 편집기의 SQL, 테이블 메모.
+/// 데이터 행은 보내지 않는다 (데이터 찾기만 후보 컬럼 값 몇 개를 로컬 Ollama 에 — DataFinder).
 public enum AssistantAI {
     public static let maxContextChars = 48_000
 
@@ -218,7 +219,9 @@ public enum AssistantAI {
         """
         You are GodDB's database assistant, helping a developer working with a \(kind.title) database.
         You receive metadata only: table structures, comments (business names), keys, indexes, relations, approximate sizes,
-        automatic checks and the SQL in the editor. You never see row data — if the answer needs data, give a SELECT the user can run.
+        automatic checks, the SQL in the editor and data locations the team saved (table notes).
+        You see only small samples of candidate columns in data-finding mode; otherwise no row data — if the answer needs data,
+        give a SELECT the user can run.
         Rules:
         - Base statements on the given metadata. Do not invent tables or columns; say when something is not in the context.
         - Use comments to explain business meaning. Mention notable points (missing keys/indexes, nullable FKs, large tables).
