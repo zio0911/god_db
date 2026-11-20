@@ -648,7 +648,7 @@ scenario("savedQuery") {
     guard let nameField = app.find(4, { $0.modal && $0.role == "AXTextField" && $0.value.hasPrefix("SELECT id, customer") }) else {
         check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", false); return
     }
-    check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", nameField.value == "SELECT id, customer FROM ui_orders WHERE ", nameField.value)
+    check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", nameField.value == "SELECT id, customer FROM ui_orders WHERE", nameField.value)   // 끝 공백은 뗀다
     check("찾은 빈칸 표시 (빈칸: :id)", app.find(2, { $0.modal && $0.text.contains("빈칸: :id") }) != nil)
     click(nameField)
     key("a", cmd)
@@ -686,16 +686,16 @@ scenario("savedQuery") {
     answer("취소")
 }
 
-/// 열린 우클릭 메뉴의 항목 (메뉴는 창 밖에 떠서 snapshot 에 없다)
+/// 열린 우클릭 메뉴의 항목. SwiftUI 우클릭 메뉴는 앱 바로 아래가 아니라 누른 뷰(표 · 목록) 안쪽에 AXMenu 로 붙는다
 func contextMenuItems() -> [Node] {
     var out: [Node] = []
-    var queue: [(AXUIElement, Int)] = ((attr(app.ax, kAXChildrenAttribute) as? [AXUIElement]) ?? [])
-        .filter { (attr($0, kAXRoleAttribute) as? String) == "AXMenu" }.map { ($0, 0) }
+    var queue: [(AXUIElement, Int)] = [(app.ax, 0)]
     while !queue.isEmpty {
         let (el, d) = queue.removeFirst()
-        let n = node(el)
-        if n.role == "AXMenuItem" { out.append(n) }
-        if d < 3, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
+        let role = (attr(el, kAXRoleAttribute) as? String) ?? ""
+        if role == "AXMenuBar" { continue }
+        if role == "AXMenuItem" { out.append(node(el)) }
+        if d < 40, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
     }
     return out
 }
