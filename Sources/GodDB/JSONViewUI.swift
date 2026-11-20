@@ -176,6 +176,8 @@ struct JSONTreeView: View {
             Spacer(minLength: 0)
         }
         .padding(.leading, CGFloat(max(0, line.path.count - 1)) * 14)
+        // 탭 · 우클릭을 붙여도 키 · 값이 각각 읽히게 (손쉬운 사용 · 화면 테스트)
+        .accessibilityElement(children: .contain)
         .contentShape(Rectangle())
         .onTapGesture {
             guard line.node.isContainer else { return }
