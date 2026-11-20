@@ -12,7 +12,8 @@ struct ExportIntegrationTests {
         switch kind {
         case .mysql:
             guard let port = env["GODDB_IT_PORT"].flatMap(Int.init) else { return nil }
-            let p = ConnectionProfile(name: "it", host: "127.0.0.1", port: port, username: "root", database: "shop", useTLS: true)
+            let p = ConnectionProfile(name: "it", host: "127.0.0.1", port: port, username: "root", database: "shop", useTLS: true,
+                                 tlsVerify: false)   // 테스트 MySQL 은 자체 서명 인증서
             return try await DBSession.connect(profile: p, password: env["GODDB_IT_PASSWORD"] ?? "")
         default:
             if kind == .mssql, let (p, pw) = MultiDB.profile(.mssql, database: "master") {
