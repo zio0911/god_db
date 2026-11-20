@@ -104,6 +104,9 @@ final class AppState {
     var profiles: [ConnectionProfile] = []
     /// 사이드바에서 보고 있는 접속
     var selectedProfileID: UUID?
+    /// 운영 접속 자동 끊기 감시 작업, 커밋 안 한 변경 때문에 이미 알린 접속
+    var idleWatcher: Task<Void, Never>?
+    var idleWarned: Set<UUID> = []
     /// 열려 있는 모든 접속
     var connections: [UUID: ConnectionInfo] = [:]
     var mode: MainMode = .query
@@ -481,17 +484,17 @@ final class AppState {
     }
 
     /// 접속 하나를 끊는다. 그 접속의 탭은 남겨 두고, 다시 연결하면 이어서 쓸 수 있다.
-    func disconnect(_ id: UUID, force: Bool = false) async {
+    func disconnect(_ id: UUID, force: Bool = false, reason: String? = nil, auditResult: String = "") async {
         // 커밋하지 않은 트랜잭션이 있으면 먼저 묻는다
         if !force, connections[id]?.tx.open == true {
             txPrompt = TxPrompt(profileID: id, reason: .disconnect)
             return
         }
-        if redisWorkspaces[id] != nil { await disconnectRedis(id) }
+        if redisWorkspaces[id] != nil { await disconnectRedis(id, reason: reason, auditResult: auditResult) }
         if let session = connections[id]?.session {
             await session.close()
-            log(.info, .connection, tr("%@ 연결 끊음", "\(session.profile.name)"),
-                audit: AuditRecord(.disconnect, target: session.profile.name))
+            log(reason == nil ? .info : .warning, .connection, reason ?? tr("%@ 연결 끊음", "\(session.profile.name)"),
+                audit: AuditRecord(.disconnect, target: session.profile.name, result: auditResult))
         }
         connections[id] = ConnectionInfo()
     }

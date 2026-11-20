@@ -581,6 +581,21 @@ scenario("noTuning") {
     check("쿼리 튜닝 버튼 없음", !found)
 }
 
+scenario("prodIdle") {
+    // 운영 접속 자동 끊기: 테스트용 5초로 줄이고 운영 접속에 붙은 뒤 기다리면 끊긴다
+    testDefaults(["write", "local.goddb.app.uitest", "GodDB.safety.prodIdleSecondsForTest", "-int", "5"])
+    guard let prod = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL Prod" }) else { throw Abort(message: "운영 테스트 접속이 없어요") }
+    click(prod)
+    _ = app.find(10, hasText("운영 접속 ·"))
+    try setEditor("SELECT 1 AS v")
+    _ = runAndWait(8, cell("1"))
+    hideLog()
+    let cut = app.find(15, hasText("동안 쓰지 않아 끊었어요")) != nil
+    testDefaults(["delete", "local.goddb.app.uitest", "GodDB.safety.prodIdleSecondsForTest"])
+    check("운영 접속을 쓰지 않으면 자동으로 끊김 (테스트 5초)", cut)
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {
