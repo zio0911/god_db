@@ -3,7 +3,7 @@ import Testing
 @testable import GodDBCore
 
 /// 연결은 받지만 아무 응답도 안 하는 서버 (네트워크가 잠깐 끊김, SSH 터널 너머가 안 붙음, TLS 설정 다름 등)
-@Suite("Redis connect timeout", .serialized)
+@Suite("Redis connect timeout", .serialized, .timeLimit(.minutes(1)))
 struct RedisTimeoutTests {
     /// nc 로 연결만 받고 응답하지 않는 포트를 연다
     func silentServer() throws -> (Process, Int) {

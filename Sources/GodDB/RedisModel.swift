@@ -710,12 +710,14 @@ extension AppState {
                                    result: "성공 · Redis \(version)" + (ws.topologyText.isEmpty ? "" : " · " + ws.topologyText)
                                        + (profile.readOnly ? " (읽기전용)" : ""),
                                    statement: route))
+            logTLSStatus(profile.name, await s.tlsStatus)
             await ws.loadDatabases()
             await ws.reloadKeys()
         } catch {
             let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"),
                                    audit: AuditRecord(.connect, target: profile.name, statement: route))
             updateConnection(id) { $0.state = .failed(message) }
+            if presentSecurityPrompt(for: error, profile: profile) { return }
             if ErrorText.isAuthFailure(error) {
                 sessionPasswords[id] = nil
                 passwordPrompt = PasswordPrompt(profile: profile, message: tr("비밀번호가 틀렸어요. 다시 입력해 주세요."))

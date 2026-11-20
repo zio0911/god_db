@@ -131,6 +131,8 @@ final class AppState {
     var editingProfile: ConnectionProfile?
     var editingIsNew = false
     var passwordPrompt: PasswordPrompt?
+    /// TLS 인증서 · SSH 호스트 키 확인 창 (F9-3 · F9-4)
+    var securityPrompt: SecurityPromptRequest?
     var alteringTable: TableMeta?
     /// CSV 가져오기 대상 테이블
     var importingTable: TableMeta?
@@ -313,8 +315,10 @@ final class AppState {
     /// - Parameter password: nil 이면 기존 저장값 유지
     func saveProfile(_ profile: ConnectionProfile, password: String?) {
         if let i = profiles.firstIndex(where: { $0.id == profile.id }) {
+            auditPinChange(profileName: profile.name, old: profiles[i].tlsPinSHA256, new: profile.tlsPinSHA256)
             profiles[i] = profile
         } else {
+            auditPinChange(profileName: profile.name, old: nil, new: profile.tlsPinSHA256)
             profiles.append(profile)
         }
         if profile.savePassword {
@@ -475,6 +479,7 @@ final class AppState {
                 + (connectedCount > 1 ? tr(" · 열린 접속 %@개", "\(connectedCount)") : ""),
                 audit: AuditRecord(.connect, target: profile.name, result: profile.readOnly ? "성공 (읽기전용)" : "성공",
                                    statement: target + " · " + note))
+            logTLSStatus(profile.name, await s.tlsStatus)
             do {
                 let dbs = try await s.databases()
                 updateConnection(id) { $0.databases = dbs }
@@ -493,6 +498,8 @@ final class AppState {
             let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"),
                                    audit: AuditRecord(.connect, target: profile.name, statement: target + " · " + note))
             updateConnection(id) { $0.state = .failed(message); $0.session = nil }
+            // 인증서 · SSH 호스트 키 문제면 확인 창
+            if presentSecurityPrompt(for: error, profile: profile) { return }
             // 비밀번호가 틀렸으면 다시 입력받는다.
             if ErrorText.isAuthFailure(error) {
                 sessionPasswords[id] = nil

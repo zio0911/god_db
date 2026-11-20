@@ -87,7 +87,7 @@
 | 이름 | 사이드바에 보이는 이름 (옆에 MY / PG / MSSQL 표시) |
 | 호스트 / 포트 | `localhost` 를 쓰면 IPv4(127.0.0.1) → IPv6(::1) 순서로 모두 시도한다 |
 | 사용자 / 기본 DB | 기본 DB 를 비우면 접속 후 첫 번째 DB 를 연다 |
-| TLS 사용 | 켜면 암호화 연결. 인증서 검증은 하지 않는다 (터널 경유 시 호스트명이 달라지기 때문) |
+| TLS 사용 | 켜면 암호화 연결. **서버 인증서 확인**(기본 켬)은 [36. TLS 서버 인증서 확인](#36-tls-서버-인증서-확인) |
 | 읽기전용 | [5. 읽기전용 모드](#5-읽기전용-모드) |
 | 비밀번호 저장 | [3. 비밀번호 저장](#3-비밀번호-저장) |
 | SSH 터널 | [4. SSH 터널](#4-ssh-터널) |
@@ -124,7 +124,8 @@
 
 - Mac 의 `/usr/bin/ssh -N -L 127.0.0.1:<빈 포트>:<DB 호스트>:<DB 포트>` 로 터널을 연다.
 - `~/.ssh/config`, `ssh-agent`, `known_hosts` 를 그대로 쓴다. 키 파일을 비우면 agent/설정 파일을 따른다.
-- 옵션: `BatchMode=yes`(비밀번호 묻지 않음), `StrictHostKeyChecking=accept-new`, `ExitOnForwardFailure=yes`, `ServerAliveInterval=30`.
+- 옵션: `BatchMode=yes`(비밀번호 묻지 않음), `StrictHostKeyChecking=yes` + `UserKnownHostsFile="~/.ssh/known_hosts" "<GodDB known_hosts>"`, `ExitOnForwardFailure=yes`, `ServerAliveInterval=30`.
+- 처음 접속하는 서버는 지문을 보여 주고 확인받는다 — [37. SSH 호스트 키 확인](#37-ssh-호스트-키-확인).
 - 15초 안에 포트가 열리지 않거나 ssh 가 종료되면 ssh 의 오류 메시지를 그대로 보여준다.
 - 지원: 키 파일 인증 / ssh-agent. **미지원: 비밀번호 방식 SSH.**
 
@@ -649,12 +650,43 @@ JSON 이 든 칸을 행 상세에서 원문 · 정렬 · 트리로 본다.
 - **테이블 메모**: 답 카드가 나오면 자동 저장 (`source: ai`, 미확인). 같은 테이블 + 컬럼 메모가 있으면 찾는 말만 합친다. 사이드바 테이블 이름 옆 📝 (누르면 메모 창), 우클릭 > **테이블 메모…** → 그 테이블의 메모: 찾는 말(쉼표), 컬럼, 설명, 확인됨 체크, 삭제, [메모 추가] (직접 추가는 확인됨). 저장은 `table-notes.json`.
 - **보내는 것 · 기록**: AI 는 설정 > AI 의 로컬 Ollama(이 PC 만)로만. 샘플 값은 데이터 찾기에서만 보내고 저장하지 않는다. 감사 로그 `AI | 접속/DB | 데이터 찾기 · 후보 N · 샘플 조회 M` (질문 · 값은 남기지 않음), 샘플 조회 SQL 은 평소처럼 `조회` 줄.
 
+## 36. TLS 서버 인증서 확인
+
+MySQL · PostgreSQL · Redis 의 TLS 연결에서 서버 인증서를 확인한다. 접속 편집 **TLS 사용** 아래 **서버 인증서 확인** (기본 켬, 예전 접속도 켬으로 읽는다).
+
+- **직접 접속(SSH 없이)**: 서버가 보낸 인증서 체인을 macOS 시스템 신뢰 저장소(Security.framework, `SecPolicyCreateSSL` + 호스트 이름)로 확인 → 통과하면 묻지 않고 연결.
+  - 실패하면(사설 · 자체 서명 인증서, IP 로 접속, 이름 불일치, 만료) 확인 창: 주체(CN) · 발급자 · 유효 기간 · **SHA-256 지문**(`3F:A2:…`) · 이유(신뢰할 수 없는 발급자 / 이름이 다름 / 만료됨) · [취소] [이 인증서 신뢰 (고정)].
+  - 신뢰하면 맨 앞(서버) 인증서 DER 의 SHA-256 을 접속 정보 `tlsPinSHA256` 에 저장하고 다시 연결. 다음부터 체인 확인이 실패해도 **지문이 같으면 연결**.
+  - 지문이 바뀌면(체인이 통과해도) 연결하지 않고 "서버 인증서가 바뀌었어요 …" + [저장된 인증서 지우기]. 지우면 다시 연결해 새 인증서를 확인 창으로 보여 준다.
+- **SSH 터널 경유**: 터널 안쪽은 `127.0.0.1` 이라 이름 · 체인은 확인하지 않는다 (서버 확인은 SSH 호스트 키가 맡는다). 고정 지문이 있으면 지문만 확인.
+- **Redis Cluster · Sentinel**: 노드마다 같은 규칙. 서버가 알려 준 노드 주소가 IP 면 이름 확인에는 접속 정보의 호스트 이름을 쓴다. 고정 지문은 하나라 노드마다 인증서가 다르면 고정으로는 쓸 수 없다 (공인 인증서면 문제없음).
+- **TLS 필수**: TLS 를 켜면 서버가 TLS 를 안 할 때 평문으로 내려가지 않고 "서버가 TLS 를 지원하지 않아요. TLS 를 끄거나 SSH 터널을 쓰세요." (PostgreSQL `sslmode=require` 와 같음, MySQL 도 같게).
+- **SQL Server**: FreeTDS(DB-Library) 는 인증서 · 지문 확인을 할 수 없어 암호화만 강제한다. 접속 편집에 "SQL Server 는 암호화만 하고 서버 인증서는 확인하지 못해요. 외부망에서는 SSH 터널이나 VPN 을 쓰세요."
+- **서버 인증서 확인을 끄면** 예전처럼 암호화만 한다 (접속 편집에 경고).
+- **상태창**: 연결 후 한 줄 `TLS 사용 · 인증서 확인됨` / `TLS 사용 · 고정 인증서` / `TLS 사용 · 확인 안 함(SSH 터널)` / `TLS 사용 · 확인 안 함` / `TLS 사용 · 암호화만(인증서 확인 불가)`(SQL Server) / `TLS 안 씀`. 접속 편집의 연결 테스트 결과에도 붙는다.
+- **접속 편집**: 고정한 인증서 지문과 [저장된 인증서 지우기]. 연결 테스트에서 확인 창이 뜨면 신뢰한 지문은 편집 중인 접속에 들어가고 저장할 때 반영된다.
+- **감사 로그**: `설정 | ‹접속› | TLS 인증서 신뢰 SHA256:…` / `설정 | ‹접속› | 인증서 고정 지움`.
+- 구현: NIOSSL 사용자 정의 확인 콜백 (`Vendor/mysql-nio` · `Vendor/postgres-nio` 패치로 콜백을 넘긴다 — 각 `GODDB_PATCH.md`).
+
+## 37. SSH 호스트 키 확인
+
+SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (예전에는 `accept-new` 로 묻지 않고 저장).
+
+- **연결 전**: `ssh -G` 로 `~/.ssh/config` 의 HostName · Port · HostKeyAlias 를 반영한 이름(`host` 또는 `[host]:port`)을 `ssh-keygen -F` 로 `~/.ssh/known_hosts` 와 GodDB 전용 `~/Library/Application Support/GodDB/known_hosts` 에서 찾는다.
+- **없으면**: `ssh-keyscan -T 5 -p <port> <host>` 로 키를 받고 `ssh-keygen -lf -` 로 지문(SHA256) 계산 → 확인 창 "처음 접속하는 SSH 서버예요 — host:port", 키 종류 · 지문, "서버 관리자에게 받은 지문과 같은지 확인하세요." [취소] [신뢰하고 연결].
+  - 신뢰하면 받은 키를 GodDB 전용 `known_hosts`(권한 0600)에 더하고 다시 연결. `~/.ssh/known_hosts` 는 건드리지 않는다.
+- **ssh 실행**: `-o StrictHostKeyChecking=yes -o UserKnownHostsFile="~/.ssh/known_hosts" "<GodDB known_hosts>"` (경로의 공백 때문에 큰따옴표).
+- **키가 바뀌면** ssh 가 거부 (`REMOTE HOST IDENTIFICATION HAS CHANGED`) → "SSH 서버 키가 바뀌었어요 …" + [저장된 키 지우기] — `ssh-keygen -R` 로 **GodDB 전용 파일에서만** 지우고 다시 연결(처음 접속 확인). `~/.ssh/known_hosts` 의 키는 직접 지워야 한다고 안내.
+- **감사 로그**: `설정 | SSH 호스트 키 신뢰 host:port SHA256:…` / `설정 | SSH 호스트 키 지움 host:port`.
+
 ## 17. 알려진 제약
 
 - SQL Server: 세션 단위 읽기전용이 없어 앱 검사만 한다 (서버에서 강제되지 않음). 운영 DB 는 **읽기 권한만 있는 DB 계정**을 쓴다. 접속 편집에서 읽기전용을 켜면 같은 안내가 나온다. 기본값 변경 시 기존 기본값 제약조건 삭제는 안내 주석으로만 만든다. Windows 통합 인증 미지원 (SQL 인증만).
 - SQL Server 드라이버(FreeTDS)는 빌드할 때만 Homebrew 가 필요하다. 배포 앱에는 라이브러리가 들어 있다.
 - 서로 다른 종류의 DB 끼리 스키마 비교는 가능하지만 타입 이름 차이로 "다름"이 많이 나온다.
 - 비밀번호 방식 SSH 미지원.
+- SQL Server TLS 는 암호화만 한다 (FreeTDS 로는 서버 인증서 · 지문 확인 불가). 외부망에서는 SSH 터널이나 VPN.
+- SSH 바스티온이 `ProxyJump` 를 거쳐야 하면 `ssh-keyscan` 이 키를 받지 못한다 → 터미널에서 한 번 접속해 `~/.ssh/known_hosts` 에 키를 넣어 두면 그 키를 쓴다.
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 
 ## 18. 변경 이력
