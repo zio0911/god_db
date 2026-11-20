@@ -47,7 +47,7 @@ rm -rf "$HOME/Library/Saved Application State/$BUNDLE_ID.savedState"
 defaults write $BUNDLE_ID GodDB.update.mode manual
 
 echo "▶ 테스트 DB · 접속 준비"
-docker exec -i goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop 2>/dev/null <<'SQL'
+docker exec -i goddb-mysql-test mysql --default-character-set=utf8mb4 -uroot -p$MYSQL_PASSWORD shop 2>/dev/null <<'SQL'
 DROP TABLE IF EXISTS ui_orders;
 CREATE TABLE ui_orders (id INT PRIMARY KEY, customer VARCHAR(50), amount INT, note VARCHAR(100));
 INSERT INTO ui_orders VALUES (1,'kim',1200,'first'),(2,'lee',3400,'apple, pie'),(3,'park',560,NULL),
@@ -60,7 +60,7 @@ CMP_COPY=$(docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD -N -e "SE
 printf '%s\n' "DROP DATABASE IF EXISTS shop_cmp;" "CREATE DATABASE shop_cmp;" "$CMP_COPY" \
   "ALTER TABLE shop_cmp.ui_orders DROP COLUMN note;" \
   "ALTER TABLE shop_cmp.ui_customers MODIFY name VARCHAR(50) NULL COMMENT '이름';" \
-  | docker exec -i goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD 2>/dev/null
+  | docker exec -i goddb-mysql-test mysql --default-character-set=utf8mb4 -uroot -p$MYSQL_PASSWORD 2>/dev/null
 cat > "$DATA/profiles.json" <<JSON
 [
  {"id":"00000000-0000-4000-8000-0000000000A1","kind":"mysql","name":"UI MySQL","host":"127.0.0.1","port":$MYSQL_PORT,
