@@ -54,6 +54,26 @@ public struct SchemaDiffReport: Sendable {
 
 public enum SchemaDiff {
 
+    /// 스키마 비교 창이 쓰는 경로. 두 접속에서 비교할 DB(PostgreSQL 은 스키마)로 옮겨 읽고,
+    /// 대상 DB 문법으로 보정 SQL 을 만든다. 대상 접속도 대상 DB 로 옮겨 두므로 보정 SQL 을 그 접속에서 바로 실행할 수 있다.
+    public static func compare(source ss: DBSession, sourceContainer sdb: String,
+                               target ts: DBSession, targetContainer tdb: String) async throws -> SchemaDiffReport {
+        try await ss.use(sdb)
+        // PostgreSQL 은 search_path 에 따라 기본값 표기가 달라진다 (예: nextval('스키마.시퀀스')). 양쪽 모두 비교할 곳으로 옮긴다.
+        try await ts.use(tdb)
+        let source = try await ss.loadSchema(sdb)
+        let target = try await ts.loadSchema(tdb)
+        var creates: [String: String] = [:]
+        // 대상에 없는 테이블은 MySQL 이면 기준 DB 의 SHOW CREATE TABLE 을 쓴다. 종류가 다르면 대상 문법으로 만든다.
+        if ss.profile.kind == ts.profile.kind {
+            let targetNames = Set(target.map { $0.name.lowercased() })
+            for table in source where !targetNames.contains(table.name.lowercased()) {
+                creates[table.name] = try await ss.showCreateTable(table.name)
+            }
+        }
+        return compare(source: source, target: target, createStatements: creates, dialect: ts.dialect)
+    }
+
     /// - Parameters:
     ///   - createStatements: 대상에 없는 테이블의 CREATE 문 (MySQL 은 기준 DB 의 SHOW CREATE TABLE). 없으면 메타데이터로 만든다.
     ///   - dialect: 보정 SQL 을 만들 대상 DB 의 문법

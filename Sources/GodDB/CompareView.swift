@@ -234,21 +234,11 @@ struct CompareView: View {
                 error = tr("비교할 DB 이름을 입력하거나 접속의 기본 DB를 설정해 주세요.")
                 return
             }
-            try await ss.use(sdb)
-            let source = try await ss.loadSchema(sdb)
-            let target = try await ts.loadSchema(tdb)
-
-            let targetNames = Set(target.map { $0.name.lowercased() })
-            var creates: [String: String] = [:]
-            for table in source where !targetNames.contains(table.name.lowercased()) {
-                creates[table.name] = try await ss.showCreateTable(table.name)
-            }
             // 보정 SQL 은 대상 DB 문법으로 만든다. 종류가 다르면 MySQL 의 SHOW CREATE 결과는 쓰지 않는다.
             if s.kind != t.kind {
-                creates = [:]
                 app.log(.warning, .compare, tr("기준(%@)과 대상(%@) DB 종류가 달라요. 타입 이름 차이로 '다름'이 많이 나올 수 있어요.", "\(s.kind.title)", "\(t.kind.title)"))
             }
-            let result = SchemaDiff.compare(source: source, target: target, createStatements: creates, dialect: ts.dialect)
+            let result = try await SchemaDiff.compare(source: ss, sourceContainer: sdb, target: ts, targetContainer: tdb)
             report = result
             selection = []
             app.log(.success, .compare,
