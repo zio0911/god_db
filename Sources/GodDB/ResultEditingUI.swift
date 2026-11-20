@@ -309,16 +309,33 @@ final class PointerCell {
 
     /// 지금 처리 중인 마우스 이벤트가 표의 몇 번째 컬럼(화면 순서)에 떨어졌는지와 그 머리글.
     /// 마우스를 움직이지 않고 누르면(결과가 새로 그려진 뒤 등) hover 가 오지 않으므로 이벤트 위치로 직접 찾는다.
+    /// 마지막으로 누른 마우스 (창 · 창 안 위치). 더블클릭 처리 시점에는 현재 이벤트가 마우스가 아닐 수 있어 따로 기억한다
+    private static var lastDown: (window: NSWindow, point: NSPoint)?
+    private static var monitor: Any?
+
+    /// 결과 표가 처음 나올 때 한 번 건다 (앱 안 마우스 누름만 본다, 이벤트는 그대로 통과)
+    static func startTracking() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { ev in
+            if let w = ev.window { lastDown = (w, ev.locationInWindow) }
+            return ev
+        }
+    }
+
     static func clickedColumn() -> (index: Int, title: String)? {
-        guard let ev = NSApp.currentEvent, let window = ev.window,
-              [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(ev.type),
-              var view = window.contentView?.hitTest(ev.locationInWindow) else { return nil }
+        let ev = NSApp.currentEvent
+        let fromEvent = ev.flatMap { e -> (NSWindow, NSPoint)? in
+            guard let w = e.window, [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(e.type) else { return nil }
+            return (w, e.locationInWindow)
+        }
+        guard let (window, point) = fromEvent ?? lastDown.map({ ($0.window, $0.point) }),
+              var view = window.contentView?.hitTest(point) else { return nil }
         while !(view is NSTableView) {
             guard let parent = view.superview else { return nil }
             view = parent
         }
         guard let table = view as? NSTableView else { return nil }
-        let index = table.column(at: table.convert(ev.locationInWindow, from: nil))
+        let index = table.column(at: table.convert(point, from: nil))
         guard index >= 0, index < table.tableColumns.count else { return nil }
         return (index, table.tableColumns[index].title)
     }

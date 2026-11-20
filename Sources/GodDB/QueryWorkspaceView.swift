@@ -549,6 +549,14 @@ struct ResultGrid: View {
                         .simultaneousGesture(TapGesture().modifiers(.command).onEnded {
                             fk?.follow(column: column.id, row: row.values)
                         }, including: fk?.byColumn[column.id] == nil ? .subviews : .all)
+                        // 칸 더블클릭: 이 칸을 그 자리에서 고친다 (어느 칸인지 여기서 바로 안다. 행 선택 · 다중 선택은 그대로)
+                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                            let c = GridCell(row: row.id, column: column.id)
+                            if canEditInline(c) {
+                                selection = [row.id]
+                                editingCell = c
+                            }
+                        })
                         .background(hoveredRow == row.id ? Color.accentColor.opacity(0.12) : Color.clear)
                         .onHover { inside in
                             let here = GridCell(row: row.id, column: column.id)
@@ -567,7 +575,10 @@ struct ResultGrid: View {
                 .width(min: 50, ideal: 140)
             }
         }
-        .onAppear { syncSortOrder() }
+        .onAppear {
+            syncSortOrder()
+            PointerCell.startTracking()
+        }
         .onChange(of: result.id) {
             syncSortOrder()
             editingCell = nil
