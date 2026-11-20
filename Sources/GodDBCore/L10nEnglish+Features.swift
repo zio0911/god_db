@@ -65,7 +65,7 @@ extension L10nEnglish {
         "주의 없음": "no warnings",
         "추천 인덱스": "Recommended indexes",
         "추천 인덱스는 아직 만들지 않았으므로, 인덱스 효과는 '후' 계획에 반영되지 않아요.": "The recommended indexes haven't been created yet, so their effect isn't reflected in the 'after' plan.",
-        "추천: %@ (코드·SQL 에 강하고 한국어도 잘 알아들어요). 메모리가 넉넉하면 큰 모델일수록 정확해요.": "Recommended: %@ (strong at code and SQL). With enough memory, larger models are more accurate.",
+        "추천: %@ (한국어 질문 · 데이터 찾기에 잘 맞아요). 메모리가 넉넉하면 큰 모델일수록 정확해요.": "Recommended: %@ (good with Korean questions and data finding). With enough memory, larger models are more accurate.",
         "취소했어요.": "Canceled.",
         "쿼리 탭을 먼저 여세요.": "Open a query tab first.",
         "테이블 %@ 에 기본 키가 없어서 행을 정확히 고를 수 없어요.": "Table %@ has no primary key, so rows can't be identified exactly.",

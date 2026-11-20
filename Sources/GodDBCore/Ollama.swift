@@ -162,6 +162,32 @@ public struct OllamaClient: Sendable {
         }
     }
 
+    /// 모델 확인용 짧은 요청: "Reply with OK" (스트리밍 없이, 최대 256 토큰). 실패하거나 답이 비면 OllamaError 를 던진다.
+    /// 토큰을 너무 적게 받으면 고장 난 모델도 오류 전에 끝나 통과하므로(빈 답) 조금 넉넉히 받고, 빈 답은 실패로 본다.
+    public func ping(model: String, timeout: Double) async throws {
+        try ensureLocal()
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/chat"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [["role": "user", "content": ModelProbe.prompt]],
+            "stream": false,
+            "options": ["num_predict": ModelProbe.maxTokens, "temperature": 0],
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.check(response, data)
+        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if let error = obj?["error"] as? String { throw OllamaError.http(500, error) }
+        let message = obj?["message"] as? [String: Any]
+        let text = ((message?["content"] as? String) ?? "") + ((message?["thinking"] as? String) ?? "")
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            throw OllamaError.http(200, tr("빈 답을 돌려줬어요"))
+        }
+    }
+
     static func check(_ response: URLResponse, _ data: Data) throws {
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
             throw OllamaError.http(http.statusCode, String(decoding: data, as: UTF8.self))
@@ -178,7 +204,7 @@ public enum AISettings {
         set { d.set(newValue, forKey: "GodDB.tuning.url") }
     }
 
-    /// 비어 있으면 설치된 첫 모델을 쓴다
+    /// 비어 있으면 `defaultModel(installed:)` 로 고른다
     public static var model: String {
         get { d.string(forKey: "GodDB.tuning.model") ?? "" }
         set { d.set(newValue, forKey: "GodDB.tuning.model") }
@@ -204,6 +230,107 @@ public enum AISettings {
         return parts.count == 4 && parts[0] == "127" && parts.allSatisfy { p in Int(p).map { (0...255).contains($0) } ?? false }
     }
 
-    /// 코드·SQL 에 강한 추천 모델
-    public static let recommendedModels = ["qwen2.5-coder:14b", "qwen2.5-coder:32b", "qwen3:30b"]
+    /// 추천 모델 (앞이 먼저). qwen3:30b 는 한국어 질문 · 데이터 찾기에 잘 맞는다.
+    public static let recommendedModels = ["qwen3:30b", "qwen2.5-coder:14b", "qwen2.5-coder:32b"]
+
+    /// 모델을 고르지 않았을 때 쓸 모델: 설치된 추천 모델(앞 순서) → 설치된 첫 모델
+    public static func defaultModel(installed: [String]) -> String? {
+        recommendedModels.first(where: installed.contains) ?? installed.first
+    }
+
+    /// 쓸 모델: 고른 모델, 없으면 기본 모델
+    public static func effectiveModel(installed: [String]) -> String? {
+        model.isEmpty ? defaultModel(installed: installed) : model
+    }
+
+    /// 추천 모델을 앞으로 (바꿀 모델 버튼 순서)
+    public static func recommendedFirst(_ names: [String]) -> [String] {
+        let rec = recommendedModels.filter(names.contains)
+        return rec + names.filter { !rec.contains($0) }
+    }
+}
+
+// MARK: - 모델 확인 (F7)
+
+/// 모델 확인 결과
+public enum ModelHealth: Equatable, Sendable {
+    case ok
+    /// 짧은 이유 (예: "prediction aborted, token repeat limit reached")
+    case failed(String)
+    /// 제한 시간 안에 답이 없음 (모델을 처음 올리는 중일 수 있어 기억하지 않는다)
+    case timedOut
+
+    public var isOK: Bool { self == .ok }
+
+    /// 화면에 보일 짧은 이유
+    public var reason: String {
+        switch self {
+        case .ok: return "OK"
+        case .failed(let r): return r
+        case .timedOut: return tr("%@초 안에 답이 없어요", "\(Int(ModelProbe.timeout))")
+        }
+    }
+}
+
+/// 고른 모델이 실제로 답하는지 아주 짧은 요청으로 확인한다. 결과는 앱을 켜 둔 동안 모델별로 기억한다.
+/// (어떤 모델은 "hi" 에도 HTTP 500 "token repeat limit reached" 로 실패한다 — 그런 모델로 찾기를 하면 틀린 답만 나온다)
+public enum ModelProbe {
+    public static let prompt = "Reply with OK"
+    public static let maxTokens = 256
+    public static let timeout: Double = 20
+
+    /// 확인 하나. `send` 는 실제로는 `OllamaClient.ping` (시험에서는 가짜).
+    public static func check(timeout: Double = timeout, send: @escaping @Sendable () async throws -> Void) async -> ModelHealth {
+        do {
+            try await ConnectDeadline.run(seconds: timeout) { try await send() }
+            return .ok
+        } catch is DBConnectTimeoutError {
+            return .timedOut
+        } catch let e as URLError where e.code == .timedOut {
+            return .timedOut
+        } catch is CancellationError {
+            return .failed(tr("취소했어요"))
+        } catch {
+            return .failed(shortReason(error))
+        }
+    }
+
+    /// Ollama 오류에서 짧은 이유만: `{"error":"…"}` 이면 그 글, 아니면 오류 설명 첫 줄 (120자까지)
+    public static func shortReason(_ error: any Error) -> String {
+        var text: String
+        if case OllamaError.http(let code, let body) = error {
+            if let data = body.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let msg = obj["error"] as? String {
+                text = msg
+            } else {
+                text = body.isEmpty ? "HTTP \(code)" : body
+            }
+        } else {
+            text = error.localizedDescription
+        }
+        text = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+        text = text.trimmingCharacters(in: .whitespaces)
+        return text.count > 120 ? String(text.prefix(120)) + "…" : text
+    }
+
+    /// 로컬 Ollama 로 확인 (기억한 결과가 있으면 그것). 시간 초과는 기억하지 않는다.
+    public static func check(model: String, client: OllamaClient, cache: ModelHealthCache = .shared,
+                             useCache: Bool = true) async -> ModelHealth {
+        let key = client.baseURL.absoluteString + "|" + model
+        if useCache, let known = await cache.get(key) { return known }
+        let health = await check { try await client.ping(model: model, timeout: timeout + 5) }
+        if health != .timedOut { await cache.set(key, health) }
+        return health
+    }
+}
+
+/// 모델 확인 결과 기억 (앱을 켜 둔 동안)
+public actor ModelHealthCache {
+    public static let shared = ModelHealthCache()
+    private var items: [String: ModelHealth] = [:]
+
+    public init() {}
+
+    public func get(_ key: String) -> ModelHealth? { items[key] }
+    public func set(_ key: String, _ value: ModelHealth) { items[key] = value }
 }

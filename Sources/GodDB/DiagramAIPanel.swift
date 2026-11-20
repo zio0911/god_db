@@ -126,7 +126,7 @@ final class DiagramChat {
             let started = Date()
             do {
                 guard case .running(let models) = await client.status() else { throw OllamaError.notRunning }
-                let model = AISettings.model.isEmpty ? (models.first?.name ?? "") : AISettings.model
+                let model = AISettings.effectiveModel(installed: models.map(\.name)) ?? ""
                 guard !model.isEmpty else { throw OllamaError.noModel }
                 let msgs = try await build(Array(history))
                 if let line = logMessage(model, history.count == 1) {
