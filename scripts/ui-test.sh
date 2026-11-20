@@ -49,9 +49,22 @@ defaults write $BUNDLE_ID GodDB.update.mode manual
 echo "▶ 테스트 DB · 접속 준비"
 docker exec -i goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop 2>/dev/null <<'SQL'
 DROP TABLE IF EXISTS ui_orders;
-CREATE TABLE ui_orders (id INT PRIMARY KEY, customer VARCHAR(50), amount INT, note VARCHAR(100));
-INSERT INTO ui_orders VALUES (1,'kim',1200,'first'),(2,'lee',3400,'apple, pie'),(3,'park',560,NULL),
-  (4,'choi',7800,'second'),(5,'jung',90,'last');
+DROP TABLE IF EXISTS ui_customers;
+DROP TABLE IF EXISTS ui_students;
+DROP TABLE IF EXISTS ui_schools;
+CREATE TABLE ui_customers (id INT PRIMARY KEY, name VARCHAR(50), grade VARCHAR(10));
+INSERT INTO ui_customers VALUES (10,'kim','gold'),(20,'lee','silver'),(30,'park','bronze');
+CREATE TABLE ui_orders (id INT PRIMARY KEY, customer VARCHAR(50), amount INT, note VARCHAR(100),
+  customer_id INT NULL, meta JSON NULL,
+  CONSTRAINT fk_ui_orders_customer FOREIGN KEY (customer_id) REFERENCES ui_customers(id));
+INSERT INTO ui_orders VALUES (1,'kim',1200,'first',10,'{"channel":"web","tags":["new","gift"],"coupon":{"code":"A-77","rate":0.1}}'),
+  (2,'lee',3400,'apple, pie',20,'{"channel":"app"}'),(3,'park',560,NULL,30,NULL),
+  (4,'choi',7800,'second',10,'{"channel":"web","tags":[]}'),(5,'jung',90,'last',NULL,NULL);
+CREATE TABLE ui_schools (id INT PRIMARY KEY, name VARCHAR(50) COMMENT '학교 이름') COMMENT '학교';
+INSERT INTO ui_schools VALUES (1,'한빛초등학교'),(2,'푸른중학교');
+CREATE TABLE ui_students (id INT PRIMARY KEY, name VARCHAR(50) COMMENT '학생 이름',
+  school_id INT COMMENT '학교 번호', grade_level INT COMMENT '학년') COMMENT '학생';
+INSERT INTO ui_students VALUES (1,'student1',1,3),(2,'student2',2,1);
 SQL
 cat > "$DATA/profiles.json" <<JSON
 [
@@ -77,7 +90,8 @@ set -e
 
 if [[ $KEEP == 0 ]]; then
   kill $APP_PID 2>/dev/null || true
-  docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop -e "DROP TABLE IF EXISTS ui_orders" 2>/dev/null || true
+  docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop \
+    -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools" 2>/dev/null || true
 fi
 echo
 echo "보고서: $WORK/report.txt"

@@ -112,6 +112,9 @@ struct GodDBApp: App {
                 Button(tr("객체 빠른 찾기…")) { app.showQuickOpen = true }
                     .keyboardShortcut("o", modifiers: .command)
                     .disabled(app.state != .connected || app.selectedProfile?.kind == .redis)
+                Button(tr("ID 로 찾기…")) { app.openIDSearch() }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+                    .disabled(!app.canSearchIDs)
                 Button(tr("쿼리 히스토리…")) { app.showHistory = true }
                     .keyboardShortcut("y", modifiers: .command)
             }

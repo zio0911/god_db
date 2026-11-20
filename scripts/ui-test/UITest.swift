@@ -328,6 +328,33 @@ scenario("cancel") {
 }
 
 /// 결과 빠른 필터 비우기 (× 버튼)
+/// 사이드바 테이블 줄 (목록은 보이는 줄만 손쉬운 사용에 나오므로 '테이블 검색' 으로 좁혀서 찾는다)
+func sidebarTable(_ name: String) -> Node? {
+    // 라벨 뒤에 도움말(테이블 코멘트)이 " | …" 로 붙으므로 앞부분 · 값만 본다
+    let isRow: (Node) -> Bool = { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role)
+        && ($0.value == name || $0.label.components(separatedBy: " | ").first == name) }
+    if let f = app.find(2, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("테이블 검색") }) {
+        click(f)
+        key("a", [cmd])
+        paste(name)
+    }
+    return app.find(5, isRow)
+}
+
+/// 사이드바 '테이블 검색' 비우기
+func clearSidebarSearch() {
+    if let f = app.find(1, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("테이블 검색") }), !f.value.isEmpty {
+        click(f); key("a", [cmd]); key("delete")
+    }
+}
+
+/// 그 자리에서 마우스 휠을 굴린다 (음수 = 아래로)
+func scrollAt(_ n: Node, lines: Int32) {
+    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: n.frame.midX, y: n.frame.midY), mouseButton: .left))
+    post(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0))
+    Thread.sleep(forTimeInterval: 0.4)
+}
+
 func clearFilter() {
     if let x = app.find(0.5, { $0.role == "AXButton" && $0.label.contains("필터 지우기") }) { press(x) }
 }
@@ -595,6 +622,38 @@ scenario("prodIdle") {
     testDefaults(["delete", "local.goddb.app.uitest", "GodDB.safety.prodIdleSecondsForTest"])
     check("운영 접속을 쓰지 않으면 자동으로 끊김 (테스트 5초)", cut)
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+}
+
+scenario("idSearch") {
+    // ID 로 찾기: 사이드바에서 ui_orders 를 고르고 ⌥⌘F → 로그 3줄 붙여넣기 → 3개 추출 → 조회 → 없는 ID 1개
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    guard let table = sidebarTable("ui_orders") else {
+        throw Abort(message: "사이드바에 ui_orders 가 없어요")
+    }
+    defer { clearSidebarSearch() }
+    click(table)
+    key("f", [cmd, opt])
+    guard let area = app.find(4, { $0.modal && $0.role == "AXTextArea" }) else { check("⌥⌘F ID 로 찾기 열기", false); return }
+    check("⌥⌘F ID 로 찾기 열기 · 고른 테이블이 미리 선택됨",
+          app.find(2, { $0.modal && $0.role == "AXPopUpButton" && $0.value == "ui_orders" }) != nil)
+    check("컬럼 기본값은 기본 키 (이름 (타입))", app.find(2, { $0.modal && $0.role == "AXPopUpButton" && $0.value.hasPrefix("id (int") }) != nil)
+    click(area)
+    paste("""
+    2026-11-20 10:01:02 ERROR orderId=2 payment failed
+    2026-11-20 10:01:03 WARN orderId=4 retry orderId=2
+    2026-11-20 10:01:04 INFO orderId=99 done
+    """)
+    check("로그 3줄에서 숫자 ID 3개 추출 (날짜 · 시각 · 중복 제외)",
+          app.find(3, { $0.modal && $0.text.contains("찾은 값 3개 (중복 1개 제외) : 2, 4, 99") }) != nil,
+          app.snapshot().filter { $0.modal && $0.text.contains("찾은 값") }.map(\.value).joined(separator: " / "))
+    guard let run = app.find(2, { $0.modal && button("조회")($0) }) else { check("[조회] 버튼", false); return }
+    press(run)
+    check("새 탭 'ID: ui_orders.id (3)' 에서 조회", app.find(10, hasText("ID: ui_orders.id (3)")) != nil)
+    check("찾은 행 표시 (lee · choi)", app.find(8, cell("lee")) != nil && app.find(2, cell("choi")) != nil)
+    check("없는 ID 표시 (요청 3 · 찾음 2 · 없음 1)", app.find(5, hasText("요청 3 · 찾음 2 · 없음 1")) != nil)
+    setClipboard("")
+    if let copy = app.find(2, button("없는 ID 복사")) { press(copy) }
+    check("[없는 ID 복사] → 99", clipboard() == "99", clipboard())
 }
 
 // MARK: - 실행

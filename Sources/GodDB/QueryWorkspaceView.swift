@@ -388,6 +388,10 @@ struct ResultPane: View {
                         }
                     }
                 }
+                if let run = tab.idSearch, IDSearchMissingBar.applies(run, to: result) {
+                    Divider()
+                    IDSearchMissingBar(run: run, result: result)
+                }
                 Divider()
                 StatusBar(result: result, selectedCount: selection.count, loading: tab.pageLoading || !tab.edits.isEmpty,
                           exportProgress: tab.exportProgress, appendCapped: tab.appendCapped,
