@@ -8,6 +8,7 @@ extension L10nEnglish {
         "…외 %@개": "…and %@ more",
         "1,000개까지만 조회해요 (나머지 %@개는 다시 붙여넣으세요)": "Only the first 1,000 are searched (paste the remaining %@ again)",
         "ID 로 찾기": "Find by ID",
+        "쿼리 저장… (⌥⌘S)": "Save Query… (⌥⌘S)",
         "ID 로 찾기…": "Find by ID…",
         "문자 ID 포함 (영문 · 하이픈)": "Include text IDs (letters, hyphens)",
         "붙여넣기": "Paste",
