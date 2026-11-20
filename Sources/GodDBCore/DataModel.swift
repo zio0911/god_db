@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// 데이터 모델 (MySQL Workbench 의 모델처럼): 논리명으로 설계하고, 물리명을 붙여 DDL 로 뽑는다.
+/// 데이터 모델: 논리명으로 설계하고, 물리명을 붙여 DDL 로 뽑는다.
 public struct DataModel: Codable, Identifiable, Hashable, Sendable {
     public static let fileExtension = "goddbmodel"
     public static let formatName = "goddb-model"

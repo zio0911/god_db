@@ -31,12 +31,16 @@ public actor DBSession {
     private var cancelRequested = false
     /// 현재 선택된 DB(MySQL/SQL Server) 또는 스키마(PostgreSQL)
     public private(set) var current: String = ""
+    /// 연결의 TLS 상태 (상태창 한 줄 — F9-3)
+    public private(set) var tlsStatus: TLSStatus = .off
 
     // MARK: 트랜잭션 (자동 커밋 / 수동 커밋)
     /// 자동 커밋. 끄면 쓰기 문장을 실행할 때 트랜잭션을 열고, 커밋/롤백할 때까지 반영하지 않는다.
     public private(set) var autoCommit = true
     /// 열린 트랜잭션이 있는지
     public private(set) var inTransaction = false
+    /// 마지막으로 이 접속을 쓴 시각 (쿼리 · 페이지 · 내보내기 · 스키마 읽기 모두 raw 를 거친다) — 운영 접속 자동 끊기에 쓴다
+    public private(set) var lastActivity = Date()
     /// 열린 트랜잭션 안에서 실행한 쓰기 문장 수
     public private(set) var pendingChanges = 0
 
@@ -80,7 +84,8 @@ public actor DBSession {
             host: host, port: port,
             serverName: (profile.ssh == nil && !HostResolver.isIPAddress(profile.host)) ? profile.host : nil,
             username: profile.username, password: password,
-            database: profile.database, useTLS: profile.useTLS)
+            database: profile.database, useTLS: profile.useTLS,
+            tls: TLSPolicy.of(profile))
         self.endpoint = endpoint
         do {
             try await openDriver(endpoint)
@@ -105,6 +110,7 @@ public actor DBSession {
     private func openDriver(_ endpoint: DriverEndpoint) async throws {
         let d = try await Self.makeDriver(profile.kind, endpoint)
         driver = d
+        tlsStatus = profile.kind == .mssql ? (endpoint.useTLS ? .encryptOnly : .off) : d.tlsStatus
         if let sql = dialect.sessionSetupSQL { _ = try? await d.query(sql) }
         if profile.readOnly, let sql = dialect.readOnlySessionSQL {
             // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
@@ -297,7 +303,8 @@ public actor DBSession {
     public func raw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
         guard let driver, driver.isOpen else { throw DBError.notConnected }
         running += 1
-        defer { running -= 1 }
+        lastActivity = Date()
+        defer { running -= 1; lastActivity = Date() }
         do {
             let r = try await driver.query(sql)
             // MySQL 은 KILL QUERY 로 멈춘 SLEEP 등이 오류 없이 끝나기도 한다 → 취소를 요청했으면 취소로 본다

@@ -9,6 +9,12 @@ public protocol DBDriver: AnyObject, Sendable {
     func query(_ sql: String) async throws -> (columns: [String], rows: [[String?]])
     func close() async
     var isOpen: Bool { get }
+    /// 연결 후 상태창에 남길 TLS 상태 (F9-3)
+    var tlsStatus: TLSStatus { get }
+}
+
+extension DBDriver {
+    public var tlsStatus: TLSStatus { .off }
 }
 
 /// 드라이버가 연결할 때 필요한 값 (SSH 터널을 거쳤다면 host/port 는 로컬 주소)
@@ -21,6 +27,8 @@ public struct DriverEndpoint: Sendable {
     public var password: String?
     public var database: String
     public var useTLS: Bool
+    /// 서버 인증서 확인 방법 (F9-3)
+    public var tls: TLSPolicy = TLSPolicy(verify: false, hostname: nil, pin: nil)
 }
 
 enum HostResolver {
@@ -73,11 +81,11 @@ enum HostResolver {
         throw lastError ?? DBError.notConnected
     }
 
-    static func insecureTLS() -> TLSConfiguration {
-        var config = TLSConfiguration.makeClientConfiguration()
-        // 터널 경유 시 호스트명이 127.0.0.1 이 되어 인증서 검증이 불가하므로 암호화만 사용한다.
-        config.certificateVerification = .none
-        return config
+    /// 연결 시도들을 묶어, 인증서 확인에서 거부했으면 그 오류(인증서 정보 포함)를 던진다
+    static func withTLS<T>(_ verifier: TLSVerifier?, _ body: () async throws -> T) async throws -> T {
+        do { return try await body() } catch {
+            throw verifier?.map(error) ?? error
+        }
     }
 }
 
@@ -85,23 +93,38 @@ enum HostResolver {
 
 final class MySQLDriver: DBDriver, @unchecked Sendable {
     private let connection: MySQLConnection
+    let tlsStatus: TLSStatus
 
-    private init(_ connection: MySQLConnection) { self.connection = connection }
+    private init(_ connection: MySQLConnection, tlsStatus: TLSStatus) {
+        self.connection = connection
+        self.tlsStatus = tlsStatus
+    }
 
     static func connect(_ e: DriverEndpoint) async throws -> MySQLDriver {
-        let conn = try await HostResolver.tryEach(e.host, port: e.port) { ip in
-            try await MySQLConnection.connect(
-                to: try SocketAddress(ipAddress: ip, port: e.port),
-                username: e.username,
-                database: e.database,
-                password: e.password,
-                tlsConfiguration: e.useTLS ? HostResolver.insecureTLS() : nil,
-                // SNI 에는 도메인만 쓸 수 있다.
-                serverHostname: e.serverName,
-                on: MultiThreadedEventLoopGroup.singleton.any()
-            ).get()
+        let verifier = e.useTLS && e.tls.verify ? TLSVerifier(policy: e.tls) : nil
+        let conn: MySQLConnection
+        do {
+            conn = try await HostResolver.withTLS(verifier) {
+                try await HostResolver.tryEach(e.host, port: e.port) { ip in
+                    try await MySQLConnection.connect(
+                        to: try SocketAddress(ipAddress: ip, port: e.port),
+                        username: e.username,
+                        database: e.database,
+                        password: e.password,
+                        tlsConfiguration: e.useTLS ? TLSVerify.tlsConfiguration(verify: e.tls.verify) : nil,
+                        // SNI 에는 도메인만 쓸 수 있다.
+                        serverHostname: e.serverName,
+                        customVerificationCallback: verifier?.callback,
+                        // TLS 를 켜면 서버가 TLS 를 안 해도 평문으로 내려가지 않는다 (Vendor 패치)
+                        requireTLS: e.useTLS,
+                        on: MultiThreadedEventLoopGroup.singleton.any()
+                    ).get()
+                }
+            }
+        } catch MySQLError.unsupportedServer(let message) where message == MySQLConnection.tlsNotSupportedMessage {
+            throw TLSCertificateError.serverNoTLS
         }
-        return MySQLDriver(conn)
+        return MySQLDriver(conn, tlsStatus: e.useTLS ? (verifier?.status ?? .unchecked) : .off)
     }
 
     var isOpen: Bool { !connection.isClosed }
@@ -144,27 +167,41 @@ final class MySQLDriver: DBDriver, @unchecked Sendable {
 
 final class PostgresDriver: DBDriver, @unchecked Sendable {
     private let connection: PostgresConnection
+    let tlsStatus: TLSStatus
 
-    private init(_ connection: PostgresConnection) { self.connection = connection }
+    private init(_ connection: PostgresConnection, tlsStatus: TLSStatus) {
+        self.connection = connection
+        self.tlsStatus = tlsStatus
+    }
 
     static func connect(_ e: DriverEndpoint) async throws -> PostgresDriver {
-        let tls: PostgresConnection.Configuration.TLS
+        let verifier = e.useTLS && e.tls.verify ? TLSVerifier(policy: e.tls) : nil
+        var tls: PostgresConnection.Configuration.TLS
         if e.useTLS {
-            tls = .prefer(try NIOSSLContext(configuration: HostResolver.insecureTLS()))
+            // TLS 를 켜면 반드시 TLS (서버가 안 하면 오류 — "가능하면 TLS" 로 평문에 내려가지 않는다)
+            tls = .require(try NIOSSLContext(configuration: TLSVerify.tlsConfiguration(verify: e.tls.verify)))
+            tls.customVerificationCallback = verifier?.callback
         } else {
             tls = .disable
         }
-        let conn = try await HostResolver.tryEach(e.host, port: e.port) { ip in
-            var config = PostgresConnection.Configuration(
-                host: ip, port: e.port, username: e.username, password: e.password,
-                database: e.database.isEmpty ? "postgres" : e.database, tls: tls)
-            if let name = e.serverName { config.options.tlsServerName = name }
-            return try await PostgresConnection.connect(
-                on: MultiThreadedEventLoopGroup.singleton.any(),
-                configuration: config, id: 1, logger: Logger(label: "goddb.postgres")
-            ).get()
+        let conn: PostgresConnection
+        do {
+            conn = try await HostResolver.withTLS(verifier) {
+                try await HostResolver.tryEach(e.host, port: e.port) { ip in
+                    var config = PostgresConnection.Configuration(
+                        host: ip, port: e.port, username: e.username, password: e.password,
+                        database: e.database.isEmpty ? "postgres" : e.database, tls: tls)
+                    if let name = e.serverName { config.options.tlsServerName = name }
+                    return try await PostgresConnection.connect(
+                        on: MultiThreadedEventLoopGroup.singleton.any(),
+                        configuration: config, id: 1, logger: Logger(label: "goddb.postgres")
+                    ).get()
+                }
+            }
+        } catch let error as PSQLError where error.code == .sslUnsupported {
+            throw TLSCertificateError.serverNoTLS
         }
-        return PostgresDriver(conn)
+        return PostgresDriver(conn, tlsStatus: e.useTLS ? (verifier?.status ?? .unchecked) : .off)
     }
 
     var isOpen: Bool { !connection.isClosed }
