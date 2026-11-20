@@ -18,7 +18,7 @@ struct LargeResultBenchTests {
             guard let port = env["GODDB_IT_PORT"].flatMap(Int.init) else { return nil }
             s = try await DBSession.connect(profile: ConnectionProfile(name: "bench", host: "127.0.0.1", port: port,
                 username: "root", database: "shop", useTLS: true,
-                                 tlsVerify: false)   // 테스트 MySQL 은 자체 서명 인증서, password: env["GODDB_IT_PASSWORD"] ?? "")
+                                 tlsVerify: false), password: env["GODDB_IT_PASSWORD"] ?? "")
         case .postgres:
             guard let (p, pw) = MultiDB.profile(.postgres, database: "shop") else { return nil }
             s = try await DBSession.connect(profile: p, password: pw)
