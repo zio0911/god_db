@@ -328,6 +328,31 @@ scenario("cancel") {
 }
 
 /// 결과 빠른 필터 비우기 (× 버튼)
+/// 사이드바 테이블 줄 (목록은 보이는 줄만 손쉬운 사용에 나오므로 '테이블 검색' 으로 좁혀서 찾는다)
+func sidebarTable(_ name: String) -> Node? {
+    let isRow: (Node) -> Bool = { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == name }
+    if let f = app.find(2, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("테이블 검색") }) {
+        click(f)
+        key("a", [cmd])
+        paste(name)
+    }
+    return app.find(5, isRow)
+}
+
+/// 사이드바 '테이블 검색' 비우기
+func clearSidebarSearch() {
+    if let f = app.find(1, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("테이블 검색") }), !f.value.isEmpty {
+        click(f); key("a", [cmd]); key("delete")
+    }
+}
+
+/// 그 자리에서 마우스 휠을 굴린다 (음수 = 아래로)
+func scrollAt(_ n: Node, lines: Int32) {
+    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: n.frame.midX, y: n.frame.midY), mouseButton: .left))
+    post(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0))
+    Thread.sleep(forTimeInterval: 0.4)
+}
+
 func clearFilter() {
     if let x = app.find(0.5, { $0.role == "AXButton" && $0.label.contains("필터 지우기") }) { press(x) }
 }
@@ -599,9 +624,10 @@ scenario("prodIdle") {
 scenario("idSearch") {
     // ID 로 찾기: 사이드바에서 ui_orders 를 고르고 ⌥⌘F → 로그 3줄 붙여넣기 → 3개 추출 → 조회 → 없는 ID 1개
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
-    guard let table = app.find(10, { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == "ui_orders" }) else {
+    guard let table = sidebarTable("ui_orders") else {
         throw Abort(message: "사이드바에 ui_orders 가 없어요")
     }
+    defer { clearSidebarSearch() }
     click(table)
     key("f", [cmd, opt])
     guard let area = app.find(4, { $0.modal && $0.role == "AXTextArea" }) else { check("⌥⌘F ID 로 찾기 열기", false); return }
