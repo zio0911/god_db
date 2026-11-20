@@ -612,7 +612,7 @@ scenario("prodIdle") {
 scenario("idSearch") {
     // ID 로 찾기: 사이드바에서 ui_orders 를 고르고 ⌥⌘F → 로그 3줄 붙여넣기 → 3개 추출 → 조회 → 없는 ID 1개
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
-    guard let table = app.find(10, { !$0.modal && $0.role == "AXStaticText" && $0.value == "ui_orders" }) else {
+    guard let table = app.find(10, { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == "ui_orders" }) else {
         throw Abort(message: "사이드바에 ui_orders 가 없어요")
     }
     click(table)
@@ -821,7 +821,7 @@ scenario("tableNote") {
     // 테이블 메모 (AI 없이): ui_schools 우클릭 > 테이블 메모… → 메모 추가 → 찾는 말 입력 → 저장 → 사이드바 📝 → 지우면 📝 사라짐
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
     clearFilter()
-    guard let table = app.find(10, { !$0.modal && $0.role == "AXStaticText" && $0.value == "ui_schools" }) else {
+    guard let table = app.find(10, { !$0.modal && ["AXStaticText", "AXHeading"].contains($0.role) && $0.text.trimmingCharacters(in: .whitespaces) == "ui_schools" }) else {
         throw Abort(message: "사이드바에 ui_schools 가 없어요")
     }
     click(table, right: true)
