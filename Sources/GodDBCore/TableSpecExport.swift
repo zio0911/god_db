@@ -29,6 +29,8 @@ public enum TableSpecExport {
         public var notNull: String
         public var defaultValue: String
         public var comment: String
+        /// 설명 칸: 논리명과 코멘트 (같거나 하나만 있으면 하나만)
+        public var description: String { TableSpecExport.describe(logical: logical, comment: comment) }
         public var references: String
         public var note: String
     }
@@ -194,29 +196,38 @@ public enum TableSpecExport {
         return s
     }
 
+    /// 논리명 + 코멘트 → 설명 칸 ("회원번호 — 주문한 회원")
+    public static func describe(logical: String, comment: String) -> String {
+        let l = logical.trimmingCharacters(in: .whitespacesAndNewlines)
+        let c = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        if l.isEmpty { return c }
+        if c.isEmpty || c == l { return l }
+        return "\(l) — \(c)"
+    }
+
     static func tableSheet(_ model: DataModel, _ t: ModelTable, name: String) -> XLSXSheet {
         var s = XLSXSheet(name: name)
-        // no, 컬럼, 컬럼명, 타입, 길이, 키, NN, 기본값, 설명, 참조, 비고
-        s.columnWidths = [5, 22, 18, 12, 8, 8, 5, 18, 32, 24, 8]
+        // no, 컬럼, 타입, 길이, 키, NN, 기본값, 설명, 참조, 비고 (논리명은 설명 칸에)
+        s.columnWidths = [5, 22, 12, 8, 8, 5, 18, 40, 24, 8]
         let heading = t.physicalName.isEmpty ? name : t.physicalName
         s.set(1, 1, t.logicalName.isEmpty ? heading : "\(heading) · \(t.logicalName)", style: title)
-        s.merge(1, 1, 9, style: title)
-        s.set(1, 10, "← 목차", style: backLink)
-        s.merge(1, 10, 11, style: backLink)
-        s.link(1, 10, location: "\(XLSXSheet.quoted(tocSheetName))!A1", display: "← 목차")
+        s.merge(1, 1, 8, style: title)
+        s.set(1, 9, "← 목차", style: backLink)
+        s.merge(1, 9, 10, style: backLink)
+        s.link(1, 9, location: "\(XLSXSheet.quoted(tocSheetName))!A1", display: "← 목차")
         s.setHeight(1, 26)
         let info: [(String, String)] = [("설명", t.comment), ("DBMS · 스키마", "\(model.kind.title) · \(model.name)")]
         for (i, (k, v)) in info.enumerated() {
             let r = 2 + i
             s.set(r, 1, k, style: label); s.merge(r, 1, 2, style: label)
-            s.set(r, 3, v, style: wrap); s.merge(r, 3, 11, style: wrap)
+            s.set(r, 3, v, style: wrap); s.merge(r, 3, 10, style: wrap)
         }
 
         // 컬럼
         var r = 5
         s.set(r, 1, "컬럼", style: section)
         r += 1
-        for (c, h) in ["no", "컬럼", "컬럼명", "타입", "길이", "키", "NN", "기본값", "설명", "참조", "비고"].enumerated() {
+        for (c, h) in ["no", "컬럼", "타입", "길이", "키", "NN", "기본값", "설명", "참조", "비고"].enumerated() {
             s.set(r, c + 1, h, style: header)
         }
         s.freezeRows = r
@@ -225,24 +236,23 @@ public enum TableSpecExport {
         for c in cols {
             s.set(r, 1, .number(c.no), style: center)
             s.set(r, 2, c.physical, style: cell)
-            s.set(r, 3, c.logical, style: cell)
-            s.set(r, 4, c.type, style: cell)
-            s.set(r, 5, c.length, style: center)
-            s.set(r, 6, c.key, style: center)
-            s.set(r, 7, c.notNull, style: center)
-            s.set(r, 8, c.defaultValue, style: cell)
-            s.set(r, 9, c.comment, style: wrap)
-            s.set(r, 10, c.references, style: cell)
-            s.set(r, 11, c.note, style: center)
+            s.set(r, 3, c.type, style: cell)
+            s.set(r, 4, c.length, style: center)
+            s.set(r, 5, c.key, style: center)
+            s.set(r, 6, c.notNull, style: center)
+            s.set(r, 7, c.defaultValue, style: cell)
+            s.set(r, 8, c.description, style: wrap)
+            s.set(r, 9, c.references, style: cell)
+            s.set(r, 10, c.note, style: center)
             r += 1
         }
-        if cols.isEmpty { emptyRow(&s, r, spans: [(1, 11)]); r += 1 }
+        if cols.isEmpty { emptyRow(&s, r, spans: [(1, 10)]); r += 1 }
 
-        // 인덱스: no | 인덱스 (B:C) | 종류 (D:E) | 컬럼 (F:K)
+        // 인덱스: no | 인덱스 (B:C) | 종류 (D:E) | 컬럼 (F:J)
         r += 1
         s.set(r, 1, "인덱스", style: section)
         r += 1
-        let idxSpans = [(1, 1), (2, 3), (4, 5), (6, 11)]
+        let idxSpans = [(1, 1), (2, 3), (4, 5), (6, 10)]
         headerRow(&s, r, ["no", "인덱스", "종류", "컬럼"], spans: idxSpans)
         r += 1
         let idx = indexRows(model, t)
@@ -251,14 +261,14 @@ public enum TableSpecExport {
                     styles: [center, cell, center, cell])
             r += 1
         }
-        if idx.isEmpty { emptyRow(&s, r, spans: [(1, 11)]); r += 1 }
+        if idx.isEmpty { emptyRow(&s, r, spans: [(1, 10)]); r += 1 }
 
-        // 관계: no | 이름 (B:C) | 컬럼 → 참조 (D:H) | 관계 (I) | ON DELETE (J) | ON UPDATE (K)
+        // 관계: no | 이름 (B:C) | 컬럼 → 참조 (D:G) | 관계 (H) | ON DELETE (I) | ON UPDATE (J)
         r += 1
         s.set(r, 1, "관계 (외래 키)", style: section)
         s.merge(r, 1, 3, style: section)
         r += 1
-        let relSpans = [(1, 1), (2, 3), (4, 8), (9, 9), (10, 10), (11, 11)]
+        let relSpans = [(1, 1), (2, 3), (4, 7), (8, 8), (9, 9), (10, 10)]
         headerRow(&s, r, ["no", "이름", "컬럼 → 참조", "관계", "ON DELETE", "ON UPDATE"], spans: relSpans)
         r += 1
         let rels = relationRows(model, t)
@@ -267,7 +277,7 @@ public enum TableSpecExport {
                     spans: relSpans, styles: [center, cell, cell, center, center, center])
             r += 1
         }
-        if rels.isEmpty { emptyRow(&s, r, spans: [(1, 11)]) }
+        if rels.isEmpty { emptyRow(&s, r, spans: [(1, 10)]) }
         return s
     }
 

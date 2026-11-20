@@ -4,6 +4,13 @@ import Testing
 
 @Suite("TableSpecExport")
 struct TableSpecExportTests {
+    @Test func descriptionCombinesLogicalNameAndComment() {
+        #expect(TableSpecExport.describe(logical: "회원번호", comment: "") == "회원번호")
+        #expect(TableSpecExport.describe(logical: "", comment: "주문한 회원") == "주문한 회원")
+        #expect(TableSpecExport.describe(logical: "회원번호", comment: "회원번호") == "회원번호")
+        #expect(TableSpecExport.describe(logical: "회원번호", comment: "주문한 회원") == "회원번호 — 주문한 회원")
+    }
+
     /// 회원 1 — N 주문 (비식별), 주문 1 — N 주문상품 (식별), 상품 1 — N 주문상품
     static func model(kind: DatabaseKind = .mysql) -> DataModel {
         var m = DataModel(name: "샵", kind: kind)

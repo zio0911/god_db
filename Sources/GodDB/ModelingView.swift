@@ -105,6 +105,8 @@ struct ModelListView: View {
                         Menu(tr("내보내기")) {
                             Button(tr("모델링 파일 저장하기…")) { modeling.exportFile(m.id) }
                             Button(tr("테이블 명세서로 저장하기…")) { modeling.exportTableSpec(m.id) }
+                            Divider()
+                            Button(tr("다이어그램 PNG 저장하기…")) { ModelEditorView.exportPNG(m, app: app) }
                         }
                         Divider()
                         Button(tr("삭제…"), role: .destructive) { deleting = m }
@@ -390,7 +392,14 @@ struct ModelEditorView: View {
 
     @MainActor
     private func exportPNG() {
-        let view = ModelCanvas(model: .constant(model), nameMode: nameMode, tool: .constant(.select),
+        Self.exportPNG(model, app: app)
+    }
+
+    /// 다이어그램을 PNG 로 저장 (도구 막대 · 모델 목록 우클릭 내보내기 공용). 이름 표시는 화면 설정을 따른다
+    @MainActor
+    static func exportPNG(_ model: DataModel, app: AppState) {
+        let mode = DiagramNameMode(rawValue: UserDefaults.standard.string(forKey: "GodDB.model.nameMode") ?? "") ?? .logical
+        let view = ModelCanvas(model: .constant(model), nameMode: mode, tool: .constant(.select),
                                pendingParent: .constant(nil), selection: .constant(nil))
             .background(Color(nsColor: .windowBackgroundColor))
             .environment(app)
