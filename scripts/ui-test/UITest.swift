@@ -635,7 +635,7 @@ scenario("savedQuery") {
     guard let nameField = app.find(4, { $0.modal && $0.role == "AXTextField" && $0.value.hasPrefix("SELECT id, customer") }) else {
         check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", false); return
     }
-    check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", nameField.value == "SELECT id, customer FROM ui_orders WHERE ", nameField.value)
+    check("⌥⌘S 쿼리 저장 창 열기 (이름 기본값 = 첫 줄 앞 40자)", nameField.value == "SELECT id, customer FROM ui_orders WHERE", nameField.value)   // 끝 공백은 뗀다
     check("찾은 빈칸 표시 (빈칸: :id)", app.find(2, { $0.modal && $0.text.contains("빈칸: :id") }) != nil)
     click(nameField)
     key("a", cmd)
