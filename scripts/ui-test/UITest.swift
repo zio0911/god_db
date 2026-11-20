@@ -686,16 +686,16 @@ scenario("savedQuery") {
     answer("취소")
 }
 
-/// 열린 우클릭 메뉴의 항목 (메뉴는 창 밖에 떠서 snapshot 에 없다)
+/// 열린 우클릭 메뉴의 항목. SwiftUI 우클릭 메뉴는 앱 바로 아래가 아니라 누른 뷰(표 · 목록) 안쪽에 AXMenu 로 붙는다
 func contextMenuItems() -> [Node] {
     var out: [Node] = []
-    var queue: [(AXUIElement, Int)] = ((attr(app.ax, kAXChildrenAttribute) as? [AXUIElement]) ?? [])
-        .filter { (attr($0, kAXRoleAttribute) as? String) == "AXMenu" }.map { ($0, 0) }
+    var queue: [(AXUIElement, Int)] = [(app.ax, 0)]
     while !queue.isEmpty {
         let (el, d) = queue.removeFirst()
-        let n = node(el)
-        if n.role == "AXMenuItem" { out.append(n) }
-        if d < 3, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
+        let role = (attr(el, kAXRoleAttribute) as? String) ?? ""
+        if role == "AXMenuBar" { continue }
+        if role == "AXMenuItem" { out.append(node(el)) }
+        if d < 40, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
     }
     return out
 }
