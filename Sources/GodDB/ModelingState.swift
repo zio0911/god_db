@@ -125,8 +125,10 @@ final class ModelingState {
 
     // MARK: - 파일
 
+    /// 모델 파일(.goddbmodel) 종류. JSON 하위 종류로 만들면(conformingTo: .json) 디스크의 파일이 받는 종류와 달라져
+    /// 불러오기 창에서 파일을 고를 수 없었다 → 확장자로만 만든다 (macOS 가 파일에 붙이는 종류와 같음)
     static var fileType: UTType {
-        UTType(filenameExtension: DataModel.fileExtension, conformingTo: .json) ?? .json
+        UTType(filenameExtension: DataModel.fileExtension) ?? .data
     }
 
     func exportFile(_ id: UUID) {
