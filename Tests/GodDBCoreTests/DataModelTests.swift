@@ -202,7 +202,7 @@ struct AssistantAITests {
     - 1. 모델링
     ## 15. 단축키
     | `⌘↩` | 실행 |
-    ## 27. 모델링 (MySQL Workbench 모델과 비슷)
+    ## 27. 모델링
     - 상단 모드에서 모델링을 고른다. SQL 추출, 리버스 엔지니어링.
     ```
     ## not a heading
@@ -215,7 +215,7 @@ struct AssistantAITests {
 
     @Test func parseSkipsTocAndChangelog() {
         let g = AppGuide(markdown: Self.md)
-        #expect(g.sections.map(\.title) == ["15. 단축키", "27. 모델링 (MySQL Workbench 모델과 비슷)", "29. 접속 그룹"])
+        #expect(g.sections.map(\.title) == ["15. 단축키", "27. 모델링", "29. 접속 그룹"])
         #expect(g.sections[1].body.contains("## not a heading"))
     }
 

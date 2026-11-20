@@ -1,7 +1,7 @@
 import GodDBCore
 import SwiftUI
 
-/// 테이블 수정 화면 (DataGrip Modify 와 비슷한 구성)
+/// 테이블 수정 화면 (왼쪽 트리 · 오른쪽 속성 · 아래 미리보기)
 /// 왼쪽: 테이블 > 컬럼 / 키 / 인덱스 / 외래 키 트리, 오른쪽: 고른 항목의 속성, 아래: ALTER 미리보기.
 struct TableEditorView: View {
     @Environment(AppState.self) private var app

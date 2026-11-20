@@ -13,6 +13,14 @@ final class AssistantState {
         didSet { UserDefaults.standard.set(Double(width), forKey: Layout.assistantWidth) }
     }
     var includeSQL = true
+    /// 🔎 데이터 위치 찾기: 다음 입력을 데이터 찾기로 보낸다
+    var finderMode = false
+    /// 데이터 찾기 답 카드 (답 메시지 id → 카드)
+    var finderCards: [UUID: DataFinderCard] = [:]
+    /// 운영 접속에서 [이 접속은 항상] 으로 샘플 조회를 허락한 접속 (앱을 켜 둔 동안)
+    var prodSampleAllowed: Set<UUID> = []
+    /// 운영 접속 샘플 조회 확인 창
+    var prodPrompt: ProdSamplePrompt?
     private var chats: [String: DiagramChat] = [:]
     /// "접속ID|DB" → 테이블 통계
     var stats: [String: [String: TableStats]] = [:]
@@ -137,7 +145,9 @@ extension AppState {
                                       focus: assistantFocus(question: question), stats: stats,
                                       sql: assistant.includeSQL ? tab?.text : nil,
                                       lastError: assistant.includeSQL ? tab?.error : nil)
-        return AssistantAI.messages(kind: p.kind, context: guide + "\n" + AssistantAI.contextText(ctx), history: history, english: english)
+        var context = guide + "\n" + AssistantAI.contextText(ctx)
+        if let notes = tableNotes.contextText(profileID: p.id, database: currentDatabase) { context += "\n" + notes }
+        return AssistantAI.messages(kind: p.kind, context: context, history: history, english: english)
     }
 
     func askAssistant(_ question: String) {
@@ -159,7 +169,7 @@ struct AssistantPanel: View {
     @FocusState private var inputFocused: Bool
     @State private var confirmDeleteAll = false
 
-    /// AI 어시스턴트는 쿼리 튜닝과 따로 켜고 끈다 (설정 > AI > AI 어시스턴트 사용 — 끄면 패널 자체가 숨겨진다)
+    /// 설정 > AI > AI 어시스턴트 사용 — 끄면 패널 자체가 숨겨진다
     private var unavailable: String? { nil }
 
     private var isModeling: Bool { app.mode == .modeling && app.modeling.selected != nil }
@@ -172,9 +182,9 @@ struct AssistantPanel: View {
             Divider()
             contextStrip
             Divider()
-            AIChatTranscript(chat: chat, sqlLabel: tr("AI 어시스턴트")) {
+            AIChatTranscript(chat: chat, sqlLabel: tr("AI 어시스턴트"), intro: {
                 intro(chat)
-            } extra: { m in
+            }, extra: { m in
                 if isModeling, m.text.contains("\"tables\""), let id = app.modeling.selectedID {
                     Button {
                         var n = 0
@@ -184,12 +194,31 @@ struct AssistantPanel: View {
                     } label: { Label(tr("물리명 적용 (빈 칸만)"), systemImage: "wand.and.stars") }
                         .buttonStyle(.hover)
                 }
-            }
+            }, hasCard: { m in
+                app.assistant.finderCards[m.id] != nil
+            }, card: { m in
+                if let card = app.assistant.finderCards[m.id] {
+                    DataFinderCardView(messageID: m.id, card: card, running: chat.running)
+                }
+            })
             .id(app.assistantScope)
             Divider()
             inputBar(chat)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .alert(tr("운영 DB 에서 후보 컬럼 값을 몇 개씩 조회해 로컬 AI 에 보낼까요?"),
+               isPresented: Binding(get: { app.assistant.prodPrompt != nil },
+                                    set: { shown in
+                                        // 버튼 동작이 먼저 답하게, 닫힘(esc 등)은 다음 차례에 [취소]로
+                                        if !shown { DispatchQueue.main.async { app.assistant.prodPrompt?.resolve(.cancel) } }
+                                    })) {
+            Button(tr("이번만")) { app.assistant.prodPrompt?.resolve(.once) }
+            Button(tr("이 접속은 항상")) { app.assistant.prodPrompt?.resolve(.always) }
+            Button(tr("취소"), role: .cancel) { app.assistant.prodPrompt?.resolve(.cancel) }
+        } message: {
+            Text(tr("%@ · 후보 컬럼마다 최대 20개 값을 이 PC 의 Ollama 에만 보내요. 값은 저장하지 않아요.",
+                    app.assistant.prodPrompt?.profileName ?? ""))
+        }
     }
 
     private func header(_ chat: DiagramChat) -> some View {
@@ -272,6 +301,8 @@ struct AssistantPanel: View {
         if app.assistant.includeSQL, let t = app.selectedTab, !t.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             out.append(("terminal", tr("SQL · %@", t.title)))
         }
+        let notes = min(50, app.tableNotes.notes(profileID: p.id, database: app.currentDatabase).count)
+        if notes > 0 { out.append(("note.text", tr("팀이 확인한 위치 %@개", "\(notes)"))) }
         return out
     }
 
@@ -282,6 +313,14 @@ struct AssistantPanel: View {
                             : tr("지금 접속의 테이블 구조, 코멘트, 인덱스, 크기 통계, 편집기 SQL 을 바탕으로 답해요. 데이터 행은 보내지 않아요."))
                 .font(.callout).foregroundStyle(.secondary)
             Text(tr("자주 쓰는 질문")).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 4)
+            if canFind {
+                Button(action: startFinder) {
+                    Label(tr("🔎 데이터 위치 찾기"), systemImage: "magnifyingglass").font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.hover)
+                .disabled(unavailable != nil || chat.running)
+            }
             ForEach(quickActions, id: \.self) { q in
                 Button { app.askAssistant(expand(q)) } label: {
                     Label(q, systemImage: "bolt").font(.caption).multilineTextAlignment(.leading)
@@ -326,14 +365,25 @@ struct AssistantPanel: View {
             if let unavailable {
                 Text(unavailable).font(.caption).foregroundStyle(.orange)
             }
+            if finderOn {
+                HStack(spacing: 4) {
+                    Label(tr("데이터 찾기"), systemImage: "magnifyingglass").font(.caption.weight(.semibold))
+                    Button { app.assistant.finderMode = false } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless)
+                        .help(tr("데이터 찾기 끄기"))
+                }
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+            }
             HStack(alignment: .bottom, spacing: 6) {
                 Menu {
+                    if canFind { Button(tr("🔎 데이터 위치 찾기"), action: startFinder) }
                     ForEach(quickActions, id: \.self) { q in Button(q) { app.askAssistant(expand(q)) } }
                 } label: { Image(systemName: "bolt.circle") }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help(tr("자주 쓰는 질문"))
                 .disabled(unavailable != nil || chat.running)
-                TextField(tr("질문을 입력하고 Enter"), text: $input, axis: .vertical)
+                TextField(finderOn ? tr("찾을 데이터 (예: 학년 정보)") : tr("질문을 입력하고 Enter"), text: $input, axis: .vertical)
                     .lineLimit(1...6)
                     .textFieldStyle(.roundedBorder)
                     .focused($inputFocused)
@@ -350,17 +400,31 @@ struct AssistantPanel: View {
             }
             .buttonStyle(.hover)
             .font(.title3)
-            Text(tr("구조·코멘트·통계·SQL 만 로컬 Ollama 에 보내요. 데이터 행은 보내지 않아요."))
+            Text(tr("구조 · 코멘트 · 통계 · SQL 을 로컬 Ollama 에 보내요. 데이터 찾기에서는 후보 컬럼의 값 몇 개(최대 20개)도 로컬 Ollama 에 보내요. 이 PC 밖으로는 나가지 않아요."))
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(10)
+    }
+
+    /// 데이터 찾기는 SQL 접속에서만 (Redis · 모델링 제외)
+    private var canFind: Bool { isSQL && !isModeling }
+    private var finderOn: Bool { canFind && app.assistant.finderMode }
+
+    private func startFinder() {
+        app.assistant.finderMode = true
+        inputFocused = true
     }
 
     private func send() {
         let q = input
         guard !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         input = ""
-        app.askAssistant(q)
+        // 데이터 찾기 모드이거나 "…어디 있어?" 꼴이면 데이터 찾기 (SQL 접속만, 애매하면 일반 질문)
+        if canFind, finderOn || DataFinder.isFindQuestion(q) {
+            app.findData(q)
+        } else {
+            app.askAssistant(q)
+        }
         inputFocused = true
     }
 }

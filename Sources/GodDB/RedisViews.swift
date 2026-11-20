@@ -128,6 +128,8 @@ struct RedisSidebarSection: View {
                     Text(tr("초")).foregroundStyle(.secondary)
                 }
             }
+            // 오른쪽 세로 스크롤바와 겹치지 않게
+            .padding(.trailing, 14)
             .buttonStyle(.borderless)
             .font(.callout)
             .textCase(nil)
