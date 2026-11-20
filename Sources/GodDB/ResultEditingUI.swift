@@ -411,7 +411,8 @@ struct InlineCellEditor: NSViewRepresentable {
             let how: InlineCellEdit.Finish
             switch selector {
             case #selector(NSResponder.insertNewline(_:)): how = .commit
-            case #selector(NSResponder.cancelOperation(_:)): how = .cancel
+            // Esc: 입력란에서는 cancelOperation 대신 complete(자동완성)으로 오기도 한다 → 둘 다 취소
+            case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.complete(_:)): how = .cancel
             case #selector(NSResponder.insertTab(_:)): how = .next
             case #selector(NSResponder.insertBacktab(_:)): how = .previous
             default: return false
