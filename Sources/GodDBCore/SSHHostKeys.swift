@@ -251,23 +251,45 @@ public enum SSHHostKeys {
         p.standardError = err
         let input = Pipe()
         p.standardInput = stdin == nil ? FileHandle.nullDevice : input
-        do { try p.run() } catch { return RunResult(status: -1, stdout: "", stderr: error.localizedDescription) }
+        // 출력은 읽히는 대로 모으고, 끝나기를 제한 시간까지만 기다린다.
+        // (출력 끝(EOF)만 기다리면, 파이프를 물려받은 자식이 남아 있을 때 영원히 멈춘다 — CI 에서 실제로 멈췄다)
+        let lock = NSLock()
+        var o = Data(), e = Data()
+        let closed = DispatchSemaphore(value: 0)
+        func collect(_ pipe: Pipe, _ append: @escaping (Data) -> Void) {
+            pipe.fileHandleForReading.readabilityHandler = { h in
+                let d = h.availableData
+                if d.isEmpty { h.readabilityHandler = nil; closed.signal() } else { lock.lock(); append(d); lock.unlock() }
+            }
+        }
+        collect(out) { o.append($0) }
+        collect(err) { e.append($0) }
+        let done = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in done.signal() }
+        do { try p.run() } catch {
+            out.fileHandleForReading.readabilityHandler = nil
+            err.fileHandleForReading.readabilityHandler = nil
+            return RunResult(status: -1, stdout: "", stderr: error.localizedDescription)
+        }
         if let stdin {
             input.fileHandleForWriting.write(Data(stdin.utf8))
             try? input.fileHandleForWriting.close()
         }
-        // 출력을 끝까지 읽으며 기다린다 (파이프가 차서 멈추지 않게). 제한 시간이 지나면 끝낸다.
-        let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        var o = Data(), e = Data()
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global().async { o = out.fileHandleForReading.readDataToEndOfFile(); group.leave() }
-        e = err.fileHandleForReading.readDataToEndOfFile()
-        group.wait()
-        p.waitUntilExit()
-        killer.cancel()
-        return RunResult(status: p.terminationStatus, stdout: String(decoding: o, as: UTF8.self),
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            p.terminate()
+            if done.wait(timeout: .now() + 1) == .timedOut {
+                kill(p.processIdentifier, SIGKILL)
+                _ = done.wait(timeout: .now() + 1)
+            }
+        }
+        // 남은 출력은 두 파이프가 닫힐 때까지 잠깐만 더 받는다
+        _ = closed.wait(timeout: .now() + 1)
+        _ = closed.wait(timeout: .now() + 1)
+        out.fileHandleForReading.readabilityHandler = nil
+        err.fileHandleForReading.readabilityHandler = nil
+        lock.lock(); defer { lock.unlock() }
+        let status = p.isRunning ? -1 : p.terminationStatus
+        return RunResult(status: status, stdout: String(decoding: o, as: UTF8.self),
                          stderr: String(decoding: e, as: UTF8.self))
     }
 }
