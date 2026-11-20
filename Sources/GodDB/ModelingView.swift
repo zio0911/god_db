@@ -33,6 +33,9 @@ struct ModelingView: View {
         .sheet(isPresented: Binding(get: { app.showReverseEngineer }, set: { app.showReverseEngineer = $0 })) {
             ReverseEngineerSheet()
         }
+        .sheet(item: Binding(get: { modeling.tableSpecModel }, set: { modeling.tableSpecModel = $0 })) { m in
+            TableSpecExportSheet(model: m)
+        }
     }
 }
 
@@ -99,7 +102,10 @@ struct ModelListView: View {
                     .contextMenu {
                         Button(tr("이름 바꾸기")) { renameText = m.name; renaming = m.id }
                         Button(tr("복제")) { modeling.duplicate(m.id) }
-                        Button(tr("파일로 내보내기…")) { modeling.exportFile(m.id) }
+                        Menu(tr("내보내기")) {
+                            Button(tr("모델링 파일 저장하기…")) { modeling.exportFile(m.id) }
+                            Button(tr("테이블 명세서로 저장하기…")) { modeling.exportTableSpec(m.id) }
+                        }
                         Divider()
                         Button(tr("삭제…"), role: .destructive) { deleting = m }
                     }
@@ -181,8 +187,10 @@ struct ModelEditorView: View {
                             .help(tr("다이어그램에 논리명 / 물리명 / 둘 다"))
                             HStack(spacing: 2) {
                                 Button { zoom = max(0.3, zoom - 0.1) } label: { Image(systemName: "minus.magnifyingglass") }
+                                    .help(tr("축소"))
                                 Text("\(Int(zoom * 100))%").monospacedDigit().font(.caption).frame(width: 38)
                                 Button { zoom = min(2, zoom + 0.1) } label: { Image(systemName: "plus.magnifyingglass") }
+                                    .help(tr("확대"))
                             }
                             .buttonStyle(.hover)
                             .padding(.horizontal, 4).padding(.vertical, 2)
@@ -241,27 +249,32 @@ struct ModelEditorView: View {
                 .textFieldStyle(.plain)
                 .font(.headline)
                 .frame(minWidth: 90, maxWidth: 180)
+                .help(tr("모델 이름"))
             Picker("", selection: $model.kind) {
                 ForEach([DatabaseKind.mysql, .postgres, .mssql], id: \.self) { Text($0.title).tag($0) }
             }
             .labelsHidden()
             .fixedSize()
-            .help(tr("SQL 을 뽑을 대상 DB"))
+            .help(tr("대상 DB — SQL 추출 문법과 자주 쓰는 타입 목록에 써요"))
             Divider().frame(height: 16)
-            toolButton(.select, "cursorarrow", tr("선택 / 이동"))
-            toolButton(.addTable, "tablecells.badge.ellipsis", tr("테이블 추가"))
-            toolButton(.relation(.oneToMany, identifying: false), "arrow.triangle.branch", tr("1:N 비식별 관계"), label: "1:N")
-            toolButton(.relation(.oneToMany, identifying: true), "arrow.triangle.branch", tr("1:N 식별 관계 (자식 PK 에 포함)"), label: "1:N ●")
-            toolButton(.relation(.oneToOne, identifying: false), "arrow.left.and.right", tr("1:1 관계"), label: "1:1")
+            toolButton(.select, "cursorarrow", tr("선택 / 이동 — 테이블·관계를 눌러 고르고, 카드를 끌어 옮겨요"))
+            toolButton(.addTable, "tablecells.badge.ellipsis", tr("테이블 추가 — 이 도구를 고른 뒤 다이어그램 빈 곳을 누르면 새 테이블이 생겨요"))
+            toolButton(.relation(.oneToMany, identifying: false), "arrow.triangle.branch",
+                       tr("1:N 비식별 관계 — 부모 테이블, 자식 테이블 순서로 누르면 FK 컬럼이 자식에 생겨요"), label: "1:N")
+            toolButton(.relation(.oneToMany, identifying: true), "arrow.triangle.branch",
+                       tr("1:N 식별 관계 — 부모 키가 자식의 기본 키에 포함돼요 (부모 → 자식 순서로 누르기)"), label: "1:N ●")
+            toolButton(.relation(.oneToOne, identifying: false), "arrow.left.and.right",
+                       tr("1:1 관계 — 부모 → 자식 순서로 누르면 유니크 FK 컬럼이 자식에 생겨요"), label: "1:1")
             Divider().frame(height: 16)
             Button { modeling.undoLast(model.id) } label: { Image(systemName: "arrow.uturn.backward") }
                 .disabled(!modeling.canUndo(model.id))
-                .help(tr("되돌리기 (테이블·관계 추가/삭제, 이동)"))
+                .help(tr("되돌리기 — 마지막 구조 변경(테이블·관계 추가/삭제, 이동, 자동 정렬)을 취소해요"))
             Button {
                 modeling.checkpoint(model.id)
                 withAnimation(.easeInOut(duration: 0.25)) { autoLayout() }
-            } label: { Image(systemName: "rectangle.3.group") }
-                .help(tr("자동 정렬"))
+            } label: { Image(systemName: "square.grid.3x3").contentShape(Rectangle()) }
+                .disabled(model.tables.isEmpty)
+                .help(tr("자동 정렬 — 테이블을 관계에 따라 겹치지 않게 다시 배치"))
             Spacer(minLength: 8)
             Button { showIssues.toggle() } label: {
                 let errors = issues.filter { $0.level == .error }.count
@@ -269,16 +282,25 @@ struct ModelEditorView: View {
                       systemImage: errors > 0 ? "xmark.octagon.fill" : (issues.isEmpty ? "checkmark.seal.fill" : "exclamationmark.triangle.fill"))
                     .foregroundStyle(errors > 0 ? .red : (issues.isEmpty ? .green : .orange))
             }
-            .help(tr("모델 검사 (물리명·타입·기본 키)"))
+            .help(tr("모델 검사 — 물리명·타입·기본 키 문제를 보여 줘요. 오류가 있으면 SQL 추출을 막아요"))
             .popover(isPresented: $showIssues, arrowEdge: .bottom) { issueList(issues) }
-            Button { exportPNG() } label: { Image(systemName: "photo") }
-                .help(tr("PNG 저장"))
+            Menu {
+                Button(tr("모델링 파일 저장하기…")) { modeling.exportFile(model.id) }
+                Button(tr("테이블 명세서로 저장하기…")) { modeling.exportTableSpec(model.id) }
+                Divider()
+                Button(tr("다이어그램 PNG 저장하기…")) { exportPNG() }
+            } label: {
+                Label(tr("내보내기"), systemImage: "square.and.arrow.up")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(tr("내보내기 — 모델링 파일(.goddbmodel), 테이블 명세서(엑셀), 다이어그램 PNG 로 저장해요"))
             Button { showCompare = true } label: { Label(tr("DB와 비교"), systemImage: "arrow.left.arrow.right").fixedSize() }
                 .help(tr("연결된 DB 와 비교해서 모델에 맞추는 ALTER SQL 을 만들어요 (Synchronize)"))
                 .disabled(app.state != .connected || app.selectedProfile?.kind.isSQL != true)
             Button { showSQL = true } label: { Label(tr("SQL 추출"), systemImage: "doc.text").fixedSize() }
                 .buttonStyle(.borderedProminent)
-                .help(tr("CREATE TABLE · FK SQL 로 뽑기 (Forward Engineering)"))
+                .help(tr("SQL 추출 — 모델을 CREATE TABLE · FK SQL 로 뽑아 복사하거나 저장해요"))
         }
         .buttonStyle(.hover)
         .padding(.horizontal, 12)
@@ -294,6 +316,7 @@ struct ModelEditorView: View {
             .fixedSize()
             .padding(.horizontal, 4).padding(.vertical, 2)
             .background(tool == t ? Color.accentColor.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .contentShape(Rectangle())
         }
         .help(help)
     }
@@ -354,17 +377,13 @@ struct ModelEditorView: View {
     }
 
     private func autoLayout() {
-        let metas = model.tables.map { t in
-            TableMeta(name: t.id.uuidString, columns: t.columns.map { ColumnMeta(name: $0.id.uuidString, columnType: "", nullable: true) })
-        }
-        let fks = model.relations.map {
-            ForeignKeyMeta(name: "r", table: $0.child.uuidString, columns: [], referencedTable: $0.parent.uuidString, referencedColumns: [])
-        }
-        let frames = DiagramLayout.frames(metas, extra: fks, cardWidth: ModelCanvas.cardWidth)
+        // 카드 높이는 화면과 같은 계산 (컬럼이 많은 카드도 겹치지 않게)
+        let frames = ModelLayout.frames(model, options: .init(cardWidth: ModelCanvas.cardWidth),
+                                        cardHeight: ModelCanvas.cardHeight)
         for i in model.tables.indices {
-            if let f = frames[model.tables[i].id.uuidString] {
-                model.tables[i].x = f.minX + 40
-                model.tables[i].y = f.minY + 40
+            if let f = frames[model.tables[i].id] {
+                model.tables[i].x = f.minX
+                model.tables[i].y = f.minY
             }
         }
     }
