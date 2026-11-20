@@ -450,6 +450,23 @@ func startCompare(target: String, sourceDB: String, targetDB: String) throws {
     press(go)
 }
 
+/// 열린 우클릭 메뉴에서 항목 찾기 (SwiftUI 우클릭 메뉴는 누른 뷰 안쪽에 AXMenu 로 붙는다)
+func openMenuItem(_ timeout: Double, _ pred: (Node) -> Bool) -> Node? {
+    let end = Date().addingTimeInterval(timeout)
+    repeat {
+        var queue: [(AXUIElement, Int)] = [(app.ax, 0)]
+        while !queue.isEmpty {
+            let (el, d) = queue.removeFirst()
+            let role = (attr(el, kAXRoleAttribute) as? String) ?? ""
+            if role == "AXMenuBar" { continue }
+            if role == "AXMenuItem" { let n = node(el); if pred(n) { return n } }
+            if d < 40, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] { queue += kids.map { ($0, d + 1) } }
+        }
+        Thread.sleep(forTimeInterval: 0.25)
+    } while Date() < end
+    return nil
+}
+
 scenario("schemaCompare") {
     guard let seg = app.find(3, { $0.role == "AXRadioButton" && $0.label == "스키마 비교" }) else { throw Abort(message: "모드 버튼 없음") }
     click(seg)
@@ -478,13 +495,14 @@ scenario("schemaCompare") {
     check("스키마 비교: ⌘C 로 두 테이블 SQL 복사 (목록 순서)",
           copied == wantCustomers + "\n\n" + wantOrders, copied)
 
-    // ⌘A 로 모두 고르고 ⌘C (보이는 항목이 두 개뿐)
+    // 우클릭 '모두 선택' 후 ⌘C (보이는 항목이 두 개뿐)
     click(second)
-    key("a", cmd)
+    click(second, right: true)
+    if let all = openMenuItem(3, { $0.label.contains("모두 선택") }) { press(all) } else { key("escape") }
     setClipboard("")
     key("c", cmd)
     copied = clipboard()
-    check("스키마 비교: ⌘A · ⌘C 로 전체 복사", copied.contains(wantCustomers) && copied.contains(wantOrders), copied)
+    check("스키마 비교: 우클릭 '모두 선택' · ⌘C 로 전체 복사", copied.contains(wantCustomers) && copied.contains(wantOrders), copied)
 
     // 대상이 닫힌 포트면 계속 돌지 않고 오류와 [다시 시도]
     try startCompare(target: "UI 닫힌 포트 · 개발", sourceDB: "shop", targetDB: "shop")
