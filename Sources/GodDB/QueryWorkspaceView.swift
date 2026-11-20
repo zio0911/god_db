@@ -630,11 +630,21 @@ struct ResultGrid: View {
             // 편집 가능한 결과에서 칸 더블클릭: 그 칸을 그 자리에서 고친다.
             // 그 밖(편집 불가 결과 · 테이블 컬럼이 아닌 칸 · 여러 줄 값 · 칸 밖 · ↩ 키): 행을 골라 오른쪽 상세 패널을 연다
             selection = ids
-            if NSApp.currentEvent?.type != .keyDown, ids.count == 1, let c = pointer.cell, ids.contains(c.row),
+            if NSApp.currentEvent?.type != .keyDown, ids.count == 1, let rowID = ids.first,
+               let c = clickedCell(row: rowID) ?? pointer.cell.flatMap({ $0.row == rowID ? $0 : nil }),
                canEditInline(c) {
                 editingCell = c
             }
         }
+    }
+
+    /// 더블클릭한 위치의 칸 (머리글 이름으로 컬럼을 찾고, 같은 이름이 여럿이면 화면 순서로)
+    private func clickedCell(row: Int) -> GridCell? {
+        guard let hit = PointerCell.clickedColumn() else { return nil }
+        let named = result.columns.filter { hit.title == $0.name || hit.title.hasPrefix($0.name + " ↗") }
+        if named.count == 1, let col = named.first { return GridCell(row: row, column: col.id) }
+        guard hit.index < result.columns.count else { return nil }
+        return GridCell(row: row, column: result.columns[hit.index].id)
     }
 
     /// 머리글: 외래 키 컬럼이면 이름 옆에 ↗ (추정 관계만 있으면 흐리게)

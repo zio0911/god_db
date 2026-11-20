@@ -306,6 +306,22 @@ struct GridCell: Hashable {
 /// 마우스가 올라간 칸. 더블클릭 · 우클릭이 어느 칸인지 알기 위해 쓰며, 바뀌어도 화면을 다시 그리지 않는다.
 final class PointerCell {
     var cell: GridCell?
+
+    /// 지금 처리 중인 마우스 이벤트가 표의 몇 번째 컬럼(화면 순서)에 떨어졌는지와 그 머리글.
+    /// 마우스를 움직이지 않고 누르면(결과가 새로 그려진 뒤 등) hover 가 오지 않으므로 이벤트 위치로 직접 찾는다.
+    static func clickedColumn() -> (index: Int, title: String)? {
+        guard let ev = NSApp.currentEvent, let window = ev.window,
+              [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(ev.type),
+              var view = window.contentView?.hitTest(ev.locationInWindow) else { return nil }
+        while !(view is NSTableView) {
+            guard let parent = view.superview else { return nil }
+            view = parent
+        }
+        guard let table = view as? NSTableView else { return nil }
+        let index = table.column(at: table.convert(ev.locationInWindow, from: nil))
+        guard index >= 0, index < table.tableColumns.count else { return nil }
+        return (index, table.tableColumns[index].title)
+    }
 }
 
 /// 결과 표 칸 하나를 그 자리에서 고치는 한 줄 입력란 (고치는 칸에만 하나 만든다)
