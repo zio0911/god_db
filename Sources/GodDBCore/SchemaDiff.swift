@@ -44,6 +44,12 @@ public struct SchemaDiffReport: Sendable {
     public var fixScript: String {
         items.compactMap(\.fixSQL).joined(separator: "\n\n")
     }
+
+    /// 고른 항목들의 보정 SQL 을 목록(`items`) 순서대로 빈 줄로 이어 붙인다.
+    /// 고른 순서와 관계없이 목록 순서를 따르고, 참고용(SQL 없음) 항목은 건너뛴다.
+    public static func fixSQL(of items: [SchemaDiffItem], selected: Set<SchemaDiffItem.ID>) -> String {
+        items.filter { selected.contains($0.id) }.compactMap(\.fixSQL).joined(separator: "\n\n")
+    }
 }
 
 public enum SchemaDiff {
