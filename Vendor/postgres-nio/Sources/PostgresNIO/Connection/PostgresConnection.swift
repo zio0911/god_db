@@ -68,10 +68,20 @@ public final class PostgresConnection: @unchecked Sendable {
             configureSSLCallback = { channel, postgresChannelHandler in
                 channel.eventLoop.assertInEventLoop()
 
-                let sslHandler = try NIOSSLClientHandler(
-                    context: context,
-                    serverHostname: configuration.serverNameForTLS
-                )
+                let sslHandler: NIOSSLClientHandler
+                if let callback = configuration.tls.customVerificationCallback {
+                    // GodDB 패치 (GODDB_PATCH.md 변경 3)
+                    sslHandler = try NIOSSLClientHandler(
+                        context: context,
+                        serverHostname: configuration.serverNameForTLS,
+                        customVerificationCallback: callback
+                    )
+                } else {
+                    sslHandler = try NIOSSLClientHandler(
+                        context: context,
+                        serverHostname: configuration.serverNameForTLS
+                    )
+                }
                 try channel.pipeline.syncOperations.addHandler(sslHandler, position: .before(postgresChannelHandler))
             }
         case .disable:

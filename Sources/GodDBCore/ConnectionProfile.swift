@@ -77,6 +77,10 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     public var group: String = ""
     /// 접속 환경 (운영이면 데이터를 바꾸기 전에 항상 확인)
     public var environment: ConnectionEnvironment = .none
+    /// TLS 서버 인증서 확인 (F9-3, 기본 켬 — 예전 접속도 켬으로 읽는다)
+    public var tlsVerify: Bool = true
+    /// 사용자가 신뢰한 서버 인증서(맨 앞, DER)의 SHA-256 "3F:A2:…" (없으면 nil)
+    public var tlsPinSHA256: String?
 
     public init(
         id: UUID = UUID(),
@@ -87,6 +91,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         username: String = "",
         database: String = "",
         useTLS: Bool = true,
+        tlsVerify: Bool = true,
         readOnly: Bool = false,
         ssh: SSHConfig? = nil,
         savePassword: Bool = true
@@ -99,6 +104,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         self.username = username
         self.database = database
         self.useTLS = useTLS
+        self.tlsVerify = tlsVerify
         self.readOnly = readOnly
         self.ssh = ssh
         self.savePassword = savePassword
@@ -122,6 +128,8 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         sentinelMaster = try c.decodeIfPresent(String.self, forKey: .sentinelMaster) ?? ""
         group = try c.decodeIfPresent(String.self, forKey: .group) ?? ""
         environment = try c.decodeIfPresent(ConnectionEnvironment.self, forKey: .environment) ?? .none
+        tlsVerify = try c.decodeIfPresent(Bool.self, forKey: .tlsVerify) ?? true
+        tlsPinSHA256 = try c.decodeIfPresent(String.self, forKey: .tlsPinSHA256)
     }
 }
 

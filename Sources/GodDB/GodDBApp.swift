@@ -34,6 +34,16 @@ struct GodDBApp: App {
             ModelingSample.render(dir: CommandLine.arguments[i + 1], app: app)
             exit(0)
         }
+        // 개발용: GodDB --export-table-spec-sample <out.xlsx> → 샘플 모델의 테이블 명세서를 저장하고 종료
+        if let i = CommandLine.arguments.firstIndex(of: "--export-table-spec-sample"), CommandLine.arguments.count > i + 1 {
+            let m = ModelingSample.model()
+            let info = TableSpecInfo(systemName: m.name, author: NSFullUserName(), date: TableSpecExportSheet.today())
+            do { try TableSpecExport.data(m, info: info).write(to: URL(fileURLWithPath: CommandLine.arguments[i + 1])) } catch {
+                print(error.localizedDescription)
+                exit(1)
+            }
+            exit(0)
+        }
         // `swift run` 으로 띄워도 Dock 아이콘과 메뉴가 있는 일반 앱으로 동작하게 한다.
         NSApplication.shared.setActivationPolicy(.regular)
         // 실행 중 Dock·⌘Tab 아이콘을 직접 지정한다. (macOS 아이콘 캐시가 예전 등록을 쓰거나,
@@ -92,6 +102,7 @@ struct GodDBApp: App {
             }
             CommandGroup(after: .appInfo) {
                 Button(tr("업데이트 확인…")) { UpdateController.shared.checkNow() }
+                Button(tr("이전 버전 설치…")) { app.showPreviousVersions = true }
             }
             CommandGroup(after: .sidebar) {
                 Button(tr("레이아웃 초기화")) { Layout.reset(app) }
@@ -112,6 +123,15 @@ struct GodDBApp: App {
                 Button(tr("객체 빠른 찾기…")) { app.showQuickOpen = true }
                     .keyboardShortcut("o", modifiers: .command)
                     .disabled(app.state != .connected || app.selectedProfile?.kind == .redis)
+                Button(tr("ID 로 찾기…")) { app.openIDSearch() }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+                    .disabled(!app.canSearchIDs)
+                Button(tr("쿼리 저장…")) { app.openSaveQuery() }
+                    .keyboardShortcut("s", modifiers: [.command, .option])
+                    .disabled(!app.canSaveQuery)
+                Button(tr("저장 쿼리…")) { app.openSavedQueries() }
+                    .keyboardShortcut("k", modifiers: [.command, .shift])
+                    .disabled(!app.canOpenSavedQueries)
                 Button(tr("쿼리 히스토리…")) { app.showHistory = true }
                     .keyboardShortcut("y", modifiers: .command)
             }

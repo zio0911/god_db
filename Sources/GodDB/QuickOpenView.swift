@@ -28,6 +28,9 @@ struct QuickOpenView: View {
             list.append(.init(kind: kind, schema: db, name: r.name, detail: r.comment))
         }
         for d in app.databases where d != db { list.append(.init(kind: .database, schema: d, name: d)) }
+        for q in app.savedQueries.search("", profileID: app.selectedProfileID) {
+            list.append(.init(kind: .savedQuery, schema: q.folder, name: q.name, detail: q.id.uuidString))
+        }
         return list + others
     }
 
@@ -89,12 +92,14 @@ struct QuickOpenView: View {
             Text(item.name).lineLimit(1)
             if item.kind == .column {
                 Text(item.detail).foregroundStyle(.secondary).lineLimit(1)
+            } else if item.kind == .savedQuery {
+                Text(tr("저장 쿼리")).font(.caption).foregroundStyle(.tertiary)
             } else if !item.detail.isEmpty {
                 Text(item.detail).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
             }
             Spacer(minLength: 8)
             if item.kind != .database {
-                Text(item.schema).font(.caption).foregroundStyle(item.schema == app.currentDatabase ? .secondary : .primary)
+                Text(item.schema).font(.caption).foregroundStyle(item.schema == app.currentDatabase || item.kind == .savedQuery ? .secondary : .primary)
                     .lineLimit(1)
             }
         }
@@ -109,6 +114,7 @@ struct QuickOpenView: View {
         case .trigger: "bolt"
         case .column: "text.alignleft"
         case .database: "cylinder.split.1x2"
+        case .savedQuery: "bookmark"
         }
     }
 
@@ -119,6 +125,7 @@ struct QuickOpenView: View {
         case .procedure, .function, .trigger: .purple
         case .column: .secondary
         case .database: .orange
+        case .savedQuery: .pink
         }
     }
 
@@ -147,6 +154,12 @@ struct QuickOpenView: View {
 
 extension AppState {
     func openQuickItem(_ item: QuickOpen.Item) async {
+        if item.kind == .savedQuery {
+            // 빠른 찾기 창이 닫힌 뒤에 빈칸 입력 창을 띄운다
+            try? await Task.sleep(for: .milliseconds(350))
+            if let id = UUID(uuidString: item.detail) { useSavedQuery(id, run: true) }
+            return
+        }
         if item.kind == .database {
             await selectDatabase(item.name)
             return
@@ -161,7 +174,7 @@ extension AppState {
             openTableQuery(item.detail)
         case .procedure, .function, .trigger:
             if let r = routines.first(where: { $0.name == item.name }) { await openRoutine(r) }
-        case .database:
+        case .database, .savedQuery:
             break
         }
     }

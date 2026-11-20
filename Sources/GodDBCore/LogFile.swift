@@ -4,7 +4,7 @@ import Foundation
 ///   ~/Library/Logs/GodDB/goddb-audit-2026-11-13.tsv
 /// 한 줄 = 한 행위, 탭으로 나눈 열: 시각 · 사용자@PC · 구분 · 대상 · 결과 · 내용 (엑셀로 바로 열 수 있다)
 /// 감사 대상(AuditRecord)이 있는 항목만 쓴다. 화면 이동·AI 내용 같은 건 상태창에만 남는다.
-/// 파일 쓰기는 별도 큐에서 하므로 화면을 막지 않는다. 사내 감사 요구로 기본은 영구 보관 (지우지 않음).
+/// 파일 쓰기는 별도 큐에서 하므로 화면을 막지 않는다. 감사 기록이라 기본은 영구 보관 (지우지 않음).
 public final class LogFile: @unchecked Sendable {
     public static let shared = LogFile(directory: defaultDirectory)
 

@@ -11,8 +11,8 @@ public struct AppGuide: Sendable {
     public static let about = """
     GodDB is a free, open-source (MIT license) native macOS database client written in Swift/SwiftUI.
     Author: zio0911 (GitHub). Source and releases: https://github.com/zio0911/god_db
-    Supports MySQL 5.7/8.x, PostgreSQL 12+, SQL Server 2016+, Redis 6+. Local Ollama is used for AI (query tuning,
-    diagram/modeling AI and this assistant); nothing is sent to external servers and row data is never shared with AI.
+    Supports MySQL 5.7/8.x, PostgreSQL 12+, SQL Server 2016+, Redis 6+. Local Ollama is used for AI (diagram/modeling AI
+    and this assistant); nothing is sent to external servers and row data is never shared with AI.
     Main modes (top segment): 쿼리 (query editor), 스키마 비교 (schema compare), 모델링 (data modeling).
     """
 

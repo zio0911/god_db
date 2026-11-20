@@ -4,6 +4,8 @@ import Foundation
 public enum QuickOpen {
     public enum Kind: String, Sendable, CaseIterable {
         case table, view, procedure, function, trigger, column, database
+        /// 저장 쿼리 (schema = 폴더, detail = 저장 쿼리 id)
+        case savedQuery
     }
 
     public struct Item: Identifiable, Hashable, Sendable {
