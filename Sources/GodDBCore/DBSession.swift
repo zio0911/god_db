@@ -106,7 +106,7 @@ public actor DBSession {
         }
     }
 
-    private static func makeDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint) async throws -> any DBDriver {
+    static func makeDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint) async throws -> any DBDriver {
         switch kind {
         case .mysql: try await MySQLDriver.connect(endpoint)
         case .postgres: try await PostgresDriver.connect(endpoint)
@@ -128,12 +128,12 @@ public actor DBSession {
         serverSessionID = opened.sessionID
     }
 
-    private struct OpenedDriver: Sendable {
+    struct OpenedDriver: Sendable {
         let driver: any DBDriver
         let sessionID: Int?
     }
 
-    private static func prepareDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint,
+    static func prepareDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint,
                                       dialect: any SQLDialect, readOnly: Bool) async throws -> OpenedDriver {
         let d = try await makeDriver(kind, endpoint)
         do {
@@ -163,6 +163,15 @@ public actor DBSession {
         defer { Task { await other.close() } }
         _ = try await other.query(dialect.cancelSQL(sessionID: id))
         return true
+    }
+
+    /// 잠깐 쓰는 별도 연결 (AI 데이터 찾기의 샘플 조회). 같은 주소 · 계정 · 읽기전용 설정 · 지금 DB 로 새 연결을 연다.
+    /// 시간이 넘은 조회는 그 연결만 끊으므로 사용자의 이 세션(열린 트랜잭션 · 실행 중인 쿼리)은 그대로다.
+    /// 연결 전이면 nil.
+    public func sideConnection() -> SideConnection? {
+        guard let endpoint, driver != nil else { return nil }
+        return SideConnection(kind: profile.kind, dialect: dialect, endpoint: endpoint, readOnly: profile.readOnly,
+                              container: current, connectTimeout: min(connectTimeout, 10))
     }
 
     /// SQL Server 는 취소하면 세션이 끊기므로 다시 연결하고 보던 DB 로 돌아간다. 열린 트랜잭션은 서버가 롤백했다.

@@ -67,6 +67,13 @@ INSERT INTO ui_schools VALUES (1,'한빛초등학교'),(2,'푸른중학교');
 CREATE TABLE ui_students (id INT PRIMARY KEY, name VARCHAR(50) COMMENT '학생 이름',
   school_id INT COMMENT '학교 번호', grade_level INT COMMENT '학년') COMMENT '학생';
 INSERT INTO ui_students VALUES (1,'student1',1,3),(2,'student2',2,1);
+-- AI 데이터 찾기: 코멘트 없는 영어 약어 테이블 (한글 질문 → 약어 컬럼)
+DROP TABLE IF EXISTS tb_mbr_info;
+DROP TABLE IF EXISTS tb_stdnt_info;
+CREATE TABLE tb_mbr_info (mbr_no INT PRIMARY KEY, mbr_nm VARCHAR(50), mbr_tel_no VARCHAR(20), reg_dt DATE);
+INSERT INTO tb_mbr_info VALUES (1,'kim','010-1234-5678','2026-01-02'),(2,'lee','010-2222-3333','2026-02-03');
+CREATE TABLE tb_stdnt_info (stdnt_no INT PRIMARY KEY, stdnt_nm VARCHAR(50), schyr INT, ban_cd VARCHAR(5));
+INSERT INTO tb_stdnt_info VALUES (1,'a',1,'A'),(2,'b',3,'B'),(3,'c',6,'A');
 -- 외래 키 따라가기 추정 관계: ui_points.member_no → ui_members(member_no) (외래 키 제약 없음)
 CREATE TABLE ui_members (member_no INT PRIMARY KEY, nickname VARCHAR(50));
 INSERT INTO ui_members VALUES (1001,'neo'),(1002,'trinity');
@@ -106,7 +113,7 @@ set -e
 if [[ $KEEP == 0 ]]; then
   kill $APP_PID 2>/dev/null || true
   docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop \
-    -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools, ui_points, ui_members; DROP DATABASE IF EXISTS shop_cmp" 2>/dev/null || true
+    -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools, ui_points, ui_members, tb_mbr_info, tb_stdnt_info; DROP DATABASE IF EXISTS shop_cmp" 2>/dev/null || true
 fi
 echo
 echo "보고서: $WORK/report.txt"

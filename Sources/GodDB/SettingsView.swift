@@ -282,6 +282,9 @@ struct AISettingsView: View {
     @State private var status: OllamaStatus?
     @State private var checking = false
     @State private var startError: String?
+    /// [모델 확인] 결과 (nil = 아직 안 함)
+    @State private var probe: ModelHealth?
+    @State private var probing = false
 
     private var models: [OllamaModel] {
         if case .running(let m) = status { return m }
@@ -348,12 +351,26 @@ struct AISettingsView: View {
                         Text(settings.tuningModel).tag(settings.tuningModel)
                     }
                 }
-                Text(tr("추천: %@ (코드·SQL 에 강하고 한국어도 잘 알아들어요). 메모리가 넉넉하면 큰 모델일수록 정확해요.",
+                HStack {
+                    Button(tr("모델 확인")) { Task { await checkModel() } }
+                        .disabled(probing || models.isEmpty)
+                    if probing { ProgressView().controlSize(.small) }
+                    if let probe, !probing {
+                        if probe.isOK {
+                            Label("OK", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        } else {
+                            Label(probe.reason, systemImage: "xmark.octagon.fill").foregroundStyle(.red)
+                                .textSelection(.enabled).lineLimit(3)
+                        }
+                    }
+                }
+                .font(.callout)
+                Text(tr("추천: %@ (한국어 질문 · 데이터 찾기에 잘 맞아요). 메모리가 넉넉하면 큰 모델일수록 정확해요.",
                         AISettings.recommendedModels.joined(separator: ", ")))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Text("ollama pull qwen2.5-coder:14b").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    Button(tr("복사")) { Pasteboard.copy("ollama pull qwen2.5-coder:14b") }.controlSize(.small)
+                    Text("ollama pull qwen3:30b").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                    Button(tr("복사")) { Pasteboard.copy("ollama pull qwen3:30b") }.controlSize(.small)
                 }
             } header: {
                 Text(tr("모델"))
@@ -368,7 +385,20 @@ struct AISettingsView: View {
             .font(.callout)
         }
         .formStyle(.grouped)
-        .task { await refresh() }
+        .task {
+            // AI 어시스턴트의 [‹모델› 로 바꾸기] 로 바뀐 모델을 반영
+            if settings.tuningModel != AISettings.model { settings.tuningModel = AISettings.model }
+            await refresh()
+        }
+        .onChange(of: settings.tuningModel) { probe = nil }
+    }
+
+    /// 고른 모델(자동이면 쓸 모델)에 아주 짧은 요청을 보내 답하는지 확인 (AI 데이터 찾기와 같은 확인, 기억한 결과는 새로)
+    private func checkModel() async {
+        guard let model = AISettings.effectiveModel(installed: models.map(\.name)) else { return }
+        probing = true
+        probe = await ModelProbe.check(model: model, client: AISettings.client, useCache: false)
+        probing = false
     }
 
     @ViewBuilder

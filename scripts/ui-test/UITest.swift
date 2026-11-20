@@ -1000,6 +1000,32 @@ scenario("inlineEdit") {
     check("원래 값 'last' 로 되돌림", applyEdits() && app.find(8, cell("last")) != nil && app.find(1, cell("inline ok")) == nil)
 }
 
+scenario("dataFinder") {
+    // AI 데이터 찾기 (로컬 Ollama 필요): 코멘트 없는 약어 컬럼을 한글 질문으로 찾는다
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
+    click(ai)
+    defer { click(ai) }
+    func ask(_ question: String, expect: [String], timeout: Double = 150) -> Bool {
+        // 첫 질문은 🔎 버튼으로 데이터 찾기 모드, 그 뒤(버튼이 메뉴 안으로 들어감)는 "…어디 있어?" 자동 판단으로
+        if let finder = app.find(3, { $0.role == "AXButton" && $0.text.contains("데이터 위치 찾기") }) { press(finder) }
+        guard let field = app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role)
+            && ($0.label.contains("찾을 데이터") || $0.label.contains("질문을 입력")) }) else { return false }
+        click(field)
+        paste(question)
+        key("return")
+        let hit = app.find(timeout, { n in expect.contains { n.text.contains($0) } && (n.role == "AXStaticText") && n.text.contains(".") })
+        return hit != nil
+    }
+    check("AI 데이터 찾기: '회원 전화번호 어디 있어?' → tb_mbr_info.mbr_tel_no",
+          ask("회원 전화번호 어디 있어?", expect: ["tb_mbr_info.mbr_tel_no"]))
+    check("AI 데이터 찾기: 값을 로컬 AI 에 보낸 표시 (후보 컬럼 샘플 … (로컬))",
+          app.find(3, hasText("(로컬)")) != nil)
+    check("AI 데이터 찾기: '학년 정보는 어디 있어?' → schyr 또는 grade_level",
+          ask("학년 정보는 어디 있어?", expect: ["tb_stdnt_info.schyr", "ui_students.grade_level"]))
+    check("AI 데이터 찾기: 모델 오류 안내가 없음", app.find(1, hasText("응답하지 않아요")) == nil)
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {
