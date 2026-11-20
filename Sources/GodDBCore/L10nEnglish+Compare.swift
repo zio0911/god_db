@@ -11,5 +11,6 @@ extension L10nEnglish {
         "기준 접속 %@ 연결 실패": "Couldn't connect to source %@",
         "대상 접속 %@ 연결 실패": "Couldn't connect to target %@",
         "스키마 비교를 취소했어요.": "Schema comparison canceled.",
+        "테이블 코멘트 변경": "Table comment changed",
     ]
 }

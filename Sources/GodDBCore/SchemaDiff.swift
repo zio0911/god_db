@@ -5,6 +5,7 @@ public struct SchemaDiffItem: Identifiable, Hashable, Sendable {
     public enum Kind: String, Sendable {
         case missingTable      // 대상에 테이블 없음
         case extraTable        // 대상에만 있는 테이블 (참고용)
+        case differentTable    // 테이블 자체 속성(코멘트)이 다름
         case missingColumn
         case differentColumn
         case extraColumn       // 대상에만 있는 컬럼 (참고용, 자동 삭제 안 함)
@@ -24,7 +25,7 @@ public struct SchemaDiffItem: Identifiable, Hashable, Sendable {
     public var severity: Severity {
         switch kind {
         case .missingTable, .missingColumn, .missingIndex: return .missing
-        case .differentColumn, .differentIndex: return .different
+        case .differentTable, .differentColumn, .differentIndex: return .different
         case .extraTable, .extraColumn, .extraIndex: return .extra
         }
     }
@@ -107,6 +108,11 @@ public enum SchemaDiff {
         let tCols = Dictionary(t.columns.map { ($0.name.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
         let sColNames = Set(s.columns.map { $0.name.lowercased() })
         func sql(_ change: SchemaChange) -> String { dialect.render([change], table: t.name) }
+
+        if s.comment != t.comment {
+            items.append(.init(kind: .differentTable, table: s.name, object: nil, detail: tr("테이블 코멘트 변경"),
+                               fixSQL: sql(.tableComment(old: t.comment, new: s.comment))))
+        }
 
         var previous: String? = nil
         for c in s.columns.sorted(by: { $0.position < $1.position }) {
