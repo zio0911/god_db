@@ -11,6 +11,8 @@ struct EditApplyRequest: Identifiable {
     let id = UUID()
     let tabID: UUID
     let statements: [String]
+    /// JSON 칸인데 JSON 이 깨진 컬럼 (경고만, 저장은 가능)
+    var invalidJSONColumns: [String] = []
 }
 
 /// 새 행 id 는 기존 행과 겹치지 않게 큰 수부터
@@ -122,7 +124,9 @@ extension AppState {
               case .success(let target) = editTarget(for: tab), let session = connections[tab.profileID]?.session else { return }
         let statements = ResultEditing.statements(tab.edits, target: target, rows: result.rows, dialect: session.dialect)
         guard !statements.isEmpty else { return }
-        editApply = EditApplyRequest(tabID: tabID, statements: statements)
+        editApply = EditApplyRequest(tabID: tabID, statements: statements,
+                                     invalidJSONColumns: JSONView.invalidEdits(tab.edits, target: target,
+                                                                               columns: result.columns.map(\.name), rows: result.rows))
     }
 
     /// 트랜잭션으로 적용하고, 성공하면 같은 페이지를 다시 읽는다.
@@ -230,6 +234,12 @@ struct EditApplySheet: View {
                 Label(tr("운영 접속이에요. 적용하면 운영 데이터가 바뀌어요."), systemImage: "exclamationmark.triangle.fill")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.red)
+            }
+            if !request.invalidJSONColumns.isEmpty {
+                Label(tr("JSON 형식이 아니에요: %@", request.invalidJSONColumns.joined(separator: ", ")),
+                      systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
             }
             ScrollView {
                 Text(request.statements.joined(separator: "\n"))

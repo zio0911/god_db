@@ -1,6 +1,6 @@
 import Foundation
 
-// 1.4.0 새 기능 번역 (ID 로 찾기 · 저장 쿼리 · 외래 키 따라가기 …)
+// 1.4.0 새 기능 번역 (ID 로 찾기 · 저장 쿼리 · 외래 키 따라가기 · JSON 보기 …)
 extension L10nEnglish {
     static let v140: [String: String] = [
         // ID 로 찾기
@@ -55,5 +55,12 @@ extension L10nEnglish {
         "참조 따라가기 → %@ (%@)": "Follow Reference → %@ (%@)",
         "참조하는 테이블": "Referencing tables",
         "추정": "inferred",
+        // JSON 보기
+        "JSON 형식이 아니에요": "Not valid JSON",
+        "JSON 형식이 아니에요: %@": "Not valid JSON: %@",
+        "경로 복사": "Copy Path",
+        "너무 커서 원문만 보여요": "Too large; showing the raw text only",
+        "원문": "Raw",
+        "정렬": "Pretty",
     ]
 }
