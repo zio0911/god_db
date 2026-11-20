@@ -16,6 +16,8 @@ public struct RedisTimeoutError: LocalizedError, Sendable {
 public final class RedisConnection: @unchecked Sendable {
     let channel: Channel
     private let handler: RedisHandler
+    /// TLS 상태 (F9-3)
+    public private(set) var tlsStatus: TLSStatus = .off
 
     private init(channel: Channel, handler: RedisHandler) {
         self.channel = channel
@@ -29,6 +31,8 @@ public final class RedisConnection: @unchecked Sendable {
         var port: Int
         var serverName: String?
         var useTLS: Bool
+        /// 서버 인증서 확인 방법 (F9-3)
+        var tls = TLSPolicy(verify: false, hostname: nil, pin: nil)
         var username: String
         var password: String?
         var database: Int
@@ -38,16 +42,22 @@ public final class RedisConnection: @unchecked Sendable {
     }
 
     static func connect(_ o: Options) async throws -> RedisConnection {
-        let conn = try await HostResolver.tryEach(o.host, port: o.port) { ip in
+        let verifier = o.useTLS && o.tls.verify ? TLSVerifier(policy: o.tls) : nil
+        let conn = try await HostResolver.withTLS(verifier) { try await HostResolver.tryEach(o.host, port: o.port) { ip in
             let handler = RedisHandler()
-            let tls: NIOSSLContext? = o.useTLS ? try NIOSSLContext(configuration: HostResolver.insecureTLS()) : nil
+            let tls: NIOSSLContext? = o.useTLS ? try NIOSSLContext(configuration: TLSVerify.tlsConfiguration(verify: o.tls.verify)) : nil
             let channel = try await ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
                 .connectTimeout(.seconds(10))
                 .channelOption(ChannelOptions.socketOption(.so_keepalive), value: 1)
                 .channelInitializer { ch in
                     do {
                         if let tls {
-                            try ch.pipeline.syncOperations.addHandler(NIOSSLClientHandler(context: tls, serverHostname: o.serverName))
+                            if let verifier {
+                                try ch.pipeline.syncOperations.addHandler(NIOSSLClientHandler(
+                                    context: tls, serverHostname: o.serverName, customVerificationCallback: verifier.callback))
+                            } else {
+                                try ch.pipeline.syncOperations.addHandler(NIOSSLClientHandler(context: tls, serverHostname: o.serverName))
+                            }
                         }
                         try ch.pipeline.syncOperations.addHandler(handler)
                         return ch.eventLoop.makeSucceededVoidFuture()
@@ -57,7 +67,7 @@ public final class RedisConnection: @unchecked Sendable {
                 }
                 .connect(to: try SocketAddress(ipAddress: ip, port: o.port)).get()
             return RedisConnection(channel: channel, handler: handler)
-        }
+        } }
         do {
             if let pw = o.password, !pw.isEmpty {
                 if o.username.isEmpty {
@@ -74,8 +84,11 @@ public final class RedisConnection: @unchecked Sendable {
             }
         } catch {
             await conn.close()
-            throw error
+            // TLS 핸드셰이크는 첫 명령을 보낼 때 끝난다 → 인증서 확인에서 거부했으면 그 오류로
+            throw verifier?.map(error) ?? error
         }
+        // CLIENT SETNAME 까지 보냈으니 핸드셰이크(인증서 확인)가 끝났다
+        conn.tlsStatus = o.useTLS ? (verifier?.status ?? .unchecked) : .off
         return conn
     }
 

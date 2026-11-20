@@ -289,8 +289,11 @@ struct TableNode: View {
                 }
             }
         } label: {
-            Label(table.name, systemImage: "tablecells")
-                .lineLimit(1)
+            HStack(spacing: 3) {
+                Label(table.name, systemImage: "tablecells")
+                    .lineLimit(1)
+                if app.tablesWithNotes.contains(table.name.lowercased()) { TableNoteBadge(table: table.name) }
+            }
                 .help(table.comment.isEmpty ? table.name : table.comment)
                 .contentShape(Rectangle())
                 // 한 번 클릭은 목록 선택(⌘/⇧ 다중 선택)에 맡기고, 두 번 클릭만 가로챈다
@@ -300,6 +303,8 @@ struct TableNode: View {
                     Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }
                     Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }
                     Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
+                    Button(tr("ID 로 찾기…")) { app.openIDSearch(table: table.name) }
+                    Button(tr("테이블 메모…")) { app.openTableNotes(table: table.name) }
                     // 여러 개를 골랐고 그중 하나를 우클릭했으면 → 고른 테이블 전부 (관계 없는 테이블도 따로)
                     // 아니면 → 이 테이블 + 바로 이어진 테이블
                     let useSelection = app.selectedTables.count > 1 && app.selectedTables.contains(table.name)

@@ -124,8 +124,6 @@ struct TabChip: View {
 }
 
 struct QueryTabView: View {
-    /// 설정 > 쿼리 튜닝 사용 (끄면 버튼을 숨긴다)
-    @AppStorage("GodDB.tuning.enabled") private var tuningEnabled = true
     @Environment(AppState.self) private var app
     @Binding var tab: QueryTab
     @State private var controller = EditorController()
@@ -172,6 +170,13 @@ struct QueryTabView: View {
         .onAppear {
             controller.schemaProvider = { [app] in (app.tables, app.routines) }
             controller.focus()
+            app.activeEditor = controller
+        }
+        // 저장 쿼리 [실행]: 넣은 내용을 평소 실행(⌥⌘↩ 와 같은 확인)으로 실행
+        .onChange(of: app.runAllRequest, initial: true) { _, request in
+            guard request == tab.id else { return }
+            app.runAllRequest = nil
+            run(explain: false, all: true)
         }
         .alert(pendingRun?.title ?? "", isPresented: Binding(get: { pendingRun != nil }, set: { if !$0 { pendingRun = nil } }),
                presenting: pendingRun) { confirm in
@@ -230,20 +235,6 @@ struct QueryTabView: View {
             .disabled(tab.running)
             .help(tr("EXPLAIN 으로 실행 계획 보기 (⇧⌘↩)"))
 
-            if tuningEnabled {
-            Button {
-                guard let sql = controller.sqlToRun() else { return }
-                app.startTuning(sql: sql)
-            } label: {
-                Label(tr("AI 튜닝"), systemImage: "sparkles")
-            }
-            .tint(.purple)
-            .buttonStyle(.bordered)
-            .keyboardShortcut("t", modifiers: [.command, .option])
-            .disabled(tab.running || app.tuningUnavailableReason != nil)
-            .help(app.tuningUnavailableReason ?? tr("로컬 Ollama 로 이 쿼리를 튜닝해요 (⌥⌘T) — 선택 영역 또는 커서가 있는 문장"))
-            }
-
             if tab.source != nil {
                 Button {
                     Task { await app.refreshSource(tab.id) }
@@ -257,6 +248,11 @@ struct QueryTabView: View {
                 Label(tr("히스토리"), systemImage: "clock.arrow.circlepath")
             }
             .help(tr("실행한 쿼리 다시 찾기 (⌘Y)"))
+
+            Button { app.openSavedQueries() } label: {
+                Label(tr("저장 쿼리"), systemImage: "bookmark")
+            }
+            .help(tr("저장 쿼리 목록 (⇧⌘K) · 지금 쿼리 저장은 ⌥⌘S"))
 
             // 좁아져도 선택한 값(500 등)은 항상 보이게: 이름표는 compact 에서 숨기고 선택 상자는 줄이지 않는다
             HStack(spacing: 4) {
@@ -365,9 +361,7 @@ struct ResultPane: View {
                 }
             } else if let result = tab.result {
                 if tab.isPlan {
-                    PlanWarningsView(result: result, tree: tab.planTree,
-                                     tuneDisabledReason: app.tuningUnavailableReason,
-                                     onTune: TuningSettings.enabled ? { if let sql = result.sql { app.startTuning(sql: sql) } } : nil)
+                    PlanWarningsView(result: result, tree: tab.planTree)
                 }
                 if result.columns.isEmpty {
                     Text(result.message ?? tr("실행 완료"))
@@ -385,31 +379,44 @@ struct ResultPane: View {
                         : allRows.filter { $0.id >= newRowBase || ResultCopy.matches($0.values, words: words) }
                     QuickFilterBar(text: $filterText, shown: rows.count, total: allRows.count)
                     Divider()
+                    let fk = app.fkContext(for: tab)
                     GeometryReader { geo in
                         HStack(spacing: 0) {
                             ResultGrid(result: result, rows: rows, edits: tab.edits, selection: $selection,
-                                       onSort: { column, ascending in onSort(column, ascending) },
+                                       onSort: { column, ascending in
+                                           InlineCellTextField.endActiveEditing()
+                                           onSort(column, ascending)
+                                       },
                                        editable: { if case .success = target { return true } else { return false } }(),
+                                       editableColumns: { if case .success(let t) = target { return Set(t.columnMap.keys) } else { return [] } }(),
+                                       onSetCell: { row, column, value in app.setCell(tab.id, row: row, column: column, value: value) },
                                        onAddRow: { if let id = app.addRow(tab.id) { selection = [id] } },
                                        onDeleteRows: { ids in app.toggleDelete(tab.id, rows: ids) },
                                        onReachEnd: result.appendMode ? { Task { await app.loadMore(in: tab.id) } } : nil,
                                        copyTableName: { if case .success(let t) = target { return t.table.name } else { return "table" } }(),
-                                       dialect: app.connections[tab.profileID]?.session?.dialect)
+                                       dialect: app.connections[tab.profileID]?.session?.dialect, fk: fk)
                             if let row = selectedRow(rows) {
                                 ResizeHandle(axis: .vertical, size: $detailWidth.cgFloat,
                                              range: 240...max(240, geo.size.width - 200))
                                 RowDetailView(result: result, row: row,
                                               rowNumber: row.id >= newRowBase ? nil : result.rowOffset + row.id + 1,
-                                              editor: rowEditor(target)) { selection = [] }
+                                              editor: rowEditor(target), fk: fk) { selection = [] }
                                     .frame(width: min(CGFloat(detailWidth), max(240, geo.size.width - 200)))
                             }
                         }
                     }
                 }
+                if let run = tab.idSearch, IDSearchMissingBar.applies(run, to: result) {
+                    Divider()
+                    IDSearchMissingBar(run: run, result: result)
+                }
                 Divider()
                 StatusBar(result: result, selectedCount: selection.count, loading: tab.pageLoading || !tab.edits.isEmpty,
                           exportProgress: tab.exportProgress, appendCapped: tab.appendCapped,
-                          onPage: onPage, onCount: onCount, onExport: { app.exportResult(tab.id) },
+                          onPage: { page in
+                              InlineCellTextField.endActiveEditing()
+                              onPage(page)
+                          }, onCount: onCount, onExport: { app.exportResult(tab.id) },
                           onCancelExport: { app.cancelExport(tab.id) })
             } else {
                 Text(tr("쿼리를 실행하면 결과가 여기 나와요."))
@@ -510,6 +517,10 @@ struct ResultGrid: View {
     var onSort: ((String, Bool) -> Void)?
     /// 편집 가능한 결과면 우클릭 메뉴에 편집 항목을 보여준다
     var editable = false
+    /// 그 자리에서 고칠 수 있는 컬럼 (테이블 컬럼과 이어진 결과 컬럼)
+    var editableColumns: Set<Int> = []
+    /// 칸 값 바꾸기 (행 id, 컬럼, 새 값 — nil 은 NULL)
+    var onSetCell: ((Int, Int, String?) -> Void)?
     var onAddRow: (() -> Void)?
     var onDeleteRows: ((Set<Int>) -> Void)?
     /// 끝 근처 행이 보이면 (보이지 않는 페이징: 다음 행 이어 붙이기)
@@ -517,21 +528,45 @@ struct ResultGrid: View {
     /// INSERT 로 복사할 때 쓸 테이블 이름 / 문법
     var copyTableName = "table"
     var dialect: (any SQLDialect)?
+    /// 외래 키 따라가기 (한 테이블 조회 결과일 때만)
+    var fk: FKContext?
     @State private var sortOrder: [ColumnSortComparator] = []
     @State private var hoveredRow: Int?
+    /// 그 자리에서 고치고 있는 칸 (이 칸에만 입력란을 만든다)
+    /// 그 자리에서 고치는 칸. 표(NSTableView)는 줄 값이 그대로면 칸을 다시 그리지 않으므로,
+    /// 칸마다 이 상태를 직접 지켜보게(@Observable) 해서 Esc 로 취소해도 입력란이 사라지게 한다
+    @State private var editState = InlineEditState()
+    private var editingCell: GridCell? {
+        get { editState.cell }
+        nonmutating set { editState.cell = newValue }
+    }
+    @State private var pointer = PointerCell()
+    @State private var doubleTick = 0
     /// 행을 고르면 결과 표로 키보드 포커스를 옮긴다 (⌘C 가 편집기가 아니라 표에 가도록)
     @FocusState private var gridFocused: Bool
 
     var body: some View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumnForEach(result.columns) { column in
-                TableColumn(column.name, sortUsing: ColumnSortComparator(column: column.id)) { (row: QueryResult.Row) in
-                    cell(row, column)
+                TableColumn(header(column), sortUsing: ColumnSortComparator(column: column.id)) { (row: QueryResult.Row) in
+                    cellOrEditor(row, column)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                        // ⌘ 클릭: 참조 따라가기 (외래 키 칸에서만 — 다른 칸의 ⌘ 클릭 여러 행 선택은 그대로)
+                        .simultaneousGesture(TapGesture().modifiers(.command).onEnded {
+                            fk?.follow(column: column.id, row: row.values)
+                        }, including: fk?.byColumn[column.id] == nil ? .subviews : .all)
                         .background(hoveredRow == row.id ? Color.accentColor.opacity(0.12) : Color.clear)
                         .onHover { inside in
-                            if inside { hoveredRow = row.id } else if hoveredRow == row.id { hoveredRow = nil }
+                            let here = GridCell(row: row.id, column: column.id)
+                            if inside {
+                                hoveredRow = row.id
+                                pointer.cell = here
+                                PointerCell.active = pointer
+                            } else {
+                                if hoveredRow == row.id { hoveredRow = nil }
+                                if pointer.cell == here { pointer.cell = nil }
+                            }
                         }
                         .onAppear {
                             if let onReachEnd, column.id == 0, row.id < newRowBase, row.id >= result.rows.count - 40 { onReachEnd() }
@@ -540,8 +575,30 @@ struct ResultGrid: View {
                 .width(min: 50, ideal: 140)
             }
         }
-        .onAppear { syncSortOrder() }
-        .onChange(of: result.id) { syncSortOrder() }
+        .onAppear {
+            syncSortOrder()
+            PointerCell.startTracking()
+            PointerCell.active = pointer
+            pointer.doubleClicked = { doubleTick &+= 1 }
+        }
+        // 칸 더블클릭 (앱 이벤트에서 받은 표 위치) → 그 칸을 그 자리에서 고친다
+        .onChange(of: doubleTick) {
+            guard let hit = pointer.pendingDouble, rows.indices.contains(hit.row) else { return }
+            pointer.pendingDouble = nil
+            let rowID = rows[hit.row].id
+            let named = result.columns.filter { hit.title == $0.name || hit.title.hasPrefix($0.name + " ↗") }
+            let column = named.count == 1 ? named[0].id : (hit.column < result.columns.count ? result.columns[hit.column].id : nil)
+            guard let column else { return }
+            let c = GridCell(row: rowID, column: column)
+            if canEditInline(c) {
+                selection = [rowID]
+                beginEditing(c)
+            }
+        }
+        .onChange(of: result.id) {
+            syncSortOrder()
+            editingCell = nil
+        }
         .onChange(of: sortOrder) {
             guard let first = sortOrder.first, result.columns.indices.contains(first.column) else { return }
             let sort = ResultSort(column: result.columns[first.column].name, ascending: first.order == .forward)
@@ -549,16 +606,30 @@ struct ResultGrid: View {
         }
         .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .focused($gridFocused)
-        .onChange(of: selection) { if !selection.isEmpty { gridFocused = true } }
+        .onChange(of: selection) { if !selection.isEmpty && editingCell == nil { gridFocused = true } }
         // ⌘C: 고른 행을 TSV(머리글 포함)로 — 엑셀 · 스프레드시트에 바로 붙여 넣을 수 있다
         .onCopyCommand {
             let text = copyText(.tsv, selection)
             return text.isEmpty ? [] : [NSItemProvider(object: text as NSString)]
         }
         .contextMenu(forSelectionType: QueryResult.Row.ID.self) { ids in
+            if let fk, ids.count == 1, let row = rows.first(where: { ids.contains($0.id) }), fk.hasMenu(row: row.values) {
+                FKFollowMenuItems(context: fk, row: row.values)
+                Divider()
+            }
             if editable {
                 Button(tr("이 행 편집")) { selection = ids }
                     .disabled(ids.count != 1)
+                // 우클릭한 칸을 NULL 로 (고른 행이 여러 개면 모두, 삭제 표시한 행은 빼고)
+                if let c = pointer.cell, ids.contains(c.row), editableColumns.contains(c.column),
+                   result.columns.indices.contains(c.column) {
+                    let targets = ids.filter { !edits.deletes.contains($0) }
+                    Button(tr("NULL 로 설정 (%@)", result.columns[c.column].name)) {
+                        InlineCellTextField.endActiveEditing()
+                        for id in targets { onSetCell?(id, c.column, nil) }
+                    }
+                    .disabled(targets.isEmpty)
+                }
                 Button(tr("행 추가")) { onAddRow?() }
                 Button(edits.deletes.isSuperset(of: ids.filter { $0 < newRowBase }) && !ids.isEmpty
                        ? tr("삭제 표시 해제") : tr("선택 행 삭제")) { onDeleteRows?(ids) }
@@ -583,9 +654,31 @@ struct ResultGrid: View {
             }
             .disabled(ids.isEmpty)
         } primaryAction: { ids in
-            // 더블클릭: 그 행을 골라 오른쪽 상세(편집 가능하면 편집) 패널을 연다
+            // 편집 가능한 결과에서 칸 더블클릭: 그 칸을 그 자리에서 고친다.
+            // 그 밖(편집 불가 결과 · 테이블 컬럼이 아닌 칸 · 여러 줄 값 · 칸 밖 · ↩ 키): 행을 골라 오른쪽 상세 패널을 연다
             selection = ids
+            if NSApp.currentEvent?.type != .keyDown, ids.count == 1, let rowID = ids.first,
+               let c = clickedCell(row: rowID) ?? pointer.cell.flatMap({ $0.row == rowID ? $0 : nil }),
+               canEditInline(c) {
+                beginEditing(c)
+            }
         }
+    }
+
+    /// 더블클릭한 위치의 칸 (머리글 이름으로 컬럼을 찾고, 같은 이름이 여럿이면 화면 순서로)
+    private func clickedCell(row: Int) -> GridCell? {
+        guard let hit = PointerCell.clickedColumn() else { return nil }
+        let named = result.columns.filter { hit.title == $0.name || hit.title.hasPrefix($0.name + " ↗") }
+        if named.count == 1, let col = named.first { return GridCell(row: row, column: col.id) }
+        guard hit.index < result.columns.count else { return nil }
+        return GridCell(row: row, column: result.columns[hit.index].id)
+    }
+
+    /// 머리글: 외래 키 컬럼이면 이름 옆에 ↗ (추정 관계만 있으면 흐리게)
+    private func header(_ column: QueryResult.Column) -> Text {
+        guard let inferred = fk?.inferredOnly(column: column.id) else { return Text(column.name) }
+        let arrow = Text(verbatim: "↗").foregroundStyle(inferred ? Color.secondary.opacity(0.5) : Color.accentColor)
+        return Text("\(column.name) \(arrow)")
     }
 
     /// 고른 행을 화면 순서대로 글자로
@@ -604,6 +697,49 @@ struct ResultGrid: View {
         }
         let wanted = [ColumnSortComparator(column: i, order: s.ascending ? .forward : .reverse)]
         if sortOrder != wanted { sortOrder = wanted }
+    }
+
+    /// 고치는 칸이면 입력란, 아니면 보통 칸
+    @ViewBuilder
+    private func cellOrEditor(_ row: QueryResult.Row, _ column: QueryResult.Column) -> some View {
+        let here = GridCell(row: row.id, column: column.id)
+        let original = row.values[column.id]
+        EditableGridCell(state: editState, here: here) {
+            InlineCellEditor(initial: InlineCellEdit.initialText(original)) { text, how, keyboard in
+                finishEditing(here, original: original, text: text, how: how, keyboard: keyboard)
+            }
+        } content: {
+            cell(row, column)
+        }
+    }
+
+    /// 그 자리에서 고칠 수 있는 칸인지: 테이블 컬럼, 삭제 표시 안 한 행, 한 줄 값
+    private func canEditInline(_ c: GridCell) -> Bool {
+        guard editable, onSetCell != nil, editableColumns.contains(c.column), !edits.deletes.contains(c.row),
+              let row = rows.first(where: { $0.id == c.row }), row.values.indices.contains(c.column) else { return false }
+        return InlineCellEdit.canEditInline(row.values[c.column])
+    }
+
+    /// 칸 편집을 끝낸다: 바뀌었으면 변경에 넣고, Tab/⇧Tab 이면 같은 행 옆 칸으로
+    /// 칸 편집 시작: 표가 포커스를 다시 가져가지 않게 표 포커스를 먼저 놓는다 (입력란이 스스로 첫 응답자가 된다)
+    private func beginEditing(_ c: GridCell) {
+        gridFocused = false
+        editingCell = c
+    }
+
+    private func finishEditing(_ c: GridCell, original: String?, text: String, how: InlineCellEdit.Finish, keyboard: Bool) {
+        guard editingCell == c else { return }
+        if let value = InlineCellEdit.committedValue(original: original, text: text, finish: how) {
+            onSetCell?(c.row, c.column, value)
+        }
+        if let next = InlineCellEdit.neighbor(of: c.column, editable: Array(editableColumns), finish: how),
+           case let nextCell = GridCell(row: c.row, column: next), canEditInline(nextCell) {
+            beginEditing(nextCell)
+        } else {
+            editingCell = nil
+            // 키보드로 끝냈으면 표로 포커스를 돌려 화살표 · ⌘C 가 이어지게 (다른 곳을 눌렀으면 그대로)
+            if keyboard { gridFocused = true }
+        }
     }
 
     @ViewBuilder
@@ -639,6 +775,8 @@ struct RowDetailView: View {
     /// 새 행이면 nil
     var rowNumber: Int?
     var editor: RowEditor?
+    /// 외래 키 따라가기 (↗ 버튼 · 참조하는 테이블)
+    var fk: FKContext?
     let onClose: () -> Void
 
     var body: some View {
@@ -662,6 +800,9 @@ struct RowDetailView: View {
                     ForEach(result.columns) { column in
                         field(column)
                     }
+                    if let fk {
+                        FKReferencingList(context: fk, row: row.values)
+                    }
                 }
                 .padding(8)
             }
@@ -681,6 +822,9 @@ struct RowDetailView: View {
                 if editor?.target.primaryKey.contains(where: { $0.lowercased() == column.name.lowercased() }) == true {
                     Image(systemName: "key.fill").font(.caption2).foregroundStyle(.yellow)
                 }
+                if let fk {
+                    FKFollowButtons(context: fk, column: column.id, row: row.values)
+                }
                 Spacer()
                 if let value {
                     Text(tr("%@자", "\(value.count)")).font(.caption2).foregroundStyle(.tertiary)
@@ -689,20 +833,30 @@ struct RowDetailView: View {
                         .help(tr("값 복사"))
                 }
             }
+            let type = columnType(column)
             if editable, let editor {
                 if state == .insertedDefault {
                     Button(tr("값 입력 (지금은 DB 기본값)")) { editor.set(column.id, "") }
                         .buttonStyle(.hover)
                         .font(.callout)
                 } else {
-                    TextField("", text: Binding(
-                        get: { value ?? "" },
-                        set: { editor.set(column.id, $0) }
-                    ), axis: .vertical)
-                    .font(.system(.callout, design: .monospaced))
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...8)
-                    .disabled(value == nil)
+                    // JSON 칸: 원문 편집만 (정렬 · 트리는 지금 값 보기). JSON 이 깨지면 경고 (저장은 가능)
+                    let jsonColumn = isJSONColumn(column, type)
+                    let detection = jsonColumn ? JSONCache.detect(value, columnType: type) : .notJSON
+                    JSONFieldView(text: value ?? "", detection: detection) {
+                        TextField("", text: Binding(
+                            get: { value ?? "" },
+                            set: { editor.set(column.id, $0) }
+                        ), axis: .vertical)
+                        .font(.system(.callout, design: .monospaced))
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...8)
+                        .disabled(value == nil)
+                    }
+                    if jsonColumn, !JSONView.isValid(value) {
+                        Label(tr("JSON 형식이 아니에요"), systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     HStack(spacing: 10) {
                         Toggle("NULL", isOn: Binding(
                             get: { value == nil },
@@ -716,6 +870,8 @@ struct RowDetailView: View {
                     }
                     .font(.caption)
                 }
+            } else if let value, case let detection = JSONCache.detect(value, columnType: type), detection.isJSON {
+                JSONFieldView(text: value, detection: detection)
             } else {
                 Text(value ?? "NULL")
                     .font(.system(.callout, design: .monospaced))
@@ -727,15 +883,27 @@ struct RowDetailView: View {
             }
         }
     }
+
+    /// 결과 컬럼의 테이블 컬럼 타입 (한 테이블 조회 결과일 때만 알 수 있음)
+    private func columnType(_ column: QueryResult.Column) -> String? {
+        let table = editor?.target.table ?? fk?.source
+        let name = editor?.target.columnMap[column.id] ?? column.name
+        return table?.columns.first { $0.name.lowercased() == name.lowercased() }?.columnType
+    }
+
+    /// 편집 중 JSON 칸으로 다룰지: 타입이 json / jsonb 이거나 원래 값이 JSON
+    private func isJSONColumn(_ column: QueryResult.Column, _ type: String?) -> Bool {
+        if JSONView.isJSONType(type) { return true }
+        guard let values = result.rows.first(where: { $0.id == row.id })?.values, values.indices.contains(column.id),
+              let original = values[column.id] else { return false }
+        return JSONCache.detect(original, columnType: nil).isJSON
+    }
 }
 
 /// 실행 계획 주의사항 + 트리 형태 계획
 struct PlanWarningsView: View {
     let result: QueryResult
     let tree: String?
-    /// AI 튜닝을 못 쓰는 이유 (nil 이면 사용 가능)
-    var tuneDisabledReason: String?
-    var onTune: (() -> Void)?
     @State private var showTree = false
 
     var body: some View {
@@ -752,18 +920,6 @@ struct PlanWarningsView: View {
                 Spacer()
                 if tree != nil {
                     Toggle(tr("트리로 보기"), isOn: $showTree).toggleStyle(.switch).controlSize(.small)
-                }
-                if let onTune {
-                    Button {
-                        onTune()
-                    } label: {
-                        Label(tr("AI 로 튜닝하기"), systemImage: "sparkles")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.purple)
-                    .controlSize(.small)
-                    .disabled(tuneDisabledReason != nil)
-                    .help(tuneDisabledReason ?? tr("이 쿼리와 실행 계획을 로컬 Ollama 에 보내 개선 SQL 과 추천 인덱스를 받아요 (⌥⌘T)"))
                 }
             }
             ForEach(warnings, id: \.self) { w in

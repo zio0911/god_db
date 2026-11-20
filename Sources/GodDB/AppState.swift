@@ -53,6 +53,8 @@ struct QueryTab: Identifiable {
     /// 실행 계획(EXPLAIN) 결과인지
     var isPlan = false
     var planTree: String?
+    /// ID 로 찾기로 연 탭이면 요청한 값 (결과 아래 "없는 ID" 표시)
+    var idSearch: IDSearchRun?
 
     var title: String { customTitle ?? tr("쿼리 %@", "\(number)") }
     /// 연 .sql 파일 (저장하면 이 파일에 쓴다)
@@ -82,7 +84,10 @@ struct ConnectionInfo {
     var session: DBSession?
     var databases: [String] = []
     var currentDatabase = ""
-    var tables: [TableMeta] = []
+    /// 스키마 (외래 키 포함 — DBSession.loadSchema 가 함께 읽는다)
+    var tables: [TableMeta] = [] { didSet { inferredRelations = FKFollow.inferredRelations(tables) } }
+    /// 컬럼 이름으로 추정한 관계 (외래 키 따라가기용, 스키마가 바뀔 때만 다시 계산)
+    private(set) var inferredRelations: [ForeignKeyMeta] = []
     var routines: [RoutineMeta] = []
     var schemaLoading = false
     /// 자동 커밋 / 열린 트랜잭션 상태 (세션에서 읽어 둔 값)
@@ -104,6 +109,9 @@ final class AppState {
     var profiles: [ConnectionProfile] = []
     /// 사이드바에서 보고 있는 접속
     var selectedProfileID: UUID?
+    /// 운영 접속 자동 끊기 감시 작업, 커밋 안 한 변경 때문에 이미 알린 접속
+    var idleWatcher: Task<Void, Never>?
+    var idleWarned: Set<UUID> = []
     /// 열려 있는 모든 접속
     var connections: [UUID: ConnectionInfo] = [:]
     var mode: MainMode = .query
@@ -123,11 +131,11 @@ final class AppState {
     var editingProfile: ConnectionProfile?
     var editingIsNew = false
     var passwordPrompt: PasswordPrompt?
+    /// TLS 인증서 · SSH 호스트 키 확인 창 (F9-3 · F9-4)
+    var securityPrompt: SecurityPromptRequest?
     var alteringTable: TableMeta?
     /// CSV 가져오기 대상 테이블
     var importingTable: TableMeta?
-    /// 진행 중이거나 결과를 보고 있는 쿼리 튜닝
-    var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
     /// 시작 화면 (준비 중 진행 막대)
@@ -137,12 +145,27 @@ final class AppState {
     var releaseNotesSince: String?
     /// 문제 보고 창
     var showProblemReport = false
+    /// 이전 버전 설치 창 (F5)
+    var showPreviousVersions = false
     /// 커밋하지 않은 트랜잭션 확인 (자동 커밋 켜기 / 연결 끊기)
     var txPrompt: TxPrompt?
     /// 메인 창 (⌘W 로 쿼리 탭을 닫을지 판단)
     @ObservationIgnored weak var mainWindow: NSWindow?
     /// 객체 빠른 찾기 (⌘O)
     var showQuickOpen = false
+    /// ID 로 찾기 (⌥⌘F)
+    var idSearchRequest: IDSearchRequest?
+    /// 저장 쿼리 창 (⌥⌘S 저장 · ⇧⌘K 목록 · 빈칸 입력)
+    var savedQuerySheet: SavedQuerySheet?
+    /// 저장 쿼리 목록 (saved-queries.json)
+    var savedQueries = SavedQueryStore.shared.load()
+    /// 테이블 메모 (table-notes.json) · 메모 창
+    var tableNotes = TableNoteStore.shared.load()
+    var tableNotesRequest: TableNotesRequest?
+    /// 보고 있는 쿼리 탭의 편집기 (⌥⌘S 가 선택 영역 · 커서 문장을 읽는다)
+    @ObservationIgnored weak var activeEditor: EditorController?
+    /// 이 탭의 편집기 내용 전체를 평소 실행 경로(확인 창 포함)로 실행해 달라는 요청 (저장 쿼리 [실행])
+    var runAllRequest: UUID?
     /// 적용하지 않은 결과 편집을 버리기 전 확인
     var discardPrompt: DiscardEditsPrompt?
     /// 결과 내보내기 설정 창
@@ -294,8 +317,10 @@ final class AppState {
     /// - Parameter password: nil 이면 기존 저장값 유지
     func saveProfile(_ profile: ConnectionProfile, password: String?) {
         if let i = profiles.firstIndex(where: { $0.id == profile.id }) {
+            auditPinChange(profileName: profile.name, old: profiles[i].tlsPinSHA256, new: profile.tlsPinSHA256)
             profiles[i] = profile
         } else {
+            auditPinChange(profileName: profile.name, old: nil, new: profile.tlsPinSHA256)
             profiles.append(profile)
         }
         if profile.savePassword {
@@ -456,6 +481,7 @@ final class AppState {
                 + (connectedCount > 1 ? tr(" · 열린 접속 %@개", "\(connectedCount)") : ""),
                 audit: AuditRecord(.connect, target: profile.name, result: profile.readOnly ? "성공 (읽기전용)" : "성공",
                                    statement: target + " · " + note))
+            logTLSStatus(profile.name, await s.tlsStatus)
             do {
                 let dbs = try await s.databases()
                 updateConnection(id) { $0.databases = dbs }
@@ -474,6 +500,8 @@ final class AppState {
             let message = logError(error, .connection, context: tr("%@ 연결 실패", "\(profile.name)"),
                                    audit: AuditRecord(.connect, target: profile.name, statement: target + " · " + note))
             updateConnection(id) { $0.state = .failed(message); $0.session = nil }
+            // 인증서 · SSH 호스트 키 문제면 확인 창
+            if presentSecurityPrompt(for: error, profile: profile) { return }
             // 비밀번호가 틀렸으면 다시 입력받는다.
             if ErrorText.isAuthFailure(error) {
                 sessionPasswords[id] = nil
@@ -483,17 +511,17 @@ final class AppState {
     }
 
     /// 접속 하나를 끊는다. 그 접속의 탭은 남겨 두고, 다시 연결하면 이어서 쓸 수 있다.
-    func disconnect(_ id: UUID, force: Bool = false) async {
+    func disconnect(_ id: UUID, force: Bool = false, reason: String? = nil, auditResult: String = "") async {
         // 커밋하지 않은 트랜잭션이 있으면 먼저 묻는다
         if !force, connections[id]?.tx.open == true {
             txPrompt = TxPrompt(profileID: id, reason: .disconnect)
             return
         }
-        if redisWorkspaces[id] != nil { await disconnectRedis(id) }
+        if redisWorkspaces[id] != nil { await disconnectRedis(id, reason: reason, auditResult: auditResult) }
         if let session = connections[id]?.session {
             await session.close()
-            log(.info, .connection, tr("%@ 연결 끊음", "\(session.profile.name)"),
-                audit: AuditRecord(.disconnect, target: session.profile.name))
+            log(reason == nil ? .info : .warning, .connection, reason ?? tr("%@ 연결 끊음", "\(session.profile.name)"),
+                audit: AuditRecord(.disconnect, target: session.profile.name, result: auditResult))
         }
         connections[id] = ConnectionInfo()
     }
@@ -644,7 +672,8 @@ final class AppState {
     }
 
     /// 선택된 탭에서 sql 실행. explain 이면 실행 계획을 보여준다.
-    func run(sql: String, explain: Bool = false) async {
+    /// rowLimitOverride: 이번 실행만 다른 행 수 제한 (ID 로 찾기 — 값 개수 이상)
+    func run(sql: String, explain: Bool = false, rowLimitOverride: Int? = nil) async {
         guard let i = selectedTabIndex else { return }
         let tab = tabs[i]
         let tabID = tab.id
@@ -657,8 +686,9 @@ final class AppState {
         tabs[i].running = true
         armRunTimeout(tabs[i].id)
         tabs[i].error = nil
-        let streaming = rowLimit == 0
-        let limit = streaming ? Self.streamPageSize : rowLimit
+        let effectiveLimit = rowLimitOverride ?? rowLimit
+        let streaming = effectiveLimit == 0
+        let limit = streaming ? Self.streamPageSize : effectiveLimit
         do {
             guard let session = try await session(for: tab) else {
                 update(tabID) { $0.error = notConnectedMessage(tab); $0.running = false }
@@ -1018,7 +1048,7 @@ final class AppState {
         await refreshSchema(for: request.profileID)
     }
 
-    /// 튜닝 결과 등을 탭 편집기 끝에 덧붙인다.
+    /// AI 가 만든 SQL 등을 탭 편집기 끝에 덧붙인다.
     func insertIntoTab(_ tabID: UUID, sql: String, label: String) {
         update(tabID) {
             var text = $0.text
@@ -1027,7 +1057,6 @@ final class AppState {
             $0.text = text
         }
         selectTab(tabID)
-        tuningJob = nil
     }
 
     func selectResult(_ index: Int, in tabID: UUID) {
