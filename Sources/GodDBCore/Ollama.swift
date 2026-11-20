@@ -159,14 +159,9 @@ public struct OllamaClient: Sendable {
     }
 }
 
-/// 쿼리 튜닝 설정 (UserDefaults)
-public enum TuningSettings {
+/// 로컬 AI(Ollama) 설정 (UserDefaults). 저장 키는 예전 쿼리 튜닝 시절 이름을 그대로 써서 기존 설정이 유지된다.
+public enum AISettings {
     private static let d = UserDefaults.standard
-
-    public static var enabled: Bool {
-        get { d.object(forKey: "GodDB.tuning.enabled") as? Bool ?? true }
-        set { d.set(newValue, forKey: "GodDB.tuning.enabled") }
-    }
 
     public static var url: String {
         get { d.string(forKey: "GodDB.tuning.url") ?? "http://localhost:11434" }

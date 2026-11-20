@@ -122,11 +122,11 @@ final class DiagramChat {
         let history = messages.dropLast().filter { !$0.failed }.map { (role: $0.role, content: $0.text) }
         task = Task { [weak self] in
             guard let self else { return }
-            let client = TuningSettings.client
+            let client = AISettings.client
             let started = Date()
             do {
                 guard case .running(let models) = await client.status() else { throw OllamaError.notRunning }
-                let model = TuningSettings.model.isEmpty ? (models.first?.name ?? "") : TuningSettings.model
+                let model = AISettings.model.isEmpty ? (models.first?.name ?? "") : AISettings.model
                 guard !model.isEmpty else { throw OllamaError.noModel }
                 let msgs = try await build(Array(history))
                 if let line = logMessage(model, history.count == 1) {

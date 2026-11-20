@@ -144,9 +144,6 @@ struct ContentView: View {
         .sheet(item: $app.tableAction) { request in
             TableActionSheet(request: request)
         }
-        .sheet(item: $app.tuningJob) { job in
-            TuningSheet(job: job)
-        }
         .sheet(item: $app.passwordPrompt) { prompt in
             PasswordPromptView(prompt: prompt)
         }

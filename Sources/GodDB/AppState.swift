@@ -126,8 +126,6 @@ final class AppState {
     var alteringTable: TableMeta?
     /// CSV 가져오기 대상 테이블
     var importingTable: TableMeta?
-    /// 진행 중이거나 결과를 보고 있는 쿼리 튜닝
-    var tuningJob: TuningJob?
     var tableAction: TableActionRequest?
     var editApply: EditApplyRequest?
     /// 시작 화면 (준비 중 진행 막대)
@@ -1018,7 +1016,7 @@ final class AppState {
         await refreshSchema(for: request.profileID)
     }
 
-    /// 튜닝 결과 등을 탭 편집기 끝에 덧붙인다.
+    /// AI 가 만든 SQL 등을 탭 편집기 끝에 덧붙인다.
     func insertIntoTab(_ tabID: UUID, sql: String, label: String) {
         update(tabID) {
             var text = $0.text
@@ -1027,7 +1025,6 @@ final class AppState {
             $0.text = text
         }
         selectTab(tabID)
-        tuningJob = nil
     }
 
     func selectResult(_ index: Int, in tabID: UUID) {

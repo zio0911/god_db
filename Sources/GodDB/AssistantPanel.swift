@@ -159,7 +159,7 @@ struct AssistantPanel: View {
     @FocusState private var inputFocused: Bool
     @State private var confirmDeleteAll = false
 
-    /// AI 어시스턴트는 쿼리 튜닝과 따로 켜고 끈다 (설정 > AI > AI 어시스턴트 사용 — 끄면 패널 자체가 숨겨진다)
+    /// 설정 > AI > AI 어시스턴트 사용 — 끄면 패널 자체가 숨겨진다
     private var unavailable: String? { nil }
 
     private var isModeling: Bool { app.mode == .modeling && app.modeling.selected != nil }

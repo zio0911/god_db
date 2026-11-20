@@ -575,6 +575,12 @@ scenario("dangerSetting") {
     answer("취소")
 }
 
+scenario("noTuning") {
+    // 1.4.0: 쿼리 튜닝 제거 — 도구 막대에 'AI 튜닝' 버튼이 없어야 한다
+    let found = app.snapshot().contains { $0.role == "AXButton" && $0.text.contains("AI 튜닝") }
+    check("쿼리 튜닝 버튼 없음", !found)
+}
+
 // MARK: - 실행
 
 guard AXIsProcessTrusted() else {

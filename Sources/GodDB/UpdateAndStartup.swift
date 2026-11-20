@@ -149,8 +149,8 @@ final class StartupState {
             }),
             (tr("AI(Ollama) 연결 확인 중"), {
                 let assistantOn = UserDefaults.standard.object(forKey: AppSettings.assistantKey) as? Bool ?? true
-                guard TuningSettings.enabled || assistantOn else { return tr("꺼짐") }
-                let status = await Self.withTimeout(2.5) { await TuningSettings.client.status() }
+                guard assistantOn else { return tr("꺼짐") }
+                let status = await Self.withTimeout(2.5) { await AISettings.client.status() }
                 switch status {
                 case .running(let models)?: return tr("모델 %@개", "\(models.count)")
                 case .installedNotRunning?: return tr("실행 안 됨")

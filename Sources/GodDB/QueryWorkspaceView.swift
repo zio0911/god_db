@@ -124,8 +124,6 @@ struct TabChip: View {
 }
 
 struct QueryTabView: View {
-    /// 설정 > 쿼리 튜닝 사용 (끄면 버튼을 숨긴다)
-    @AppStorage("GodDB.tuning.enabled") private var tuningEnabled = true
     @Environment(AppState.self) private var app
     @Binding var tab: QueryTab
     @State private var controller = EditorController()
@@ -229,20 +227,6 @@ struct QueryTabView: View {
             .keyboardShortcut(.return, modifiers: [.command, .shift])
             .disabled(tab.running)
             .help(tr("EXPLAIN 으로 실행 계획 보기 (⇧⌘↩)"))
-
-            if tuningEnabled {
-            Button {
-                guard let sql = controller.sqlToRun() else { return }
-                app.startTuning(sql: sql)
-            } label: {
-                Label(tr("AI 튜닝"), systemImage: "sparkles")
-            }
-            .tint(.purple)
-            .buttonStyle(.bordered)
-            .keyboardShortcut("t", modifiers: [.command, .option])
-            .disabled(tab.running || app.tuningUnavailableReason != nil)
-            .help(app.tuningUnavailableReason ?? tr("로컬 Ollama 로 이 쿼리를 튜닝해요 (⌥⌘T) — 선택 영역 또는 커서가 있는 문장"))
-            }
 
             if tab.source != nil {
                 Button {
@@ -365,9 +349,7 @@ struct ResultPane: View {
                 }
             } else if let result = tab.result {
                 if tab.isPlan {
-                    PlanWarningsView(result: result, tree: tab.planTree,
-                                     tuneDisabledReason: app.tuningUnavailableReason,
-                                     onTune: TuningSettings.enabled ? { if let sql = result.sql { app.startTuning(sql: sql) } } : nil)
+                    PlanWarningsView(result: result, tree: tab.planTree)
                 }
                 if result.columns.isEmpty {
                     Text(result.message ?? tr("실행 완료"))
@@ -733,9 +715,6 @@ struct RowDetailView: View {
 struct PlanWarningsView: View {
     let result: QueryResult
     let tree: String?
-    /// AI 튜닝을 못 쓰는 이유 (nil 이면 사용 가능)
-    var tuneDisabledReason: String?
-    var onTune: (() -> Void)?
     @State private var showTree = false
 
     var body: some View {
@@ -752,18 +731,6 @@ struct PlanWarningsView: View {
                 Spacer()
                 if tree != nil {
                     Toggle(tr("트리로 보기"), isOn: $showTree).toggleStyle(.switch).controlSize(.small)
-                }
-                if let onTune {
-                    Button {
-                        onTune()
-                    } label: {
-                        Label(tr("AI 로 튜닝하기"), systemImage: "sparkles")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.purple)
-                    .controlSize(.small)
-                    .disabled(tuneDisabledReason != nil)
-                    .help(tuneDisabledReason ?? tr("이 쿼리와 실행 계획을 로컬 Ollama 에 보내 개선 SQL 과 추천 인덱스를 받아요 (⌥⌘T)"))
                 }
             }
             ForEach(warnings, id: \.self) { w in
