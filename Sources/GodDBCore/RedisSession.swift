@@ -73,7 +73,11 @@ public actor RedisSession {
     public nonisolated let profile: ConnectionProfile
     public private(set) var topology: Topology = .standalone
     public private(set) var db: Int = 0
-    private var password: String?
+    /// 연결할 때 받은 비밀번호. 다시 읽어 올 곳(passwordProvider)이 있으면 연결 뒤 비운다 (메모리에 덜 남게)
+    private var storedPassword: String?
+    private var passwordProvider: (@Sendable () -> String?)?
+    /// 노드 · 구독 · 스트림 연결을 새로 열 때 쓰는 비밀번호
+    private var password: String? { storedPassword ?? passwordProvider?() }
     /// 연결 과정 명령(AUTH · SELECT · INFO · CLUSTER SLOTS · 센티널 조회)의 응답 제한
     private var timeout: TimeAmount = .seconds(10)
     /// 노드 주소("host:port") → 연결 / SSH 터널
@@ -87,17 +91,26 @@ public actor RedisSession {
         self.profile = profile
     }
 
+    /// - Parameter passwordProvider: 주면 연결한 뒤 비밀번호를 들고 있지 않고, 새 연결이 필요할 때마다 여기서 읽는다
     public static func connect(profile: ConnectionProfile, password: String?,
+                               passwordProvider: (@Sendable () -> String?)? = nil,
                                timeout: TimeAmount = .seconds(10)) async throws -> RedisSession {
         let s = RedisSession(profile: profile)
         await s.setTimeout(timeout)
         do {
             try await s.open(password: password)
+            await s.dropStoredPassword(ifProvider: passwordProvider)
         } catch {
             await s.close()
             throw error
         }
         return s
+    }
+
+    private func dropStoredPassword(ifProvider provider: (@Sendable () -> String?)?) {
+        guard let provider else { return }
+        passwordProvider = provider
+        storedPassword = nil
     }
 
     private func setTimeout(_ t: TimeAmount) { timeout = t }
@@ -125,7 +138,7 @@ public actor RedisSession {
     }
 
     private func open(password: String?) async throws {
-        self.password = password
+        self.storedPassword = password
         switch profile.redisMode {
         case .sentinel:
             let address = try await resolveSentinel()

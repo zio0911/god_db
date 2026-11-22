@@ -696,7 +696,8 @@ extension AppState {
     func connectRedis(_ profile: ConnectionProfile, password: String?, route: String = "") async {
         let id = profile.id
         do {
-            let s = try await RedisSession.connect(profile: profile, password: password)
+            let s = try await RedisSession.connect(profile: profile, password: password,
+                                                   passwordProvider: keychainPasswordProvider(profile))
             let ws = RedisWorkspace(profileID: id, session: s, app: self)
             await ws.loadTopology()
             redisWorkspaces[id] = ws
