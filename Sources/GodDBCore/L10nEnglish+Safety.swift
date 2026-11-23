@@ -48,5 +48,10 @@ extension L10nEnglish {
         "접속 정보와 저장된 비밀번호, 이 접속의 쿼리 탭 %@개가 함께 지워져요. 되돌릴 수 없어요.": "The connection, its saved password and its %@ query tabs will be removed. This can't be undone.",
         "접속 정보와 저장된 비밀번호가 지워져요. 되돌릴 수 없어요.": "The connection and its saved password will be removed. This can't be undone.",
         "접속을 삭제하기": "deleting the connection",
+        // 읽기전용 검사 (#155)
+        "읽기전용 접속에서는 실행할 수 없어요: %@ (SELECT / SHOW / DESC / EXPLAIN 만 허용)": "Can't run this on a read-only connection: %@ (only SELECT / SHOW / DESC / EXPLAIN are allowed)",
+        "읽기전용 접속에서는 실행할 수 없어요: %@ (문장 안에 있음)": "Can't run this on a read-only connection: %@ (found in the statement)",
+        "읽기전용 접속에서는 실행할 수 없어요: %@ (상태를 바꾸는 함수)": "Can't run this on a read-only connection: %@ (a function that changes state)",
+        "읽기전용 접속에서는 실행할 수 없어요: %@ (행을 잠금)": "Can't run this on a read-only connection: %@ (locks rows)",
     ]
 }

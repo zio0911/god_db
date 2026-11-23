@@ -206,10 +206,7 @@ extension DBSession {
     /// 여러 변경 문을 한 트랜잭션으로 실행한다. 하나라도 실패하면 전부 되돌린다.
     /// - Returns: 실패하면 (실패한 문장 번호, 오류)
     public func executeInTransaction(_ statements: [String]) async throws {
-        for s in statements where profile.readOnly && !SQLText.isReadOnly(s) {
-            _ = s
-            throw DBError.readOnlyBlocked
-        }
+        for s in statements { try checkReadOnly(s) }
         // 수동 커밋 모드면 열린 트랜잭션에 합류하고 커밋하지 않는다 (사용자가 커밋/롤백)
         if !autoCommit || inTransaction {
             for s in statements { _ = try await execute(s, limit: 0) }

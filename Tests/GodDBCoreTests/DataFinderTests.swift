@@ -198,15 +198,15 @@ struct DataFinderTests {
     // MARK: - 판단 · SELECT 만
 
     @Test func selectOnly() {
-        #expect(DataFinder.isSelectOnly("SELECT grade_level FROM ui_students"))
-        #expect(DataFinder.isSelectOnly("  select * from t;  "))
-        #expect(DataFinder.isSelectOnly("WITH x AS (SELECT 1) SELECT * FROM x"))
-        #expect(!DataFinder.isSelectOnly("DELETE FROM ui_students"))
-        #expect(!DataFinder.isSelectOnly("SELECT 1; DROP TABLE t"))
-        #expect(!DataFinder.isSelectOnly("SELECT * INTO backup FROM t"))
-        #expect(!DataFinder.isSelectOnly("SELECT * FROM t FOR UPDATE"))
-        #expect(!DataFinder.isSelectOnly("WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x"))
-        #expect(!DataFinder.isSelectOnly(""))
+        #expect(DataFinder.isSelectOnly("SELECT grade_level FROM ui_students", kind: .mysql))
+        #expect(DataFinder.isSelectOnly("  select * from t;  ", kind: .mysql))
+        #expect(DataFinder.isSelectOnly("WITH x AS (SELECT 1) SELECT * FROM x", kind: .mysql))
+        #expect(!DataFinder.isSelectOnly("DELETE FROM ui_students", kind: .mysql))
+        #expect(!DataFinder.isSelectOnly("SELECT 1; DROP TABLE t", kind: .mysql))
+        #expect(!DataFinder.isSelectOnly("SELECT * INTO backup FROM t", kind: .mysql))
+        #expect(!DataFinder.isSelectOnly("SELECT * FROM t FOR UPDATE", kind: .mysql))
+        #expect(!DataFinder.isSelectOnly("WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x", kind: .mysql))
+        #expect(!DataFinder.isSelectOnly("", kind: .mysql))
     }
 
     @Test func parsesVerdict() {

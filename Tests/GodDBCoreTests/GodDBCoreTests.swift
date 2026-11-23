@@ -20,13 +20,13 @@ struct SQLTextTests {
     }
 
     @Test func readOnlyGuard() {
-        #expect(SQLText.isReadOnly("select * from t"))
-        #expect(SQLText.isReadOnly("/* hi */ SHOW TABLES"))
-        #expect(SQLText.isReadOnly("  explain select 1"))
-        #expect(!SQLText.isReadOnly("UPDATE t SET a = 1"))
-        #expect(!SQLText.isReadOnly("-- select\nDELETE FROM t"))
-        #expect(!SQLText.isReadOnly("SELECT * FROM t INTO OUTFILE '/tmp/x'"))
-        #expect(!SQLText.isReadOnly("WITH x AS (SELECT 1) DELETE FROM t"))
+        #expect(SQLText.isReadOnly("select * from t", kind: .mysql))
+        #expect(SQLText.isReadOnly("/* hi */ SHOW TABLES", kind: .mysql))
+        #expect(SQLText.isReadOnly("  explain select 1", kind: .mysql))
+        #expect(!SQLText.isReadOnly("UPDATE t SET a = 1", kind: .mysql))
+        #expect(!SQLText.isReadOnly("-- select\nDELETE FROM t", kind: .mysql))
+        #expect(!SQLText.isReadOnly("SELECT * FROM t INTO OUTFILE '/tmp/x'", kind: .mysql))
+        #expect(!SQLText.isReadOnly("WITH x AS (SELECT 1) DELETE FROM t", kind: .mysql))
     }
 
     @Test func appliesLimitOnlyWhenMissing() {

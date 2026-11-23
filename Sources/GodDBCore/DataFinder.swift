@@ -573,11 +573,11 @@ public enum DataFinder {
     }
 
     /// 조회(SELECT) 하나만인지: 여러 문장 · SELECT INTO · 잠금(FOR UPDATE) · 쓰기 WITH 는 안 된다
-    public static func isSelectOnly(_ sql: String) -> Bool {
+    public static func isSelectOnly(_ sql: String, kind: DatabaseKind) -> Bool {
         let body = SQLText.stripComments(sql).trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.init(charactersIn: ";")))
         guard !body.isEmpty, !body.contains(";") else { return false }
         let kw = SQLText.firstKeyword(body)
-        guard kw == "SELECT" || kw == "WITH", SQLText.isReadOnly(body) else { return false }
+        guard kw == "SELECT" || kw == "WITH", SQLText.isReadOnly(sql, kind: kind) else { return false }
         let upper = body.uppercased()
         for p in [#"\bINTO\b"#, #"\bFOR\s+(UPDATE|SHARE|NO\s+KEY\s+UPDATE|KEY\s+SHARE)\b"#, #"\bLOCK\s+IN\s+SHARE\s+MODE\b"#]
         where upper.range(of: p, options: .regularExpression) != nil {
@@ -601,7 +601,7 @@ public enum DataFinder {
         let confidence = (obj["confidence"] as? String).flatMap { Confidence(rawValue: $0.lowercased()) } ?? .low
         let explain = ((obj["explain"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         var sql = ((obj["sql"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !isSelectOnly(sql) { sql = defaultSQL(table: t.name, dialect: dialect) }
+        if !isSelectOnly(sql, kind: dialect.kind) { sql = defaultSQL(table: t.name, dialect: dialect) }
         sql = sql.trimmingCharacters(in: CharacterSet(charactersIn: "; \n"))
         return Verdict(table: t.name, columns: cols, confidence: confidence, explain: explain, sql: sql)
     }
