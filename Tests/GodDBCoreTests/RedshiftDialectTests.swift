@@ -25,6 +25,10 @@ struct RedshiftDialectTests {
                 #expect(!sql.contains(word), "\(word) in \(sql.prefix(60))")
             }
         }
+        // 사용 권한 없는 스키마는 목록에서 뺀다 (PostgreSQL 은 그대로)
+        #expect(rs.databasesSQL.contains("has_schema_privilege(nspname, 'USAGE')"))
+        #expect(rs.allTablesSQL?.contains("has_schema_privilege(n.nspname, 'USAGE')") == true)
+        #expect(!pg.databasesSQL.contains("has_schema_privilege"))
         #expect(rs.sessionSetupSQL == nil)
         #expect(pg.sessionSetupSQL != nil)
         // PostgreSQL 은 그대로

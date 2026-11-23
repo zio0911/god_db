@@ -32,6 +32,7 @@ public struct PostgresDialect: SQLDialect {
               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE c.relkind IN ('r', 'v') AND n.nspname NOT IN ('pg_catalog', 'information_schema')
                AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'
+               AND has_schema_privilege(n.nspname, 'USAGE')
              ORDER BY 1, 2 LIMIT 20000
             """
         }
@@ -43,10 +44,11 @@ public struct PostgresDialect: SQLDialect {
     }
 
     public var databasesSQL: String {
+        // Redshift: 사용 권한(USAGE) 없는 스키마는 고르면 search_path 가 비어 "테이블 없음" 이 되므로 빼고 보여준다
         """
         SELECT nspname FROM pg_namespace
          WHERE nspname NOT IN ('pg_catalog', 'information_schema')
-           AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp%'
+           AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp%'\(redshift ? "\n   AND has_schema_privilege(nspname, 'USAGE')" : "")
          ORDER BY nspname
         """
     }

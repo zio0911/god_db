@@ -58,6 +58,7 @@
 - **Amazon Redshift**: PostgreSQL 접속으로 붙인다 (기본 포트 5439, TLS 권장). 연결할 때 `version()` 으로 Redshift 를 알아내 아래처럼 바꿔 동작한다.
   - 새 접속의 DB 종류에서 "Redshift" 를 고르면 포트 5439 · TLS 켬으로 채운다 (저장은 PostgreSQL 접속 + Redshift 표시). 사이드바 · 탭 · 비교 화면에 Redshift 아이콘(보라 원통, 직접 그림)
   - PostgreSQL 로 만든 접속이 연결해 보니 Redshift 면 종류 · 아이콘을 Redshift 로 자동으로 바꿔 저장한다 (반대도)
+  - 스키마 목록에는 이 계정이 쓸 수 있는(USAGE) 스키마만 보인다 (권한 없는 스키마를 고르면 Redshift 가 search_path 를 비워 "테이블 없음" 이 되므로)
   - 테이블 · 컬럼 · 기본 키 · 외래 키 · 함수 · 프로시저 조회를 Redshift 카탈로그에 맞춘 쿼리로 (트리거 · 인덱스 없음)
   - 컬럼 정보(Extra)에 `distkey` · `sortkey N` 표시, CREATE 문에 `DISTKEY (...)` · `SORTKEY (...)`
   - 서버 버전은 `version()` 에서 (`Amazon Redshift 1.0.x`)
