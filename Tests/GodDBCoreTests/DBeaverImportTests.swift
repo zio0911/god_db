@@ -182,6 +182,34 @@ struct DBeaverImportTests {
         #expect(maria.profile.group.isEmpty)
     }
 
+    // Redshift: 새 DBeaver(postgresql + postgres-redshift-jdbc), 옛 DBeaver(generic + aws_redshift), URL 방식
+    @Test func redshiftBecomesPostgresWithTLS() throws {
+        let json = """
+        {"connections": {
+          "rs-new": { "provider": "postgresql", "driver": "postgres-redshift-jdbc", "name": "분석",
+            "configuration": { "host": "example-cluster.abc123.ap-northeast-2.redshift.amazonaws.com", "port": "5439",
+                               "database": "dev", "user": "analyst" } },
+          "rs-old": { "provider": "generic", "driver": "aws_redshift_42", "name": "옛 분석",
+            "configuration": { "host": "old.example.test", "database": "dev", "provider-properties": { "ssl": "false" } } },
+          "rs-url": { "provider": "postgresql", "driver": "postgres-redshift-jdbc", "name": "주소 분석",
+            "configuration": { "url": "jdbc:redshift://url.example.test:5440/sales", "configurationType": "URL" } }
+        }}
+        """
+        let r = try DBeaverImport.parse(Data(json.utf8))
+        #expect(r.skipped.isEmpty)
+        let new = try #require(r.sources.first { $0.profile.name == "분석" }).profile
+        #expect(new.kind == .postgres && new.port == 5439 && new.database == "dev" && new.username == "analyst")
+        #expect(new.useTLS && new.tlsVerify)
+        let old = try #require(r.sources.first { $0.profile.name == "옛 분석" }).profile
+        #expect(old.kind == .postgres && old.port == 5439)
+        #expect(!old.useTLS)
+        let url = try #require(r.sources.first { $0.profile.name == "주소 분석" }).profile
+        #expect(url.host == "url.example.test" && url.port == 5440 && url.database == "sales" && url.useTLS)
+
+        let jdbc = try #require(DataGripImport.profile(fromJDBC: "jdbc:redshift://c.example.test/dev"))
+        #expect(jdbc.kind == .postgres && jdbc.port == 5439 && jdbc.useTLS)
+    }
+
     @Test func errors() {
         #expect(throws: DBeaverImport.ParseError.notDBeaver) { try DBeaverImport.parse(Data("{\"format\":\"goddb-connections\"}".utf8)) }
         #expect(throws: DBeaverImport.ParseError.noConnections) { try DBeaverImport.parse(Data("{\"connections\":{}}".utf8)) }

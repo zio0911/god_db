@@ -163,7 +163,14 @@ public enum DBeaverImport {
 
     // MARK: - 접속 하나
 
+    /// DBeaver 의 Redshift 접속: provider "postgresql" + driver "postgres-redshift-jdbc",
+    /// 옛 DBeaver 는 provider "generic" + driver "aws_redshift" / "aws_redshift_42"
+    static func isRedshift(provider: String, driver: String) -> Bool {
+        driver.lowercased().contains("redshift")
+    }
+
     static func kind(provider: String, driver: String) -> DatabaseKind? {
+        if isRedshift(provider: provider, driver: driver) { return .postgres }
         switch provider.lowercased() {
         case "mysql", "mariadb": return .mysql
         case "postgresql": return .postgres
@@ -186,8 +193,11 @@ public enum DBeaverImport {
         }
         let cfg = conn["configuration"] as? [String: Any] ?? [:]
         let url = string(cfg["url"]) ?? ""
-        var p = ConnectionProfile(id: stableID(id), kind: kind, name: conn["name"] as? String ?? id, port: kind.defaultPort)
-        p.useTLS = false
+        let redshift = isRedshift(provider: conn["provider"] as? String ?? "", driver: conn["driver"] as? String ?? "")
+        var p = ConnectionProfile(id: stableID(id), kind: kind, name: conn["name"] as? String ?? id,
+                                  port: redshift ? 5439 : kind.defaultPort)
+        // Redshift 드라이버는 SSL 이 기본 (끈 설정은 아래 sslmode=disable / ssl=false 에서 끔)
+        p.useTLS = redshift
         p.host = string(cfg["host"])?.trimmingCharacters(in: .whitespaces) ?? ""
         if let port = string(cfg["port"]).flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) { p.port = port }
         p.database = string(cfg["database"]) ?? ""
@@ -225,6 +235,14 @@ public enum DBeaverImport {
             let u = url.lowercased()
             if ["usessl=true", "sslmode=require", "sslmode=verify", "ssl=true", "encrypt=true"].contains(where: u.contains) {
                 p.useTLS = true
+            }
+            if redshift {
+                let off = (props.merging(cfg["properties"] as? [String: Any] ?? [:]) { a, _ in a })
+                    .contains { k, v in
+                        let key = k.lowercased(), value = (string(v) ?? "").lowercased()
+                        return (key == "ssl" && value == "false") || (key == "sslmode" && value == "disable")
+                    }
+                if off || u.contains("ssl=false") || u.contains("sslmode=disable") { p.useTLS = false }
             }
         }
 

@@ -543,13 +543,13 @@
 - 내보내기·가져오기는 상태창과 로그 파일에 남는다.
 - **DataGrip 붙여넣기**: DataGrip 에서 데이터 소스를 고르고 ⌘C → GodDB 사이드바에서 ⌘V (또는 가져오기 · 내보내기 메뉴 > "DataGrip 접속 정보 붙여넣기")
   - `jdbc-url` 에서 종류·호스트·포트·DB·TLS 옵션, `user-name`, 이름, uuid(다시 붙여넣으면 같은 접속으로 인식)를 읽는다. 여러 개를 한 번에 붙여넣어도 된다.
-  - 지원: MySQL/MariaDB/Aurora, PostgreSQL, SQL Server(`;database=`, `\인스턴스`), Redis. 그 외 DB 는 "지원하지 않음"으로 알려준다.
+  - 지원: MySQL/MariaDB/Aurora, PostgreSQL, Redshift(`jdbc:redshift:` → PostgreSQL · 5439 · TLS), SQL Server(`;database=`, `\인스턴스`), Redis. 그 외 DB 는 "지원하지 않음"으로 알려준다.
   - 드라이버 래퍼 주소도 읽는다: `jdbc:aws-wrapper:mysql://`(AWS Advanced JDBC Wrapper), `jdbc:p6spy:`, `jdbc:log4jdbc:`, `jdbc:mysql:replication://`·`loadbalance://`(첫 호스트 사용), jTDS
   - 비밀번호는 DataGrip 이 따로 보관해서 들어 있지 않다 → 처음 연결할 때 입력.
   - SSH 터널을 쓰는 데이터 소스는 SSH 설정 id 만 들어 있다 → SSH 를 켠 상태로 가져오고 바스티온 정보는 접속 편집에서 넣으라고 안내.
 - **DBeaver 가져오기**: 가져오기 · 내보내기 메뉴 > "DBeaver 접속 정보 가져오기…" (또는 "접속 정보 가져오기…" 에서 DBeaver 파일을 골라도 된다)
   - 받는 파일: DBeaver 파일 > 내보내기 > DBeaver > 프로젝트 로 만든 `.dbp`, 또는 DBeaver 작업 폴더(`~/Library/DBeaverData/workspace6/<프로젝트>/.dbeaver/`)의 `data-sources.json`. 파일 고르기는 작업 폴더가 있으면 거기서 시작한다.
-  - 지원: MySQL · MariaDB · PostgreSQL · SQL Server. 그 외(SQLite 등)는 건너뛰고 "지원하지 않는 접속 N개는 건너뛰었어요" 로 알려준다.
+  - 지원: MySQL · MariaDB · PostgreSQL · SQL Server · Amazon Redshift (PostgreSQL 접속으로, 기본 포트 5439 · TLS 켬 — 드라이버 설정에서 SSL 을 끈 접속만 끔). 그 외(SQLite 등)는 건너뛰고 "지원하지 않는 접속 N개는 건너뛰었어요" 로 알려준다.
   - 옮기는 것: 이름, 호스트, 포트, DB, 사용자, 읽기전용, SSL 사용 여부, SSH 터널(호스트 · 포트 · 사용자 · 키 파일), 폴더 → 그룹(`상위/하위`). 주소(URL) 방식 접속은 JDBC 주소에서 읽는다.
   - 사용자 이름: DBeaver 는 사용자 이름을 비밀번호와 함께 `credentials-config.json` 에 암호화해 둔다 (`.dbp` 안, `data-sources.json` 과 같은 폴더). 이 파일에서 **사용자 이름만** 읽고 비밀번호는 읽자마자 버린다 (저장 · 표시 · 로그 없음). 파일이 없거나 못 읽으면 사용자 이름 없이 가져오고 안내.
   - 비밀번호는 가져오지 않는다 → 처음 연결할 때 입력.

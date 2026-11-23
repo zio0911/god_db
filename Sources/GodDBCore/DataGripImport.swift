@@ -114,6 +114,11 @@ public enum DataGripImport {
         } else if lower.hasPrefix("jdbc:postgresql://") {
             p.kind = .postgres
             rest = url[url.range(of: "://")!.upperBound...]
+        } else if lower.hasPrefix("jdbc:redshift://") {
+            // Amazon Redshift: PostgreSQL 프로토콜, 기본 포트 5439, 드라이버 기본이 SSL
+            p.kind = .postgres
+            p.useTLS = true
+            rest = url[url.range(of: "://")!.upperBound...]
         } else if lower.hasPrefix("jdbc:sqlserver://") || lower.hasPrefix("jdbc:jtds:sqlserver://") {
             p.kind = .mssql
             rest = url[url.range(of: "://")!.upperBound...]
@@ -124,7 +129,7 @@ public enum DataGripImport {
         } else {
             return nil
         }
-        p.port = p.kind.defaultPort
+        p.port = lower.hasPrefix("jdbc:redshift://") ? 5439 : p.kind.defaultPort
 
         // 쿼리 / 속성
         var params: [String: String] = [:]
