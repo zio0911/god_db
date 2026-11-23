@@ -1099,14 +1099,17 @@ func fileText(_ path: String, wait: Double = 4) -> String {
 
 let uiWork = ProcessInfo.processInfo.environment["GODDB_UI_WORK"] ?? NSTemporaryDirectory()
 
-/// 사이드바 DB 머리 우클릭 > 테이블 설명 (AI 참고)… ('DB' 글자는 접근성에 안 보여서 DB 고르기 팝업 왼쪽을 누른다)
+/// 사이드바 머리 줄의 테이블 설명 말풍선 아이콘 (#185)
+func descriptionsIcon() -> Node? {
+    app.find(10, { !$0.modal && $0.role == "AXButton" && $0.label.hasPrefix("테이블 설명 (AI 참고)") })
+}
+
+/// 말풍선 아이콘 → 테이블 설명 창
 @discardableResult
-func openDescriptions(_ db: String = "shop") -> Bool {
-    guard let picker = app.find(10, { !$0.modal && $0.role == "AXPopUpButton" && $0.value == db }) else { return false }
-    clickAt(CGPoint(x: picker.frame.minX - 14, y: picker.frame.midY), right: true)
-    guard let item = findMenuItem(3, { $0.label.contains("테이블 설명 (AI 참고)") }) else { key("escape"); return false }
-    press(item)
-    return app.find(4, { $0.modal && $0.text.contains("Claude 로 만들기") }) != nil
+func openDescriptions() -> Bool {
+    guard let icon = descriptionsIcon() else { return false }
+    press(icon)
+    return app.find(4, { $0.modal && $0.text.contains("AI 에이전트로 채우기") }) != nil
 }
 
 func sheetButton(_ title: String) -> Node? {
@@ -1117,7 +1120,15 @@ scenario("tableDescriptions") {
     // 테이블 설명 (#178, AI 없이): 사이드바 DB 머리 우클릭 > 테이블 설명 (AI 참고)… → JSON 가져오기 → 맞춰 보기
     // → AI 어시스턴트 데이터 찾기가 설명의 찾는 말로 바로 답 (AI 호출 없음)
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
-    guard openDescriptions() else { check("DB 머리 우클릭 > 테이블 설명 (AI 참고)… 창", false); return }
+    check("사이드바 말풍선 아이콘 (설명 없음 → '아직 없어요')", descriptionsIcon()?.label.contains("아직 없어요") == true,
+          descriptionsIcon()?.label ?? "")
+    // DB 글자 우클릭 메뉴도 그대로 (글자는 접근성에 안 보여서 DB 고르기 팝업 왼쪽을 누른다)
+    if let picker = app.find(10, { !$0.modal && $0.role == "AXPopUpButton" && $0.value == "shop" }) {
+        clickAt(CGPoint(x: picker.frame.minX - 14, y: picker.frame.midY), right: true)
+        check("DB 글자 우클릭 > '테이블 설명 (AI 참고)…'", findMenuItem(3, { $0.label.contains("테이블 설명 (AI 참고)") }) != nil)
+        key("escape")
+    }
+    guard openDescriptions() else { check("말풍선 아이콘 → 테이블 설명 창", false); return }
     check("테이블 설명 창 열기 (설명 없음)", app.find(4, { $0.modal && $0.text.contains("아직 테이블 설명이 없어요") }) != nil)
     guard let importButton = app.find(2, { $0.modal && $0.role == "AXButton" && $0.text.contains("JSON 가져오기") }) else {
         check("[JSON 가져오기…] 버튼", false); closeLeftovers(); return
@@ -1130,7 +1141,9 @@ scenario("tableDescriptions") {
           app.find(2, { $0.modal && $0.text.contains("DB 에 없는 테이블 1개 (no_such_table)") }) != nil)
     check("목록에 title", app.find(2, { $0.modal && $0.role == "AXStaticText" && $0.value == "회원 정보" }) != nil)
     if !answer("닫기") { key("escape") }
-    check("창 닫힘", app.gone(3, { $0.modal && $0.text.contains("Claude 로 만들기") }))
+    check("창 닫힘", app.gone(3, { $0.modal && $0.text.contains("AI 에이전트로 채우기") }))
+    check("말풍선 아이콘 (설명 있음 → '테이블 2개')", app.find(3, { !$0.modal && $0.role == "AXButton" && $0.label.contains("테이블 설명 (AI 참고) — 테이블 2개") }) != nil,
+          descriptionsIcon()?.label ?? "")
 
     guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
     click(ai)
@@ -1225,16 +1238,18 @@ scenario("tableDescriptionsMore") {
     guard openDescriptions() else { check("테이블 설명 창 열기", false); return }
     check("앞 시나리오에서 가져온 설명 (테이블 2개)", app.find(3, { $0.modal && $0.text.contains("테이블 2개 · 컬럼 2개") }) != nil)
 
-    // 분석 요청문 복사
+    // 요청문 샘플 복사 (양식 안 instructions 와 같은 글)
     setClipboard("")
-    if let copy = sheetButton("복사") { press(copy) }
+    if let copy = sheetButton("요청문 샘플 복사") { press(copy) } else { check("[요청문 샘플 복사] 버튼", false) }
     let prompt = clipboard()
-    check("요청문 복사: 양식 이름 · DB 이름", prompt.contains("goddb-table-descriptions") && prompt.contains("`shop`"), String(prompt.prefix(60)))
+    check("요청문 샘플 복사: 양식 이름 · DB 이름", prompt.contains("goddb-table-descriptions") && prompt.contains("`shop`"), String(prompt.prefix(60)))
 
     // 빈 양식: 이름 · 코멘트 · 지금 설명은 들어가고 데이터 값은 없음
     let skeletonPath = uiWork + "/ui-skeleton.json"
-    if let b = sheetButton("양식 저장…") { press(b); saveInPanel(skeletonPath) }
+    if let b = sheetButton("빈 양식 내려받기…") { press(b); saveInPanel(skeletonPath) } else { check("[빈 양식 내려받기…] 버튼", false) }
     let skeleton = fileText(skeletonPath)
+    check("빈 양식 안에 에이전트가 할 일 (instructions · DB 이름)",
+          skeleton.contains("\"instructions\"") && skeleton.contains("`shop`") && skeleton.contains("instructions 칸은 지우기"))
     check("빈 양식 저장: 테이블 · 코멘트(고객 이름) · 기존 title(회원 정보)",
           skeleton.contains("\"ui_customers\"") && skeleton.contains("고객 이름") && skeleton.contains("회원 정보"), String(skeleton.prefix(80)))
     check("빈 양식에 데이터 값 없음 (silver · bronze · 한빛초등학교)",

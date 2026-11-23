@@ -21,7 +21,7 @@ extension AppState {
     }
 }
 
-/// 테이블 설명 JSON 가져오기 · 내보내기 · 지우기, Claude 로 만들기 (빈 양식 · 분석 요청문), 설명 목록
+/// 테이블 설명 JSON 가져오기 · 내보내기 · 지우기, AI 에이전트로 채우기 (빈 양식에 할 일이 들어 있다), 설명 목록
 struct TableDescriptionsView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -64,7 +64,7 @@ struct TableDescriptionsView: View {
                     .disabled(entry == nil)
             }
             Divider()
-            makeWithClaude
+            makeWithAgent
             Divider()
             list
             HStack {
@@ -113,7 +113,7 @@ struct TableDescriptionsView: View {
                 }
             }
         } else {
-            note(tr("아직 테이블 설명이 없어요. 아래 순서로 Claude 에 분석을 맡겨 만든 JSON 을 가져오세요."),
+            note(tr("아직 테이블 설명이 없어요. 아래 순서대로 AI 에이전트에게 맡겨 채운 JSON 을 가져오세요."),
                  systemImage: "info.circle", color: .secondary)
         }
     }
@@ -150,29 +150,31 @@ struct TableDescriptionsView: View {
             .textSelection(.enabled)
     }
 
-    private var makeWithClaude: some View {
+    private var makeWithAgent: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(tr("Claude 로 만들기")).font(.subheadline.weight(.semibold))
+            Text(tr("AI 에이전트로 채우기")).font(.subheadline.weight(.semibold))
+            Text(tr("빈 양식을 Claude · Codex 같은 AI 에이전트에게 소스 저장소와 함께 주면, 소스와 테이블 구조를 분석해 채워 줘요. 채운 설명이 있으면 AI 어시스턴트가 질문을 더 정확히 이해해요."))
+                .font(.callout).foregroundStyle(.secondary)
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
                 GridRow {
                     Text("1").foregroundStyle(.secondary)
-                    Text(tr("지금 테이블 · 컬럼 이름 · 코멘트로 빈 양식 만들기 (데이터 값은 넣지 않아요)"))
+                    Text(tr("빈 양식 내려받기 — 지금 테이블 · 컬럼 이름과 코멘트가 들어 있어요 (데이터 값은 없어요)"))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(tr("양식 저장…")) { saveSkeleton() }
+                    Button(tr("빈 양식 내려받기…")) { saveSkeleton() }
                         .disabled(liveTables == nil)
                         .help(liveTables == nil ? tr("이 DB 에 연결해 있어야 해요") : "")
                 }
                 GridRow {
                     Text("2").foregroundStyle(.secondary)
-                    Text(tr("분석 요청문 복사 → 빈 양식 · 소스 저장소와 함께 Claude 에 붙여넣기"))
+                    Text(tr("요청문 샘플을 복사해 AI 에이전트에게 양식 · 소스 저장소와 함께 주기 (같은 내용이 양식 안 instructions 에도 있어요)"))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button { copyPrompt() } label: {
-                        Label(copied ? tr("복사했어요") : tr("복사"), systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Button { copyRequest() } label: {
+                        Label(copied ? tr("복사했어요") : tr("요청문 샘플 복사"), systemImage: copied ? "checkmark" : "doc.on.doc")
                     }
                 }
                 GridRow {
                     Text("3").foregroundStyle(.secondary)
-                    Text(tr("받은 JSON 가져오기 (양식이 어긋나면 어디가 틀렸는지 알려 줘요)"))
+                    Text(tr("채워 온 JSON 가져오기 (양식이 어긋나면 어디가 틀렸는지 알려 줘요)"))
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Color.clear.frame(width: 1, height: 1)
                 }
@@ -240,6 +242,7 @@ struct TableDescriptionsView: View {
     private func apply(_ doc: TableDescriptionDoc, fileName: String) {
         var doc = doc
         doc.database = request.database
+        doc.instructions = nil
         app.tableDescriptions.set(TableDescriptionEntry(profileID: request.profileID, database: request.database,
                                                         fileName: fileName, doc: doc))
         app.saveTableDescriptions()
@@ -257,29 +260,18 @@ struct TableDescriptionsView: View {
 
     private func saveSkeleton() {
         guard let live = liveTables else { return }
-        // 이미 설명이 있으면 그 위에 새 테이블 · 컬럼만 더한 양식을 준다
-        var doc = TableDescriptionDoc.skeleton(tables: live, database: request.database)
-        if let current = entry?.doc {
-            doc.overview = current.overview
-            doc.tables = doc.tables.map { t in
-                guard let old = current.table(t.name) else { return t }
-                var merged = old
-                var cols = old.columns ?? []
-                for c in t.columns ?? [] where !cols.contains(where: { $0.name.lowercased() == c.name.lowercased() }) { cols.append(c) }
-                merged.columns = cols
-                if (merged.title ?? "").isEmpty { merged.title = t.title }
-                return merged
-            }
-        }
+        // 이미 설명이 있으면 그 위에 새 테이블 · 컬럼만 더한 양식 + AI 에이전트가 할 일(instructions)
+        let doc = TableDescriptionDoc.form(tables: live, database: request.database, kind: profile?.kind ?? .mysql,
+                                           english: L10n.isEnglish, current: entry?.doc)
         guard let data = try? doc.encoded() else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "\(request.database)-table-descriptions.json"
+        panel.nameFieldStringValue = "\(request.database)-table-descriptions-form.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         SaveFile.write(data, to: url)
     }
 
-    private func copyPrompt() {
+    private func copyRequest() {
         Pasteboard.copy(TableDescriptionDoc.requestPrompt(database: request.database, kind: profile?.kind ?? .mysql,
                                                           english: L10n.isEnglish))
         copied = true

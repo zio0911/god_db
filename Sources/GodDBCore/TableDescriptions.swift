@@ -62,6 +62,8 @@ public struct TableDescriptionDoc: Codable, Equatable, Sendable {
     public var generatedAt: String?
     /// DB 전체 요약 (업무 도메인)
     public var overview: String?
+    /// 빈 양식에만: 채워 줄 AI 에이전트에게 주는 할 일 (가져올 때는 저장하지 않는다)
+    public var instructions: String?
     public var tables: [Table]
 
     public init(database: String? = nil, generatedBy: String? = nil, generatedAt: String? = nil, overview: String? = nil,
@@ -182,35 +184,51 @@ public struct TableDescriptionDoc: Codable, Equatable, Sendable {
         return TableDescriptionDoc(database: database, generatedBy: nil, generatedAt: nil, overview: nil, tables: out)
     }
 
-    /// Claude 에 소스와 함께 붙여넣을 분석 요청문
+    /// 내려받는 빈 양식: 지금 구조(+ 이미 있는 설명) 에 AI 에이전트가 할 일(`instructions`)을 넣는다
+    public static func form(tables: [TableMeta], database: String, kind: DatabaseKind, english: Bool,
+                            current: TableDescriptionDoc? = nil) -> TableDescriptionDoc {
+        var doc = skeleton(tables: tables, database: database)
+        if let current {
+            doc.overview = current.overview
+            doc.tables = doc.tables.map { t in
+                guard let old = current.table(t.name) else { return t }
+                var merged = old
+                var cols = old.columns ?? []
+                for c in t.columns ?? [] where !cols.contains(where: { $0.name.lowercased() == c.name.lowercased() }) { cols.append(c) }
+                merged.columns = cols
+                if (merged.title ?? "").isEmpty { merged.title = t.title }
+                return merged
+            }
+        }
+        doc.instructions = requestPrompt(database: database, kind: kind, english: english)
+        return doc
+    }
+
+    /// 빈 양식의 `instructions`: 양식을 받은 AI 에이전트(Claude · Codex 등)가 할 일
     public static func requestPrompt(database: String, kind: DatabaseKind, english: Bool) -> String {
         if english {
             return """
-            Analyze the source code in this repository and describe every table of the \(kind.title) database `\(database)`.
-            I attached a skeleton JSON with the current table and column names. Fill it in and return only the JSON, keeping this format:
-
-            - format "\(formatName)", version \(currentVersion), database "\(database)", generatedBy, generatedAt (YYYY-MM-DD)
-            - overview: the business domain of this database in 2–3 sentences
-            - tables[].title: business name, description: what one row means, terms: words people use to look for it
-            - tables[].columns[]: title, description (only when not obvious), terms, references ("table.column" for relations the code uses even without a foreign key)
-            - columns[].values: meaning of code values, e.g. {"P": "pending", "C": "completed"} — from enums/constants in the code
-            - tables[].notes: rules for querying (soft delete, status filters, which column joins which)
-
-            Rules: use only names that exist in the skeleton, base everything on the code, leave a field out when unsure, never include real row data or personal information.
+            This file is a form for GodDB's AI assistant. Read the source code of the repository you were given and describe \
+            every table of the \(kind.title) database `\(database)` by filling in this file. Return only the filled JSON in the same format.
+            - Keep format "\(formatName)", version \(currentVersion), database "\(database)". Set generatedBy (your name) and generatedAt (YYYY-MM-DD). Remove this instructions field.
+            - overview: the business domain of this database in 2-3 sentences.
+            - tables[].title: business name, description: what one row means, terms: words people use to look for it.
+            - tables[].columns[]: title, description (only when not obvious), terms, references ("table.column" for relations the code uses even without a foreign key).
+            - columns[].values: meaning of code values, e.g. {"P": "pending", "C": "completed"}, taken from enums and constants in the code.
+            - tables[].notes: rules for querying (soft delete, status filters, which column joins which).
+            Rules: use only table and column names that are already in this file, base everything on the code, and leave a field out when unsure.
             """
         }
         return """
-        이 저장소의 소스 코드를 보고 \(kind.title) DB `\(database)` 의 모든 테이블을 설명해 줘.
-        지금 테이블 · 컬럼 이름이 들어 있는 빈 양식 JSON 을 붙였어. 같은 양식을 지켜 채운 JSON 만 돌려줘.
-
-        - format "\(formatName)", version \(currentVersion), database "\(database)", generatedBy, generatedAt (YYYY-MM-DD)
-        - overview: 이 DB 의 업무 도메인을 2~3문장으로
-        - tables[].title: 업무 이름, description: 행 하나가 무엇인지, terms: 사람들이 이 데이터를 찾을 때 쓰는 말
-        - tables[].columns[]: title, description (뻔하지 않을 때만), terms, references (FK 가 없어도 코드에서 잇는 곳 "테이블.컬럼")
-        - columns[].values: 코드 값의 뜻, 예 {"P": "결제 대기", "C": "완료"} — 코드의 enum · 상수에서
-        - tables[].notes: 조회할 때 규칙 (소프트 삭제, 상태 조건, 어떤 컬럼으로 잇는지)
-
-        규칙: 빈 양식에 있는 이름만 쓰고, 코드에 근거해서 쓰고, 확실하지 않으면 그 칸은 빼고, 실제 데이터 행이나 개인 정보는 넣지 마.
+        이 파일은 GodDB AI 어시스턴트용 양식이에요. 받은 저장소의 소스 코드를 보고 \(kind.title) DB `\(database)` 의 모든 테이블을 \
+        이 파일에 채워서 설명해 주세요. 같은 양식의 JSON 만 돌려주세요.
+        - format "\(formatName)", version \(currentVersion), database "\(database)" 는 그대로. generatedBy (에이전트 이름), generatedAt (YYYY-MM-DD) 를 채우고 이 instructions 칸은 지우기.
+        - overview: 이 DB 의 업무 도메인을 2~3문장으로.
+        - tables[].title: 업무 이름, description: 행 하나가 무엇인지, terms: 사람들이 이 데이터를 찾을 때 쓰는 말.
+        - tables[].columns[]: title, description (뻔하지 않을 때만), terms, references (FK 가 없어도 코드에서 잇는 곳 "테이블.컬럼").
+        - columns[].values: 코드 값의 뜻, 예 {"P": "결제 대기", "C": "완료"} — 코드의 enum · 상수에서.
+        - tables[].notes: 조회할 때 규칙 (소프트 삭제, 상태 조건, 어떤 컬럼으로 잇는지).
+        규칙: 이 파일에 이미 있는 테이블 · 컬럼 이름만 쓰고, 코드에 근거해서 쓰고, 확실하지 않은 칸은 빼기.
         """
     }
 

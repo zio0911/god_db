@@ -89,6 +89,16 @@ struct SidebarView: View {
                             } else {
                                 Text("\(app.tables.count)").foregroundStyle(.secondary)
                             }
+                            // 테이블 설명 (AI 참고, #185): 없으면 흐린 빈 말풍선, 있으면 보라색 채운 말풍선
+                            let descriptions = app.currentDescriptions
+                            Button { app.openTableDescriptions() } label: {
+                                Image(systemName: descriptions == nil ? "text.bubble" : "text.bubble.fill")
+                                    .foregroundStyle(descriptions == nil ? Color.secondary : Color.purple)
+                            }
+                            .buttonStyle(.borderless)
+                            .help(descriptions.map { tr("테이블 설명 (AI 참고) — 테이블 %@개", "\($0.tables.count)") }
+                                  ?? tr("테이블 설명 (AI 참고) — 아직 없어요"))
+                            .accessibilityLabel(tr("테이블 설명 (AI 참고)"))
                             Button {
                                 let id = app.selectedTables.count > 1
                                     ? app.makeDiagram(names: app.selectedTables)

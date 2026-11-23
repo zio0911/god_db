@@ -74,6 +74,21 @@ struct TableDescriptionsTests {
         #expect(try TableDescriptionDoc.parse(s.encoded()).tables.count == 2)
     }
 
+    @Test func formCarriesInstructionsAndKeepsCurrentDescriptions() throws {
+        let current = try doc()
+        let f = TableDescriptionDoc.form(tables: [Self.orders, Self.members], database: "shop", kind: .mysql,
+                                         english: false, current: current)
+        let text = try #require(f.instructions)
+        #expect(text.contains("instructions 칸은 지우기") && text.contains("`shop`"))
+        #expect(f.table("orders")?.title == "주문")                        // 이미 있는 설명 유지
+        #expect(f.table("orders")?.column("id") != nil)                    // 새 컬럼 더함
+        #expect(f.table("orders")?.column("status")?.values?["C"] == "완료")
+        // 에이전트가 instructions 를 남겨 돌려줘도 읽힌다
+        let back = try TableDescriptionDoc.parse(f.encoded())
+        #expect(back.instructions == text)
+        #expect(String(decoding: try f.encoded(), as: UTF8.self).contains("\"instructions\""))
+    }
+
     @Test func requestPromptNamesFormatAndDatabase() {
         for english in [false, true] {
             let p = TableDescriptionDoc.requestPrompt(database: "shop", kind: .postgres, english: english)
