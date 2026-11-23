@@ -169,6 +169,8 @@ struct QueryTabView: View {
         }
         .onAppear {
             controller.schemaProvider = { [app] in (app.tables, app.routines) }
+            controller.lintContext = { [app, id = tab.id] in app.lintContext(tabID: id) }
+            controller.serverChecker = { [app, id = tab.id] sql in await app.serverCheck(sql, tabID: id) }
             controller.focus()
             app.activeEditor = controller
         }
