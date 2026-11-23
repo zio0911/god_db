@@ -289,6 +289,23 @@ scenario("connect") {
     check("접속 연결 · 쿼리 탭 열림", ready && app.find(10, role("AXTextArea")) != nil)
 }
 
+scenario("lint") {
+    func help() -> String { editor().flatMap { attr($0.el, "AXHelp") as? String } ?? "" }
+    try setEditor("SELECT a.id, a.custmer, a.amount FROM ui_orders a")
+    Thread.sleep(forTimeInterval: 0.8)
+    check("없는 컬럼 빨간 밑줄 (custmer, 비슷한 컬럼 customer)", help().contains("custmer") && help().contains("customer"))
+    try setEditor("SELECT id, amount, FROM ui_orders")
+    Thread.sleep(forTimeInterval: 0.8)
+    check("콤마 뒤 항목 없음 표시", help().contains("콤마 뒤에 항목이 없어요"))
+    // GodDB 검사로는 모르는 경우 (JOIN + 이름만 쓴 컬럼) → DB 검사
+    try setEditor("SELECT custmer FROM ui_orders a JOIN ui_orders b ON a.id = b.id")
+    Thread.sleep(forTimeInterval: 2.5)
+    check("DB 검사 결과 표시 (실행하지 않음)", help().contains("DB 검사") && help().contains("custmer"))
+    try setEditor("SELECT id, customer FROM ui_orders ORDER BY id")
+    Thread.sleep(forTimeInterval: 2.5)
+    check("올바른 쿼리는 밑줄 없음", help().isEmpty)
+}
+
 scenario("run") {
     try setEditor("SELECT id, customer, amount FROM ui_orders ORDER BY id")
     let ok = runAndWait(8, cell("park")) != nil

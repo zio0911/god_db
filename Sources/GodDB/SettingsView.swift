@@ -62,6 +62,8 @@ struct GeneralSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppState.self) private var app
     @AppStorage(AppState.confirmDangerousKey) private var confirmDangerous = true
+    @AppStorage(EditorLint.enabledKey) private var lintEnabled = true
+    @AppStorage(EditorLint.serverKey) private var lintServer = true
     @AppStorage(AppState.prodIdleMinutesKey) private var prodIdleMinutes = 30
     @State private var versionTaps = 0
     @State private var showDotZero = false
@@ -102,6 +104,19 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Text(tr("쿼리"))
+            }
+            Section {
+                Toggle(tr("쿼리 오류에 빨간 밑줄"), isOn: $lintEnabled)
+                Text(tr("없는 컬럼, 빠진 콤마, 닫히지 않은 괄호 · 따옴표, 키워드 오타를 입력하는 동안 표시해요. 밑줄에 마우스를 올리면 이유가 나와요."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle(tr("DB 에 검사 요청"), isOn: $lintServer)
+                    .disabled(!lintEnabled)
+                Text(tr("입력을 1초 멈추면 커서가 있는 구문을 DB 에 실행 없이 검사만 맡겨요 (MySQL · PostgreSQL PREPARE, SQL Server sp_describe_first_result_set). 실행 중이거나 PostgreSQL 트랜잭션이 열려 있으면 묻지 않아요."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text(tr("편집기"))
             }
             Section {
                 Toggle(tr("위험한 명령 실행 전 확인"), isOn: $confirmDangerous)
