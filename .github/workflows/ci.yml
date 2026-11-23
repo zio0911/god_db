@@ -27,6 +27,10 @@ jobs:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
+      - name: Vendor 드라이버 원본 확인 (뒤처지거나 보안 권고가 있으면 경고)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/check-vendor-updates.sh
       - name: 빌드
         run: swift build
       - name: 단위 테스트
