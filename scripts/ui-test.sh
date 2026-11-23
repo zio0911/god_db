@@ -97,6 +97,24 @@ cat > "$DATA/profiles.json" <<JSON
 ]
 JSON
 
+# AI 데이터 찾기 시나리오는 이 PC 의 Ollama 가 필요하다. 꺼져 있으면 켜고 응답할 때까지 기다린다.
+if [[ ${#SCENARIOS[@]} -eq 0 || " ${SCENARIOS[*]} " == *" dataFinder "* ]]; then
+  if ! curl -s -m 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
+    echo "▶ Ollama 켜기"
+    if [[ -d /Applications/Ollama.app ]]; then
+      open -g -a Ollama
+    elif command -v ollama >/dev/null; then
+      nohup ollama serve > "$WORK.ollama.log" 2>&1 &
+    fi
+    for i in {1..30}; do curl -s -m 2 http://localhost:11434/api/tags >/dev/null 2>&1 && break; sleep 1; done
+  fi
+  if curl -s -m 3 http://localhost:11434/api/tags 2>/dev/null | grep -q '"qwen3:30b"'; then
+    echo "  Ollama 준비됨 (qwen3:30b)"
+  else
+    echo "  ⚠️ Ollama 가 켜지지 않았거나 qwen3:30b 가 없어요 — AI 데이터 찾기 시나리오는 실패할 수 있어요 (ollama pull qwen3:30b)"
+  fi
+fi
+
 echo "▶ 앱 실행"
 GODDB_UI_TEST=1 GODDB_DATA_DIR="$DATA" GODDB_UI_TEST_PASSWORD=$MYSQL_PASSWORD \
   "$APP/Contents/MacOS/GodDB" -ApplePersistenceIgnoreState YES > "$WORK/app.log" 2>&1 &
