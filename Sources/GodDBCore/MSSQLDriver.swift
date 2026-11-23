@@ -45,49 +45,36 @@ private let dblibInit: Void = {
     dberrhandle(errHandler)
     dbmsghandle(msgHandler)
     dbsetlogintime(10)
+    // 연결별 TLS 섹션을 넣는 설정 파일 (MSSQLConfigFile). 파일이 없거나 섹션이 없으면 FreeTDS 는 원래대로 찾는다.
+    dbsetifile(strdup(MSSQLConfigFile.path))
 }()
 
 /// FreeTDS DB-Library 기반 SQL Server 드라이버. 블로킹 API 라서 전용 직렬 큐에서 실행한다.
 final class MSSQLDriver: DBDriver, @unchecked Sendable {
     private let queue = DispatchQueue(label: "GodDB.mssql")
     private var proc: OpaquePointer?
+    /// 연결 후 상태창에 남길 TLS 상태 (F9-3)
+    private(set) var tlsStatus: TLSStatus = .off
 
     private init(_ proc: OpaquePointer) { self.proc = proc }
 
     static func connect(_ e: DriverEndpoint) async throws -> MSSQLDriver {
         _ = dblibInit
-        let driver: MSSQLDriver = try await HostResolver.tryEach(e.host, port: e.port) { ip in
-            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<MSSQLDriver, Error>) in
-                DispatchQueue.global().async {
-                    MessageBox.reset()
-                    guard let login = dblogin() else {
-                        cont.resume(throwing: MSSQLError(number: 0, message: tr("로그인 정보를 만들 수 없어요.")))
-                        return
-                    }
-                    defer { dbloginfree(login) }
-                    dbsetlname(login, e.username, DBSETUSER)
-                    dbsetlname(login, e.password ?? "", DBSETPWD)
-                    dbsetlname(login, "GodDB", DBSETAPP)
-                    dbsetlname(login, "UTF-8", DBSETCHARSET)
-                    dbsetlname(login, e.useTLS ? "require" : "off", DBSETENCRYPTION)
-                    if !e.database.isEmpty { dbsetlname(login, e.database, DBSETDBNAME) }
-                    dbsetlversion(login, BYTE(DBVERSION_74))
-                    // 포트는 서버 이름에 붙이지 않고 로그인 옵션으로 넘긴다.
-                    dbsetlshort(login, Int32(e.port), DBSETPORT)
-                    // C 헤더의 dbopen 은 tdsdbopen 을 부르는 매크로라 Swift 에서는 tdsdbopen 을 직접 부른다.
-                    // (라이브러리의 dbopen 심볼은 호환용이라 바로 NULL 을 돌려준다)
-                    if let p = tdsdbopen(login, ip, 1) {
-                        cont.resume(returning: MSSQLDriver(p))
-                    } else {
-                        let errors = MessageBox.errors
-                        // 서버 메시지(로그인 실패 등)를 우선으로 보여준다.
-                        let main = errors.first { $0.number < 20000 } ?? errors.last
-                            ?? MSSQLError(number: 20009, message: tr("서버에 연결할 수 없어요."))
-                        cont.resume(throwing: main)
-                    }
+        // F9-3: 확인을 켜면 서버 인증서를 먼저 받아 판정하고(MSSQLTLS), FreeTDS 도 그 결과에 맞게 다시 확인하게 한다.
+        // 터널 · 고정 없음이면 확인할 게 없어 받지 않는다 (다른 DB 와 같이 "확인 안 함(SSH 터널)").
+        let verifier = e.useTLS && e.tls.verify ? TLSVerifier(policy: e.tls) : nil
+        let needsProbe = verifier.map { $0.policy.hostname != nil || $0.policy.pin != nil } ?? false
+        let driver: MSSQLDriver = try await HostResolver.withTLS(verifier) {
+            try await HostResolver.tryEach(e.host, port: e.port) { ip in
+                var check: MSSQLTLS.FreeTDSCheck?
+                if let verifier, needsProbe {
+                    let probe = try await MSSQLTLS.probe(ip: ip, port: e.port, serverName: e.serverName, verifier: verifier)
+                    check = MSSQLTLS.freeTDSCheck(verdict: probe.verdict, chain: probe.chain, hostname: verifier.policy.hostname)
                 }
+                return try await open(e, ip: ip, check: check)
             }
         }
+        driver.tlsStatus = e.useTLS ? (verifier?.status ?? .unchecked) : .off
         // DB-Library 기본 세션은 ANSI_PADDING 등이 꺼져 있다 (varbinary 끝의 0 이 잘리고, 컬럼 기본값이 NOT NULL 등).
         // JDBC · ODBC 드라이버와 같은 표준 설정으로 맞춘다.
         _ = try await driver.query("""
@@ -95,6 +82,49 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
             SET CONCAT_NULL_YIELDS_NULL ON; SET QUOTED_IDENTIFIER ON; SET ARITHABORT ON
             """)
         return driver
+    }
+
+    /// DB-Library 로 한 주소에 연결한다. check 가 있으면 연결별 freetds.conf 섹션(ca file · 이름 확인)으로 연결한다.
+    static func open(_ e: DriverEndpoint, ip: String, check: MSSQLTLS.FreeTDSCheck?) async throws -> MSSQLDriver {
+        _ = dblibInit
+        let entry = try check.map { try MSSQLConfigFile.add(ip: ip, port: e.port, check: $0) }
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<MSSQLDriver, Error>) in
+            DispatchQueue.global().async {
+                let result = Result { try openSync(e, server: entry?.name ?? ip, ip: ip, checked: check != nil) }
+                // 설정 파일은 dbopen 안에서 읽으므로 연결이 끝나면(성공 · 실패) 섹션과 CA 파일을 지운다 (결과를 넘기기 전에)
+                entry.map(MSSQLConfigFile.remove)
+                cont.resume(with: result)
+            }
+        }
+    }
+
+    /// - server: FreeTDS 에 넘길 서버 이름 (인증서를 확인하면 섹션 이름 — 섹션의 host 가 같은 IP)
+    private static func openSync(_ e: DriverEndpoint, server: String, ip: String, checked: Bool) throws -> MSSQLDriver {
+        MessageBox.reset()
+        guard let login = dblogin() else {
+            throw MSSQLError(number: 0, message: tr("로그인 정보를 만들 수 없어요."))
+        }
+        defer { dbloginfree(login) }
+        dbsetlname(login, e.username, DBSETUSER)
+        dbsetlname(login, e.password ?? "", DBSETPWD)
+        dbsetlname(login, "GodDB", DBSETAPP)
+        dbsetlname(login, "UTF-8", DBSETCHARSET)
+        dbsetlname(login, e.useTLS ? "require" : "off", DBSETENCRYPTION)
+        if !e.database.isEmpty { dbsetlname(login, e.database, DBSETDBNAME) }
+        dbsetlversion(login, BYTE(DBVERSION_74))
+        // 포트는 서버 이름에 붙이지 않고 로그인 옵션으로 넘긴다.
+        dbsetlshort(login, Int32(e.port), DBSETPORT)
+        // C 헤더의 dbopen 은 tdsdbopen 을 부르는 매크로라 Swift 에서는 tdsdbopen 을 직접 부른다.
+        // (라이브러리의 dbopen 심볼은 호환용이라 바로 NULL 을 돌려준다)
+        if let p = tdsdbopen(login, server, 1) { return MSSQLDriver(p) }
+        let errors = MessageBox.errors
+        // 서버 메시지(로그인 실패 등)를 우선으로 보여준다.
+        let main = errors.first { $0.number < 20000 } ?? errors.last
+            ?? MSSQLError(number: 20009, message: tr("서버에 연결할 수 없어요."))
+        guard checked, main.number >= 20000 else { throw main }
+        // 미리 받은 인증서는 통과했는데 FreeTDS 연결이 실패 — TLS 확인 실패일 수 있다 (그 사이 인증서가 바뀌었거나)
+        throw MSSQLError(number: main.number, message: main.message.replacingOccurrences(of: server, with: ip) + " — "
+            + tr("FreeTDS 연결의 인증서 확인에서 실패했을 수 있어요. 다시 연결해 보고, 계속되면 관리자에게 서버 인증서를 확인하세요."))
     }
 
     var isOpen: Bool {

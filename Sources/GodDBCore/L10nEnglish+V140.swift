@@ -139,7 +139,13 @@ extension L10nEnglish {
         // F9-3 TLS 서버 인증서 확인 · F9-4 SSH 호스트 키 확인
         "%@ TLS 인증서 신뢰 SHA256:%@": "%@ trusted TLS certificate SHA256:%@",
         "%@ 인증서 고정 지움": "%@ certificate pin removed",
-        "SQL Server 는 암호화만 하고 서버 인증서는 확인하지 못해요. 외부망에서는 SSH 터널이나 VPN 을 쓰세요.": "SQL Server connections are encrypted, but the server certificate can't be verified. Use an SSH tunnel or VPN over external networks.",
+        // F9-3 SQL Server 서버 인증서 확인 (1.4.1 #157)
+        "FreeTDS 연결의 인증서 확인에서 실패했을 수 있어요. 다시 연결해 보고, 계속되면 관리자에게 서버 인증서를 확인하세요.": "The certificate check on the FreeTDS connection may have failed. Try connecting again; if it keeps happening, ask the administrator to check the server certificate.",
+        "서버 인증서를 받기 전에 연결이 끊어졌어요.": "The connection closed before the server certificate was received.",
+        "서버 인증서를 받는 중에 시간이 초과됐어요.": "Timed out while receiving the server certificate.",
+        "서버 인증서를 받지 못했어요.": "Couldn't receive the server certificate.",
+        "서버가 보낸 TDS 패킷이 올바르지 않아요.": "The server sent an invalid TDS packet.",
+        "서버의 PRELOGIN 응답을 읽을 수 없어요.": "Couldn't read the server's PRELOGIN response.",
         "SSH 서버 키가 바뀌었어요 — %@": "The SSH server key has changed — %@",
         "SSH 서버 키가 바뀌었어요. 서버를 다시 설치한 게 아니라면 중간에서 가로채는 공격일 수 있어요. 관리자에게 확인한 뒤 [저장된 키 지우기] (GodDB 전용 파일에서만 지움).": "The SSH server key has changed. Unless the server was reinstalled, this may be a man-in-the-middle attack. Check with the administrator, then use [Remove Saved Key] (removes it from GodDB's own file only).",
         "SSH 서버 키를 받지 못했어요 — %@": "Couldn't get the SSH server key — %@",
@@ -148,7 +154,6 @@ extension L10nEnglish {
         "SSH 호스트 키 지움 %@": "Removed SSH host key %@",
         "SSH 호스트 키를 저장하지 못했어요": "Couldn't save the SSH host key",
         "TLS 사용 · 고정 인증서": "TLS on · pinned certificate",
-        "TLS 사용 · 암호화만(인증서 확인 불가)": "TLS on · encryption only (certificate can't be verified)",
         "TLS 사용 · 인증서 확인됨": "TLS on · certificate verified",
         "TLS 사용 · 확인 안 함": "TLS on · not verified",
         "TLS 사용 · 확인 안 함(SSH 터널)": "TLS on · not verified (SSH tunnel)",

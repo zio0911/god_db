@@ -75,12 +75,6 @@ struct ConnectionEditorView: View {
                               systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(.orange)
                     }
-                    if profile.kind == .mssql {
-                        // FreeTDS(DB-Library) 는 인증서 · 지문 확인을 할 수 없어 암호화만 강제한다 (F9-3)
-                        Label(tr("SQL Server 는 암호화만 하고 서버 인증서는 확인하지 못해요. 외부망에서는 SSH 터널이나 VPN 을 쓰세요."),
-                              systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
                 }
                 Section(profile.kind.title) {
                     if profile.kind == .redis {
@@ -154,7 +148,7 @@ struct ConnectionEditorView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Toggle(tr("TLS 사용"), isOn: $profile.useTLS)
-                    if profile.useTLS && profile.kind != .mssql {
+                    if profile.useTLS {
                         tlsVerifyRows
                     }
                 }

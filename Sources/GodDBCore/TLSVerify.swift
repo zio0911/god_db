@@ -4,7 +4,7 @@ import NIOCore
 import NIOSSL
 import Security
 
-// F9-3. TLS 서버 인증서 확인 (MySQL · PostgreSQL · Redis)
+// F9-3. TLS 서버 인증서 확인 (MySQL · PostgreSQL · Redis · SQL Server — SQL Server 는 MSSQLTLS.swift)
 // 직접 접속: 시스템 신뢰 저장소로 체인 + 호스트 이름 확인 → 실패하면 고정 지문(tlsPinSHA256) 비교.
 // SSH 터널 경유: 이름 확인을 하지 않고, 고정 지문이 있으면 지문만 비교.
 
@@ -99,8 +99,6 @@ public enum TLSStatus: Sendable, Hashable {
     case tunnelUnchecked
     /// "서버 인증서 확인" 을 끔
     case unchecked
-    /// SQL Server: 암호화만 (인증서 확인 불가)
-    case encryptOnly
     case off
 
     public var text: String {
@@ -109,7 +107,6 @@ public enum TLSStatus: Sendable, Hashable {
         case .pinned: return tr("TLS 사용 · 고정 인증서")
         case .tunnelUnchecked: return tr("TLS 사용 · 확인 안 함(SSH 터널)")
         case .unchecked: return tr("TLS 사용 · 확인 안 함")
-        case .encryptOnly: return tr("TLS 사용 · 암호화만(인증서 확인 불가)")
         case .off: return tr("TLS 안 씀")
         }
     }
@@ -247,6 +244,18 @@ public enum TLSVerify {
         let details = (SecTrustCopyResult(trust) as? [String: Any])?["TrustResultDetails"] as? [[String: Any]] ?? []
         let failed = Set(details.flatMap(\.keys)).subtracting(["StatusCodes"])
         return (false, reasons(failedChecks: failed))
+    }
+
+    /// 시스템 신뢰 저장소 확인을 통과하면 macOS 가 만든 체인(서버 인증서 → … → 신뢰한 루트)의 DER. 실패하면 nil.
+    /// SQL Server 에서 FreeTDS 에 넘길 "ca file" 에 쓴다 (사용자가 추가한 루트도 들어간다).
+    public static func trustedChain(chain ders: [[UInt8]], hostname: String?) -> [[UInt8]]? {
+        let certs = ders.compactMap { SecCertificateCreateWithData(nil, Data($0) as CFData) }
+        guard !certs.isEmpty else { return nil }
+        var created: SecTrust?
+        guard SecTrustCreateWithCertificates(certs as CFArray, SecPolicyCreateSSL(true, hostname as CFString?), &created) == errSecSuccess,
+              let trust = created, SecTrustEvaluateWithError(trust, nil),
+              let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] else { return nil }
+        return chain.map { [UInt8](SecCertificateCopyData($0) as Data) }
     }
 
     /// SecTrust 상세의 실패 항목 이름 → 이유 (이름 · 기간 말고는 모두 신뢰할 수 없는 발급자로 본다)
