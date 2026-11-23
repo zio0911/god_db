@@ -6,7 +6,7 @@ struct DataFinderAnswer: Identifiable, Equatable {
     let id = UUID()
     var table: String
     var columns: [String]
-    /// AI 판단의 신뢰도 (메모 · 다른 후보는 없음)
+    /// AI 판단의 신뢰도 (테이블 설명 · 다른 후보는 없음)
     var confidence: DataFinder.Confidence?
     var explain: String
     var sql: String
@@ -14,8 +14,8 @@ struct DataFinderAnswer: Identifiable, Equatable {
     var samples: [String]?
     /// 샘플 조회 상태 ("값 N개" / "시간 초과" / "조회 실패: …", nil = 조회 안 함)
     var sampleStatus: String? = nil
-    /// 저장된 메모 (자동 저장 · 메모에서 찾음)
-    var noteID: UUID?
+    /// 테이블 설명(#178)에서 찾음 — [아니에요] 하면 설명에서 그 찾는 말을 뺀다
+    var fromDescriptions: Bool
     var confirmed: Bool
     var source: TableNote.Source
 
@@ -31,7 +31,7 @@ struct DataFinderCard: Equatable {
     var current: DataFinderAnswer?
     /// [아니에요] 하면 차례로 보여줄 다른 후보
     var others: [DataFinderAnswer]
-    /// 메모에서 바로 찾음 (AI 호출 없음)
+    /// 테이블 설명에서 바로 찾음 (AI 호출 없음)
     var fromNotes: Bool
     /// 보낸 내용 칩: 테이블 목록 N개 · 후보 컬럼 샘플 M개
     var tablesSent: Int?
@@ -110,7 +110,7 @@ struct ProdSamplePrompt: Identifiable {
 extension AppState {
     // MARK: - 찾기
 
-    /// 데이터 위치 찾기. 메모가 맞으면 바로 답, 아니면 로컬 AI 후보 → 샘플 조회 → 판단.
+    /// 데이터 위치 찾기. 테이블 설명의 찾는 말이 맞으면 바로 답, 아니면 로컬 AI 후보 → 샘플 조회 → 판단.
     func findData(_ question: String, skipNotes: Bool = false) {
         guard let p = selectedProfile, p.kind.isSQL, state == .connected, let session else { return }
         let chat = assistant.chat(assistantScope)
@@ -121,7 +121,8 @@ extension AppState {
         assistant.finderMode = false
         let terms = DataFinder.keyTerms(q)
         let db = currentDatabase
-        let tables = self.tables
+        let tables = describedTables
+        let hints = currentDescriptions?.finderNotes(profileID: p.id, database: db) ?? []
         chat.messages.append(.init(role: "user", text: q))
         chat.messages.append(.init(role: "assistant", text: ""))
         let answerIndex = chat.messages.count - 1
@@ -136,14 +137,14 @@ extension AppState {
             return
         }
 
-        // 1) 메모 먼저
+        // 1) 테이블 설명 먼저
         if !skipNotes {
-            let hits = DataFinder.matchNotes(terms: terms, in: tableNotes.notes(profileID: p.id, database: db))
+            let hits = DataFinder.matchNotes(terms: terms, in: hints)
             if !hits.isEmpty {
                 let answers = hits.map { n in
                     DataFinderAnswer(table: n.table, columns: n.columns, confidence: nil, explain: n.memo,
                                      sql: DataFinder.defaultSQL(table: n.table, dialect: dialect), samples: nil,
-                                     noteID: n.id, confirmed: n.confirmed, source: n.source)
+                                     fromDescriptions: true, confirmed: true, source: .user)
                 }
                 card.current = answers.first
                 card.others = Array(answers.dropFirst())
@@ -156,7 +157,7 @@ extension AppState {
         }
 
         let gen = chat.begin()
-        let notes = tableNotes.notes(profileID: p.id, database: db)
+        let notes = hints
         let target = db.isEmpty ? p.name : "\(p.name)/\(db)"
         chat.task = Task { [weak self] in
             guard let self else { return }
@@ -222,19 +223,18 @@ extension AppState {
                     n + s.candidate.columns.filter { !((s.samples[$0] ?? nil)?.isEmpty ?? true) }.count
                 }
 
-                // 답 카드 + 메모 자동 저장
+                // 답 카드 (테이블 설명에는 [맞아요] 를 눌렀을 때만 넣는다)
                 let chosen = found.sampled.first { $0.candidate.table == verdict.table }
                 var current = DataFinderAnswer(table: verdict.table, columns: verdict.columns, confidence: verdict.confidence,
                                                explain: verdict.explain, sql: verdict.sql, samples: chosen?.displaySamples,
                                                sampleStatus: chosen?.sampleStatus,
-                                               noteID: nil, confirmed: false, source: .ai)
-                current.noteID = self.autoSaveNote(current, card: card)
+                                               fromDescriptions: false, confirmed: false, source: .ai)
                 card.current = current
                 card.others = found.sampled.filter { $0 != chosen }.map { s in
                     DataFinderAnswer(table: s.candidate.table, columns: s.candidate.columns, confidence: nil,
                                      explain: s.candidate.reason, sql: DataFinder.defaultSQL(table: s.candidate.table, dialect: dialect),
                                      samples: s.displaySamples, sampleStatus: s.sampleStatus,
-                                     noteID: nil, confirmed: false, source: .ai)
+                                     fromDescriptions: false, confirmed: false, source: .ai)
                 }
                 self.assistant.finderCards[messageID] = card
                 chat.edit(messageID) { $0.text = Self.finderSummary(card) }
@@ -344,12 +344,10 @@ extension AppState {
         }
     }
 
-    /// 답 카드가 나올 때 메모 자동 저장 (같은 table+columns 면 찾는 말만 합친다)
-    private func autoSaveNote(_ a: DataFinderAnswer, card: DataFinderCard) -> UUID {
-        let id = tableNotes.saveFound(profileID: card.profileID, database: card.database, table: a.table, columns: a.columns,
-                                      terms: [DataFinder.phrase(card.terms)], memo: a.explain)
-        saveTableNotes()
-        return id
+    /// 테이블 설명 고치기 + 저장
+    private func editDescriptions(_ card: DataFinderCard, _ change: (inout TableDescriptionDoc) -> Void) {
+        tableDescriptions.edit(profileID: card.profileID, database: card.database, change)
+        TableDescriptionStore.shared.save(tableDescriptions)
     }
 
     // MARK: - 카드 버튼
@@ -371,36 +369,30 @@ extension AppState {
         }
     }
 
-    /// [맞아요]: 메모를 확인됨으로
+    /// [맞아요]: 이 질문의 말을 테이블 설명의 그 위치에 찾는 말로 넣는다 (다음엔 AI 없이 바로)
     func finderConfirm(_ messageID: UUID) {
         guard var card = assistant.finderCards[messageID], var a = card.current else { return }
-        if let id = a.noteID, tableNotes[id] != nil {
-            tableNotes.update(id) { $0.confirmed = true }
-        } else {
-            a.noteID = autoSaveNote(a, card: card)
-            if let id = a.noteID { tableNotes.update(id) { $0.confirmed = true } }
+        if !a.fromDescriptions {
+            editDescriptions(card) { $0.addTerms([DataFinder.phrase(card.terms)], table: a.table, columns: a.columns) }
         }
-        saveTableNotes()
         a.confirmed = true
         card.current = a
         updateFinderCard(messageID, card)
     }
 
-    /// [아니에요]: 이 메모를 지우고 다음 후보 (없으면 "다른 후보가 없어요")
+    /// [아니에요]: 테이블 설명에서 찾은 것이면 그 찾는 말을 빼고, 다음 후보 (없으면 "다른 후보가 없어요")
     func finderReject(_ messageID: UUID) {
         guard var card = assistant.finderCards[messageID], let a = card.current else { return }
-        if let id = a.noteID {
-            tableNotes.delete(id)
-            saveTableNotes()
+        if a.fromDescriptions {
+            editDescriptions(card) {
+                $0.removeTerms([DataFinder.phrase(card.terms)] + card.terms, table: a.table, columns: a.columns)
+            }
         }
         if card.others.isEmpty {
             card.current = nil
         } else {
             var next = card.others.removeFirst()
-            if next.noteID == nil || tableNotes[next.noteID!] == nil {
-                next.noteID = autoSaveNote(next, card: card)
-                next.confirmed = false
-            }
+            if !next.fromDescriptions { next.confirmed = false }
             card.current = next
         }
         updateFinderCard(messageID, card)
@@ -546,7 +538,7 @@ struct DataFinderCardView: View {
     @ViewBuilder
     private var chips: some View {
         if card.fromNotes {
-            FlowChips(items: [("note.text", tr("테이블 메모에서 찾음 (AI 호출 없음)"))])
+            FlowChips(items: [("note.text", tr("테이블 설명에서 찾음 (AI 호출 없음)"))])
         } else if let n = card.tablesSent {
             FlowChips(items: [("list.bullet", tr("테이블 목록 %@개", "\(n)")),
                               ("lock.shield", tr("후보 컬럼 샘플 %@개 (로컬)", "\(card.samplesSent ?? 0)"))])

@@ -49,9 +49,21 @@ extension AppState {
         return tr("접속 안 됨")
     }
 
+    /// 지금 접속 · DB 의 테이블 설명 (#178)
+    var currentDescriptions: TableDescriptionDoc? {
+        guard let id = selectedProfileID, state == .connected else { return nil }
+        return tableDescriptions.doc(profileID: id, database: currentDatabase)
+    }
+
+    /// 테이블 설명의 title 을 빈 코멘트에 채운 테이블 목록 (AI 에 보낼 때)
+    var describedTables: [TableMeta] {
+        currentDescriptions?.applyTitles(to: tables) ?? tables
+    }
+
     /// 자세히 볼 테이블: 질문에 나온 것 + 사이드바에서 고른 것 + 지금 탭의 테이블
     func assistantFocus(question: String) -> [TableMeta] {
-        var out = AssistantAI.mentionedTables(question, in: tables)
+        let tables = describedTables
+        var out = AssistantAI.mentionedTables(question, in: tables, aliases: currentDescriptions?.aliases ?? [:])
         var names = Set(out.map(\.name))
         var extra = Array(selectedTables)
         if case .table(let t)? = selectedTab?.source { extra.append(t) }
@@ -141,12 +153,13 @@ extension AppState {
         }
         let stats = await assistantStats()
         let tab = selectedTab
-        let ctx = AssistantAI.Context(kind: p.kind, connection: p.name, database: currentDatabase, tables: tables,
-                                      focus: assistantFocus(question: question), stats: stats,
+        let focus = assistantFocus(question: question)
+        let ctx = AssistantAI.Context(kind: p.kind, connection: p.name, database: currentDatabase, tables: describedTables,
+                                      focus: focus, stats: stats,
                                       sql: assistant.includeSQL ? tab?.text : nil,
                                       lastError: assistant.includeSQL ? tab?.error : nil)
         var context = guide + "\n" + AssistantAI.contextText(ctx)
-        if let notes = tableNotes.contextText(profileID: p.id, database: currentDatabase) { context += "\n" + notes }
+        if let d = currentDescriptions?.contextText(focus: focus.map(\.name)) { context += "\n" + d }
         return AssistantAI.messages(kind: p.kind, context: context, history: history, english: english)
     }
 
@@ -301,8 +314,9 @@ struct AssistantPanel: View {
         if app.assistant.includeSQL, let t = app.selectedTab, !t.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             out.append(("terminal", tr("SQL · %@", t.title)))
         }
-        let notes = min(50, app.tableNotes.notes(profileID: p.id, database: app.currentDatabase).count)
-        if notes > 0 { out.append(("note.text", tr("팀이 확인한 위치 %@개", "\(notes)"))) }
+        if let d = app.tableDescriptions.doc(profileID: p.id, database: app.currentDatabase) {
+            out.append(("doc.text", tr("테이블 설명 · 테이블 %@개", "\(d.tables.count)")))
+        }
         return out
     }
 

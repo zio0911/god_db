@@ -159,9 +159,9 @@ final class AppState {
     var savedQuerySheet: SavedQuerySheet?
     /// 저장 쿼리 목록 (saved-queries.json)
     var savedQueries = SavedQueryStore.shared.load()
-    /// 테이블 메모 (table-notes.json) · 메모 창
-    var tableNotes = TableNoteStore.shared.load()
-    var tableNotesRequest: TableNotesRequest?
+    /// 테이블 설명 (table-descriptions.json, 처음 읽을 때 예전 테이블 메모를 옮긴다) · 관리 창 (#178)
+    var tableDescriptions = TableDescriptionStore.shared.loadMigrating()
+    var tableDescriptionsRequest: TableDescriptionsRequest?
     /// 보고 있는 쿼리 탭의 편집기 (⌥⌘S 가 선택 영역 · 커서 문장을 읽는다)
     @ObservationIgnored weak var activeEditor: EditorController?
     /// 이 탭의 편집기 내용 전체를 평소 실행 경로(확인 창 포함)로 실행해 달라는 요청 (저장 쿼리 [실행])

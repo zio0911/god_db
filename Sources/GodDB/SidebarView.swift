@@ -107,6 +107,9 @@ struct SidebarView: View {
                         }
                         // 오른쪽 세로 스크롤바와 겹치지 않게
                         .padding(.trailing, 14)
+                        .contextMenu {
+                            Button(tr("테이블 설명 (AI 참고)…")) { app.openTableDescriptions() }
+                        }
                     }
 
                     ForEach(RoutineMeta.Kind.allCases, id: \.self) { kind in
@@ -329,7 +332,6 @@ struct TableNode: View {
             HStack(spacing: 3) {
                 Label(table.name, systemImage: "tablecells")
                     .lineLimit(1)
-                if app.tablesWithNotes.contains(table.name.lowercased()) { TableNoteBadge(table: table.name) }
             }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 1)
@@ -347,7 +349,6 @@ struct TableNode: View {
                     Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }
                     Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
                     Button(tr("ID 로 찾기…")) { app.openIDSearch(table: table.name) }
-                    Button(tr("테이블 메모…")) { app.openTableNotes(table: table.name) }
                     // 여러 개를 골랐고 그중 하나를 우클릭했으면 → 고른 테이블 전부 (관계 없는 테이블도 따로)
                     // 아니면 → 이 테이블 + 바로 이어진 테이블
                     let useSelection = app.selectedTables.count > 1 && app.selectedTables.contains(table.name)
