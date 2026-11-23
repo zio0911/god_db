@@ -22,6 +22,7 @@ public struct ForeignKeyMeta: Hashable, Sendable, Identifiable {
 extension SQLDialect {
     /// [테이블, 외래키 이름, 컬럼, 참조 테이블, 참조 컬럼, 순서] — 같은 DB/스키마 안의 참조만
     public func foreignKeysSQL(_ schema: String) -> String {
+        if let pg = self as? PostgresDialect, pg.redshift { return pg.redshiftForeignKeysSQL(schema) }
         let s = quoteString(schema)
         switch kind {
         case .mysql, .redis:
