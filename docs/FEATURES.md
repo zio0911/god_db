@@ -688,7 +688,7 @@ JSON 이 든 칸을 행 상세에서 원문 · 정렬 · 트리로 본다.
 
 ## 36. TLS 서버 인증서 확인
 
-MySQL · PostgreSQL · Redis 의 TLS 연결에서 서버 인증서를 확인한다. 접속 편집 **TLS 사용** 아래 **서버 인증서 확인** (기본 켬, 예전 접속도 켬으로 읽는다).
+MySQL · PostgreSQL · Redis · SQL Server 의 TLS 연결에서 서버 인증서를 확인한다. 접속 편집 **TLS 사용** 아래 **서버 인증서 확인** (기본 켬, 예전 접속도 켬으로 읽는다).
 
 - **직접 접속(SSH 없이)**: 서버가 보낸 인증서 체인을 macOS 시스템 신뢰 저장소(Security.framework, `SecPolicyCreateSSL` + 호스트 이름)로 확인 → 통과하면 묻지 않고 연결.
   - 실패하면(사설 · 자체 서명 인증서, IP 로 접속, 이름 불일치, 만료) 확인 창: 주체(CN) · 발급자 · 유효 기간 · **SHA-256 지문**(`3F:A2:…`) · 이유(신뢰할 수 없는 발급자 / 이름이 다름 / 만료됨) · [취소] [이 인증서 신뢰 (고정)].
@@ -697,12 +697,20 @@ MySQL · PostgreSQL · Redis 의 TLS 연결에서 서버 인증서를 확인한�
 - **SSH 터널 경유**: 터널 안쪽은 `127.0.0.1` 이라 이름 · 체인은 확인하지 않는다 (서버 확인은 SSH 호스트 키가 맡는다). 고정 지문이 있으면 지문만 확인.
 - **Redis Cluster · Sentinel**: 노드마다 같은 규칙. 서버가 알려 준 노드 주소가 IP 면 이름 확인에는 접속 정보의 호스트 이름을 쓴다. 고정 지문은 하나라 노드마다 인증서가 다르면 고정으로는 쓸 수 없다 (공인 인증서면 문제없음).
 - **TLS 필수**: TLS 를 켜면 서버가 TLS 를 안 할 때 평문으로 내려가지 않고 "서버가 TLS 를 지원하지 않아요. TLS 를 끄거나 SSH 터널을 쓰세요." (PostgreSQL `sslmode=require` 와 같음, MySQL 도 같게).
-- **SQL Server**: FreeTDS(DB-Library) 는 인증서 · 지문 확인을 할 수 없어 암호화만 강제한다. 접속 편집에 "SQL Server 는 암호화만 하고 서버 인증서는 확인하지 못해요. 외부망에서는 SSH 터널이나 VPN 을 쓰세요."
+- **SQL Server** (1.4.1, #157): 다른 DB 와 같은 규칙 · 같은 확인 창 · 같은 상태창 문구. FreeTDS(DB-Library) 에는 확인 콜백이 없어서 두 단계로 한다.
+  1. **인증서 미리 받기**: 연결할 IP · 포트로 PRELOGIN(ENCRYPTION=ON) 을 보내고, TDS 패킷(종류 0x12)에 감싼 TLS 핸드셰이크로 서버 인증서 체인만 받는다 (로그인하지 않음). 받은 체인으로 위와 같은 판정(시스템 신뢰 저장소 + 이름 → 고정 지문 → 확인 창).
+  2. **FreeTDS 연결**: 같은 IP · 포트로 연결하면서 FreeTDS(OpenSSL) 도 인증서를 다시 확인하게 한다. 연결마다 고유한 이름의 freetds.conf 섹션(`host` · `port` · `encryption = require` · `ca file` · `check certificate hostname` · `certificate hostname`)을 만든다.
+     - 시스템 신뢰 저장소로 통과: `ca file` = macOS 시스템 루트(PEM, 한 번 만들어 둠) + macOS 가 만든 체인(사용자가 추가한 사내 루트 포함), 이름 확인 켬(`certificate hostname` = 접속 정보의 호스트 이름).
+     - 고정 인증서: 서버가 보낸 체인이 자체 서명 인증서로 끝나고 유효 기간 안이면 `ca file` = 그 체인 (이름 확인 안 함). 자체 서명 인증서면 사실상 그 인증서만 통과.
+     - 고정 인증서인데 체인이 자체 서명으로 끝나지 않거나(사설 CA 가 루트를 보내지 않음) 만료: FreeTDS 쪽은 암호화만 한다 (아래 제약).
+     - SSH 터널 · 고정 없음: 미리 받지 않고 암호화만 (`TLS 사용 · 확인 안 함(SSH 터널)`).
+  - 설정 파일: `$TMPDIR/GodDB-mssql/freetds.conf` (폴더 0700, 파일 0600) 를 처음에 한 번 `dbsetifile` 로 지정한다. 섹션 · CA 파일(`…-ca.pem`, 0600)은 연결 시도가 끝나면(성공 · 실패) 지운다. 섹션이 하나도 없으면 설정 파일도 지운다. 파일은 통째로 새로 써서 rename 으로 바꾸므로 동시에 연결해도 FreeTDS 가 반쯤 쓴 파일을 읽지 않고, 연결을 직렬로 묶지 않는다. 섹션이 없는 연결(TLS 끔 · 확인 끔)은 FreeTDS 가 원래대로 찾는다.
+  - 제약 (정직하게): 미리 받기와 FreeTDS 연결은 별도 TCP 연결이다. FreeTDS 가 `ca file` 로 다시 확인하는 경우(공인 · 사내 루트, 자체 서명 고정)는 그 사이 인증서가 바뀌면 FreeTDS 가 거부한다. 다만 FreeTDS 는 지문을 비교하지 못해서, 같은 CA 가 발급한 다른 인증서는 통과한다. 체인을 자체 서명으로 끝낼 수 없는 고정 인증서는 두 연결 사이의 짧은 틈에 인증서가 바뀌어도 알 수 없다. TDS 8(strict, TLS 먼저) 전용 서버는 FreeTDS 연결 방식(`encryption = require`)이 원래 지원하지 않는다.
 - **서버 인증서 확인을 끄면** 예전처럼 암호화만 한다 (접속 편집에 경고).
-- **상태창**: 연결 후 한 줄 `TLS 사용 · 인증서 확인됨` / `TLS 사용 · 고정 인증서` / `TLS 사용 · 확인 안 함(SSH 터널)` / `TLS 사용 · 확인 안 함` / `TLS 사용 · 암호화만(인증서 확인 불가)`(SQL Server) / `TLS 안 씀`. 접속 편집의 연결 테스트 결과에도 붙는다.
+- **상태창**: 연결 후 한 줄 `TLS 사용 · 인증서 확인됨` / `TLS 사용 · 고정 인증서` / `TLS 사용 · 확인 안 함(SSH 터널)` / `TLS 사용 · 확인 안 함` / `TLS 안 씀`. 접속 편집의 연결 테스트 결과에도 붙는다.
 - **접속 편집**: 고정한 인증서 지문과 [저장된 인증서 지우기]. 연결 테스트에서 확인 창이 뜨면 신뢰한 지문은 편집 중인 접속에 들어가고 저장할 때 반영된다.
 - **감사 로그**: `설정 | ‹접속› | TLS 인증서 신뢰 SHA256:…` / `설정 | ‹접속› | 인증서 고정 지움`.
-- 구현: NIOSSL 사용자 정의 확인 콜백 (`Vendor/mysql-nio` · `Vendor/postgres-nio` 패치로 콜백을 넘긴다 — 각 `GODDB_PATCH.md`).
+- 구현: NIOSSL 사용자 정의 확인 콜백 (`Vendor/mysql-nio` · `Vendor/postgres-nio` 패치로 콜백을 넘긴다 — 각 `GODDB_PATCH.md`). SQL Server 는 `MSSQLTLS.swift` (미리 받기 · FreeTDS 설정).
 
 ## 37. SSH 호스트 키 확인
 
@@ -743,7 +751,7 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - SQL Server 드라이버(FreeTDS)는 빌드할 때만 Homebrew 가 필요하다. 배포 앱에는 라이브러리가 들어 있다.
 - 서로 다른 종류의 DB 끼리 스키마 비교는 가능하지만 타입 이름 차이로 "다름"이 많이 나온다.
 - 비밀번호 방식 SSH 미지원.
-- SQL Server TLS 는 암호화만 한다 (FreeTDS 로는 서버 인증서 · 지문 확인 불가). 외부망에서는 SSH 터널이나 VPN.
+- SQL Server TLS 인증서 확인은 연결 전에 인증서를 따로 받아 판정하고, FreeTDS 는 `ca file` 로 다시 확인한다 (지문 비교는 못 함). 사설 CA 인증서를 고정했는데 서버가 루트를 보내지 않으면 FreeTDS 연결은 암호화만 한다 (§36).
 - SSH 바스티온이 `ProxyJump` 를 거쳐야 하면 `ssh-keyscan` 이 키를 받지 못한다 → 터미널에서 한 번 접속해 `~/.ssh/known_hosts` 에 키를 넣어 두면 그 키를 쓴다.
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 

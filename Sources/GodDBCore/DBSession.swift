@@ -124,7 +124,7 @@ public actor DBSession {
             try await Self.prepareDriver(kind, endpoint, dialect: dialect, readOnly: readOnly)
         }
         driver = opened.driver
-        tlsStatus = profile.kind == .mssql ? (endpoint.useTLS ? .encryptOnly : .off) : opened.driver.tlsStatus
+        tlsStatus = opened.driver.tlsStatus
         serverSessionID = opened.sessionID
     }
 
