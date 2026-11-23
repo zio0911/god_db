@@ -75,6 +75,22 @@ struct ConnectionListOrderTests {
         #expect(names(ConnectionListOrder.visibleOrder(ps, by: .name)) == ["a", "b", "c", "g1", "g2"])
     }
 
+    @Test func groupMoves() {
+        let ps = [profile("x"), profile("a1", group: "A"), profile("b1", group: "B"), profile("y"),
+                  profile("a2", group: "A"), profile("c1", group: "C")]
+        func names(_ x: [ConnectionProfile]) -> [String] { x.map(\.name) }
+        func groups(_ x: [ConnectionProfile]) -> [String] { ConnectionListOrder.sortedGroups(x, by: .manual) }
+        #expect(groups(ConnectionListOrder.movedGroup(ps, "C", .top)) == ["C", "A", "B"])
+        #expect(groups(ConnectionListOrder.movedGroup(ps, "A", .down)) == ["B", "A", "C"])
+        #expect(groups(ConnectionListOrder.movedGroup(ps, "B", .bottom)) == ["A", "C", "B"])
+        #expect(names(ConnectionListOrder.movedGroup(ps, "A", .up)) == names(ps))   // 이미 맨 위
+        // 그룹 안 순서 · 그룹 없는 접속 순서는 그대로
+        #expect(names(ConnectionListOrder.movedGroup(ps, "C", .top)) == ["x", "y", "c1", "a1", "a2", "b1"])
+        // 끌어다 놓기
+        #expect(groups(ConnectionListOrder.movedGroup(ps, "C", before: "B")) == ["A", "C", "B"])
+        #expect(names(ConnectionListOrder.movedGroup(ps, "A", before: "A")) == names(ps))
+    }
+
     @Test func lastConnectedIsSavedAndOldFilesRead() throws {
         var p = profile("x", last: 1_700_000_000)
         let back = try JSONDecoder().decode(ConnectionProfile.self, from: JSONEncoder().encode(p))

@@ -47,6 +47,24 @@ extension AppState {
         persist()
     }
 
+    /// 그룹 순서 바꾸기 (그룹 우클릭 > 순서 바꾸기)
+    func reorderGroup(_ group: String, _ move: ConnectionListOrder.Move) {
+        freezeVisibleOrder()
+        let next = ConnectionListOrder.movedGroup(profiles, group, move)
+        guard next.map(\.id) != profiles.map(\.id) else { return }
+        profiles = next
+        persist()
+    }
+
+    /// 그룹 끌어다 놓기: 놓은 그룹 바로 앞으로
+    func reorderGroup(_ group: String, before target: String) {
+        freezeVisibleOrder()
+        let next = ConnectionListOrder.movedGroup(profiles, group, before: target)
+        guard next.map(\.id) != profiles.map(\.id) else { return }
+        profiles = next
+        persist()
+    }
+
     /// 다른 정렬로 보고 있으면, 지금 보이는 순서를 저장 순서로 굳히고 "직접 정한 순" 으로 바꾼다
     /// (보이는 그대로에서 옮겨야 헷갈리지 않는다)
     private func freezeVisibleOrder() {
@@ -80,6 +98,8 @@ extension AppState {
 enum ConnectionListKeys {
     static let sort = "GodDB.sidebar.connectionSort"
     static let connectedFirst = "GodDB.sidebar.connectedFirst"
+    /// 그룹을 끌 때 실어 보내는 글자의 앞부분 (접속은 UUID 를 싣는다)
+    static let groupDragPrefix = "goddb-group:"
 }
 
 /// "접속" 제목 오른쪽 정렬 메뉴
@@ -110,6 +130,9 @@ struct ConnectionSortMenu: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help(tr("접속 목록 정렬"))
+        // 목록 머리글 안에서도 따로 누를 수 있는 단추로 읽히게 (손쉬운 사용 · 화면 테스트)
+        .accessibilityLabel(tr("접속 목록 정렬"))
+        .accessibilityValue(sort.title)
     }
 }
 
@@ -167,9 +190,23 @@ struct ProfileList: View {
                 .contextMenu {
                     Button(tr("그룹 이름 바꾸기…")) { app.groupPrompt = GroupPrompt(action: .rename(group)) }
                     Button(tr("그룹 풀기 (접속은 남아요)")) { app.renameGroup(group, to: "") }
+                    Menu(tr("순서 바꾸기")) {
+                        Button(tr("맨 위로")) { app.reorderGroup(group, .top) }
+                        Button(tr("위로")) { app.reorderGroup(group, .up) }
+                        Button(tr("아래로")) { app.reorderGroup(group, .down) }
+                        Button(tr("맨 아래로")) { app.reorderGroup(group, .bottom) }
+                    }
                 }
+                // 그룹을 다른 그룹 이름 위에 놓으면 그 앞으로 (접속을 놓으면 그 그룹으로)
+                .draggable(ConnectionListKeys.groupDragPrefix + group)
                 .dropDestination(for: String.self) { items, _ in
-                    for s in items { if let id = UUID(uuidString: s) { app.moveProfile(id, toGroup: group) } }
+                    for s in items {
+                        if s.hasPrefix(ConnectionListKeys.groupDragPrefix) {
+                            app.reorderGroup(String(s.dropFirst(ConnectionListKeys.groupDragPrefix.count)), before: group)
+                        } else if let id = UUID(uuidString: s) {
+                            app.moveProfile(id, toGroup: group)
+                        }
+                    }
                     return !items.isEmpty
                 }
             }

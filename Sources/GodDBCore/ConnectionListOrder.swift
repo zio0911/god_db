@@ -127,5 +127,35 @@ public enum ConnectionListOrder {
     }
 
     /// DB 종류 순서: 새 접속 화면과 같은 MySQL · PostgreSQL · Redshift · SQL Server · Redis
+    /// 그룹 순서 바꾸기 (직접 정한 순: 그룹이 처음 나온 순서). 그룹 없는 접속은 늘 앞, 그룹 안 순서는 그대로
+    public static func movedGroup(_ profiles: [ConnectionProfile], _ group: String, _ move: Move) -> [ConnectionProfile] {
+        var order = sortedGroups(profiles, by: .manual)
+        guard let k = order.firstIndex(of: group) else { return profiles }
+        let target: Int
+        switch move {
+        case .up: guard k > 0 else { return profiles }; target = k - 1
+        case .down: guard k < order.count - 1 else { return profiles }; target = k + 1
+        case .top: guard k > 0 else { return profiles }; target = 0
+        case .bottom: guard k < order.count - 1 else { return profiles }; target = order.count - 1
+        }
+        order.remove(at: k)
+        order.insert(group, at: target)
+        return rebuilt(profiles, groups: order)
+    }
+
+    /// 그룹 끌어다 놓기: group 을 target 그룹 바로 앞으로
+    public static func movedGroup(_ profiles: [ConnectionProfile], _ group: String, before target: String) -> [ConnectionProfile] {
+        var order = sortedGroups(profiles, by: .manual)
+        guard group != target, let k = order.firstIndex(of: group), order.contains(target) else { return profiles }
+        order.remove(at: k)
+        order.insert(group, at: order.firstIndex(of: target)!)
+        return rebuilt(profiles, groups: order)
+    }
+
+    /// 그룹 없는 접속 → 그룹 순서대로 (각 묶음 안 순서는 그대로)
+    static func rebuilt(_ profiles: [ConnectionProfile], groups: [String]) -> [ConnectionProfile] {
+        profiles.filter { $0.group.isEmpty } + groups.flatMap { g in profiles.filter { $0.group == g } }
+    }
+
     static func typeOrder(_ p: ConnectionProfile) -> Int { ConnectionType.allCases.firstIndex(of: p.type) ?? 0 }
 }

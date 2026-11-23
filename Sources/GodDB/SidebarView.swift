@@ -48,6 +48,8 @@ struct SidebarView: View {
                         Spacer()
                         if app.profiles.count > 1 { ConnectionSortMenu() }
                     }
+                    // 머리글을 한 덩어리로 묶지 않아야 정렬 메뉴가 따로 눌린다
+                    .accessibilityElement(children: .contain)
                 }
 
                 if case .failed(let message) = app.state {

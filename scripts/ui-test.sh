@@ -93,7 +93,9 @@ cat > "$DATA/profiles.json" <<JSON
  {"id":"00000000-0000-4000-8000-0000000000A2","kind":"mysql","name":"UI MySQL Prod","host":"127.0.0.1","port":$MYSQL_PORT,
   "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"production","group":"UI 그룹"},
  {"id":"00000000-0000-4000-8000-0000000000A3","kind":"mysql","name":"UI 닫힌 포트","host":"127.0.0.1","port":1,
-  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 그룹"}
+  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 그룹"},
+ {"id":"00000000-0000-4000-8000-0000000000A4","kind":"mysql","name":"UI 둘째 그룹 접속","host":"127.0.0.1","port":1,
+  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 둘째 그룹"}
 ]
 JSON
 
