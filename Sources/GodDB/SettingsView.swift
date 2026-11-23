@@ -16,6 +16,13 @@ final class AppSettings {
     var tuningModel: String { didSet { AISettings.model = tuningModel } }
     var logFileEnabled: Bool { didSet { LogFile.enabled = logFileEnabled } }
     var logRetentionDays: Int { didSet { LogFile.retentionDays = logRetentionDays; LogFile.shared.cleanNow() } }
+    /// 쿼리 히스토리 보관 일수 (0 = 영구). 바꾸면 바로 정리한다.
+    var historyKeepDays: Int {
+        didSet {
+            QueryHistory.keepDays = historyKeepDays
+            DispatchQueue.global(qos: .utility).async { QueryHistory.shared.applyRetentionNow() }
+        }
+    }
     var assistantEnabled: Bool { didSet { UserDefaults.standard.set(assistantEnabled, forKey: Self.assistantKey) } }
     static let assistantKey = "GodDB.assistant.enabled"
 
@@ -25,6 +32,7 @@ final class AppSettings {
         tuningModel = AISettings.model
         logFileEnabled = LogFile.enabled
         logRetentionDays = LogFile.retentionDays
+        historyKeepDays = QueryHistory.keepDays
         assistantEnabled = UserDefaults.standard.object(forKey: Self.assistantKey) as? Bool ?? true
     }
 }
@@ -119,6 +127,21 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Text(tr("안전"))
+            }
+            Section {
+                Picker(tr("히스토리 보관 기간"), selection: $settings.historyKeepDays) {
+                    Text(tr("7일")).tag(7)
+                    Text(tr("30일")).tag(30)
+                    Text(tr("90일")).tag(90)
+                    Text(tr("영구 보관")).tag(0)
+                }
+                Text(settings.historyKeepDays == 0
+                     ? tr("실행한 쿼리 기록을 지우지 않고 남겨요. 기록과 열어 둔 쿼리 탭 내용은 이 Mac 의 키체인 키로 암호화해서 저장해요.")
+                     : tr("%@일이 지난 쿼리 기록은 자동으로 지워요. 기록과 열어 둔 쿼리 탭 내용은 이 Mac 의 키체인 키로 암호화해서 저장해요.", "\(settings.historyKeepDays)"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text(tr("히스토리"))
             }
             Section {
                 Toggle(tr("로그 파일 남기기"), isOn: $settings.logFileEnabled)

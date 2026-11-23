@@ -181,6 +181,9 @@
 - **결과 탭**: 여러 문장을 실행하면 결과 영역 위에 `1 SELECT 3행 · 2 UPDATE 실행 완료 …` 형태의 탭이 생긴다. 기본으로 결과 표가 있는 마지막 결과를 보여준다.
 - **실행 계획** (`⇧⌘↩`)은 여전히 선택 영역 또는 커서가 있는 문장 하나만 대상으로 한다.
 - **LIMIT 자동 부여**: LIMIT 이 없는 SELECT 에만 붙인다 (100 / 500 / 1000 / 5000 / 제한 없음). `FOR UPDATE`, `INTO` 가 있으면 붙이지 않는다.
+- **쿼리 히스토리** (⌘Y) · **탭 자동 저장**: 실행한 SQL 과 열어 둔 탭 내용은 **항상 암호화**해서 저장한다 (끌 수 없음, 16절 형식).
+  - 히스토리 보관 기간: **설정 > 일반 > 히스토리** — 7일 / 30일(기본) / 90일 / 영구 보관. 앱을 켤 때와 기록할 때 하루에 한 번 지난 기록을 지우고, 설정을 바꾸면 바로 정리한다. 최대 5,000건. 탭 내용은 기간으로 지우지 않는다.
+  - 예전 버전의 평문 파일은 처음 읽을 때 암호화해서 바꿔 쓴다 (평문 파일은 남지 않음). 키체인에서 키를 못 얻으면 평문을 그대로 두고 이번 실행의 기록은 메모리에만 둔다 (평문으로 새로 쓰지 않음).
 
 ### Tab 자동완성
 
@@ -392,11 +395,23 @@
 | 상태창 로그 | 메모리 (앱 종료 시 사라짐) |
 | 감사 로그 | `~/Library/Logs/GodDB/goddb-audit-YYYY-MM-DD.tsv` (설정에서 끌 수 있음, 영구 보관) |
 | 모델링 모델 | `~/Library/Application Support/GodDB/models/<id>.goddbmodel` (JSON, 자동 저장) |
-| AI 대화 (다이어그램 · 어시스턴트) | `~/Library/Application Support/GodDB/diagram-chats/` (90일 보관) |
-| ID 로 찾기 마지막 선택 | `~/Library/Application Support/GodDB/id-search.json` (접속 · DB 별) |
-| 저장 쿼리 | `~/Library/Application Support/GodDB/saved-queries.json` (이름 · 폴더 · SQL · 범위 · 마지막 입력값, Windows 판과 같은 형식) |
-| 테이블 메모 | `~/Library/Application Support/GodDB/table-notes.json` (찾는 말 · 테이블 · 컬럼 · 설명 · 확인됨, 권한 본인만, Windows 판과 같은 형식, 샘플 값은 저장 안 함) |
+| 쿼리 히스토리 | `~/Library/Application Support/GodDB/history.jsonl` (**암호화**, 한 줄에 한 건, 기본 30일 보관 · 최대 5,000건) |
+| 쿼리 탭 자동 저장 | `~/Library/Application Support/GodDB/tabs.json` (**암호화**) |
+| AI 대화 (다이어그램 · 어시스턴트) | `~/Library/Application Support/GodDB/diagram-chats/` (**암호화**, 90일 보관) |
+| ID 로 찾기 마지막 선택 | `~/Library/Application Support/GodDB/id-search.json` (접속 · DB 별, 테이블 · 컬럼 이름만이라 평문) |
+| 저장 쿼리 | `~/Library/Application Support/GodDB/saved-queries.json` (**암호화**, 이름 · 폴더 · SQL · 범위 · 마지막 입력값. 풀면 Windows 판과 같은 JSON) |
+| 테이블 메모 | `~/Library/Application Support/GodDB/table-notes.json` (찾는 말 · 테이블 · 컬럼 · 설명 · 확인됨, 권한 본인만, Windows 판과 같은 형식, 샘플 값은 저장 안 함 → 평문) |
+| Redis Workbench 글 | 앱 설정(UserDefaults) `GodDB.redis.workbench.<접속 id>` (**암호화**, `GDBENC1:` + base64 봉투) |
+| 로컬 데이터 암호화 키 | macOS 키체인 (서비스 `GodDB-local-data`, 이 기기에서만 · 동기화 안 함) |
 | 이전 버전 설치 전 백업 | `~/Library/Application Support/GodDB-backup-<버전>-<YYYYMMDD-HHmmss>/` (데이터 폴더 통째로, 최근 3개만) |
+
+**암호화 파일 형식 `GDBENC1`** (Windows 판도 같은 형식, 키 보관만 OS 별):
+- 첫 줄 `GDBENC1` (ASCII, 끝 `\n`). 없으면 예전 평문 파일로 보고 처음 읽을 때 옮긴다.
+- 그다음 줄마다 봉투 하나 = AES-256-GCM `nonce(12) ‖ 암호문 ‖ tag(16)` 의 표준 base64. AAD 없음.
+- 통째 파일(`tabs.json` · `saved-queries.json` · AI 대화)은 봉투 한 줄 = 원래 JSON 전체. `history.jsonl` 은 한 줄 = 한 건의 JSON (새 기록은 줄만 덧붙임).
+- 키는 무작위 256비트, macOS 는 키체인 generic password (`GodDB-local-data` / `local-data-key-v1`, AfterFirstUnlockThisDeviceOnly). 다른 PC 로 파일을 옮기면 열 수 없다.
+- 열 수 없는 파일(위변조 · 다른 키)은 지우지 않고 `<이름>.undecryptable` 로 옮긴다. 히스토리는 깨진 줄만 건너뛴다.
+- 감사 로그(`goddb-audit-*.tsv`)는 검증 형식이 정해져 있어 암호화하지 않는다.
 
 ## 19. 설정 (언어 · 라이선스)
 

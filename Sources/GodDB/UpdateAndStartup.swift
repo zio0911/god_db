@@ -159,7 +159,11 @@ final class StartupState {
                 }
             }),
             (tr("모델 · 대화 기록 정리 중"), {
-                await Task.detached(priority: .utility) { DiagramChatStore.shared.pruneAll() }.value
+                await Task.detached(priority: .utility) {
+                    DiagramChatStore.shared.pruneAll()
+                    // 쿼리 히스토리: 예전 평문이면 암호화로 옮기고, 보관 기간이 지난 기록을 지운다
+                    _ = QueryHistory.shared.all()
+                }.value
                 app.modeling.loadIfNeeded()
                 return nil
             }),

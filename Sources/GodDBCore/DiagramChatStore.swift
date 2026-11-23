@@ -44,10 +44,13 @@ public final class DiagramChatStore: @unchecked Sendable {
     public let directory: URL
     public let keepDays: Int
     private let lock = NSLock()
+    private let crypto: LocalDataCrypto
 
-    public init(directory: URL, keepDays: Int = 90) {
+    /// 파일마다 `GDBENC1` 통째 암호화 (질문 · 답에 SQL 이 들어 있으므로). 예전 평문은 처음 읽을 때 옮긴다.
+    public init(directory: URL, keepDays: Int = 90, crypto: LocalDataCrypto = .shared) {
         self.directory = directory
         self.keepDays = keepDays
+        self.crypto = crypto
     }
 
     /// 다이어그램을 구분하는 값 (접속 id, DB, 테이블 이름들)
@@ -63,7 +66,7 @@ public final class DiagramChatStore: @unchecked Sendable {
     /// 최근에 쓴 것부터. 오래된 대화는 여기서 지운다.
     public func load(_ scope: String, now: Date = Date()) -> [DiagramConversation] {
         lock.lock(); defer { lock.unlock() }
-        let all = read(scope)
+        guard let all = read(scope) else { return [] }
         let cutoff = now.addingTimeInterval(-Double(keepDays) * 86400)
         let kept = all.filter { $0.updated >= cutoff && !$0.messages.isEmpty }
         if kept.count != all.count { write(scope, kept) }
@@ -73,14 +76,15 @@ public final class DiagramChatStore: @unchecked Sendable {
     public func save(_ conversation: DiagramConversation, scope: String) {
         guard !conversation.messages.isEmpty else { return }
         lock.lock(); defer { lock.unlock() }
-        var all = read(scope)
+        guard var all = read(scope) else { return }
         if let i = all.firstIndex(where: { $0.id == conversation.id }) { all[i] = conversation } else { all.append(conversation) }
         write(scope, all)
     }
 
     public func delete(_ id: UUID, scope: String) {
         lock.lock(); defer { lock.unlock() }
-        write(scope, read(scope).filter { $0.id != id })
+        guard let all = read(scope) else { return }
+        write(scope, all.filter { $0.id != id })
     }
 
     public func deleteAll(scope: String) {
@@ -94,25 +98,31 @@ public final class DiagramChatStore: @unchecked Sendable {
         let cutoff = now.addingTimeInterval(-Double(keepDays) * 86400)
         guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
         for f in files where f.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: f), let list = try? Self.decoder.decode([DiagramConversation].self, from: data) else { continue }
+            // 예전 평문 파일은 여기서 암호화된다 (readDocument 가 옮김)
+            guard let data = crypto.readDocumentData(at: f),
+                  let list = try? Self.decoder.decode([DiagramConversation].self, from: data) else { continue }
             let kept = list.filter { $0.updated >= cutoff }
             if kept.isEmpty { try? FileManager.default.removeItem(at: f) }
-            else if kept.count != list.count, let d = try? Self.encoder.encode(kept) { try? d.write(to: f, options: .atomic) }
+            else if kept.count != list.count, let d = try? Self.encoder.encode(kept) { try? crypto.writeDocument(d, to: f) }
         }
     }
 
-    private func read(_ scope: String) -> [DiagramConversation] {
-        guard let data = try? Data(contentsOf: url(scope)) else { return [] }
-        return (try? Self.decoder.decode([DiagramConversation].self, from: data)) ?? []
+    /// 대화 목록. 파일이 없으면 [], 키가 없어 못 읽으면 nil (그때는 파일을 건드리지 않는다).
+    private func read(_ scope: String) -> [DiagramConversation]? {
+        switch crypto.readDocument(at: url(scope)) {
+        case .missing, .damaged: return []
+        case .keyUnavailable: return nil
+        case .decrypted(let data), .plaintext(let data):
+            return (try? Self.decoder.decode([DiagramConversation].self, from: data)) ?? []
+        }
     }
 
     private func write(_ scope: String, _ list: [DiagramConversation]) {
-        let fm = FileManager.default
-        if list.isEmpty { try? fm.removeItem(at: url(scope)); return }
-        try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        if list.isEmpty { try? FileManager.default.removeItem(at: url(scope)); return }
         guard let data = try? Self.encoder.encode(list) else { return }
-        try? data.write(to: url(scope), options: .atomic)
-        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url(scope).path)
+        do { try crypto.writeDocument(data, to: url(scope)) } catch {
+            LocalDataCrypto.log.warning("GodDB: AI chat not saved (\(error.localizedDescription, privacy: .public))")
+        }
     }
 
     static let encoder: JSONEncoder = {

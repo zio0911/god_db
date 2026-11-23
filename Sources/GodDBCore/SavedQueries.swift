@@ -335,8 +335,13 @@ public struct SavedQueryStore: Sendable {
     public static let shared = SavedQueryStore(file: AppPaths.dataDirectory.appendingPathComponent("saved-queries.json"))
 
     public let file: URL
+    private let crypto: LocalDataCrypto
 
-    public init(file: URL) { self.file = file }
+    /// 파일은 `GDBENC1` 통째 암호화 (SQL · 마지막 입력값이 들어 있으므로). 예전 평문은 처음 읽을 때 옮긴다.
+    public init(file: URL, crypto: LocalDataCrypto = .shared) {
+        self.file = file
+        self.crypto = crypto
+    }
 
     public static func decode(_ data: Data) throws -> SavedQueryLibrary {
         let d = JSONDecoder()
@@ -352,12 +357,15 @@ public struct SavedQueryStore: Sendable {
     }
 
     public func load() -> SavedQueryLibrary {
-        guard let data = try? Data(contentsOf: file), let lib = try? Self.decode(data) else { return SavedQueryLibrary() }
+        guard let data = crypto.readDocumentData(at: file), let lib = try? Self.decode(data) else { return SavedQueryLibrary() }
         return lib
     }
 
+    /// 암호화해서 저장. 키가 없으면 쓰지 않는다 (평문으로 쓰지 않음).
     public func save(_ library: SavedQueryLibrary) {
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = try? Self.encode(library) { try? data.write(to: file, options: .atomic) }
+        guard let data = try? Self.encode(library) else { return }
+        do { try crypto.writeDocument(data, to: file) } catch {
+            LocalDataCrypto.log.warning("GodDB: saved queries not saved (\(error.localizedDescription, privacy: .public))")
+        }
     }
 }
