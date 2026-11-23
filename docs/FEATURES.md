@@ -45,7 +45,7 @@
 | 테이블 이름 | `table` | `table` (선택한 스키마 안) | dbo 는 `table`, 그 외 `schema.table` |
 | 식별자 인용 | `` `x` `` | `"x"` | `[x]` |
 | 자동 행 제한 | `LIMIT n` | `LIMIT n` | `SELECT TOP n` |
-| 읽기전용 | 앱 검사 + `SET SESSION TRANSACTION READ ONLY` | 앱 검사 + `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY` | **앱 검사만** (세션 설정 없음) |
+| 읽기전용 | 앱 검사 + `SET SESSION TRANSACTION READ ONLY` | 앱 검사 + `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY` + 문장마다 `BEGIN READ ONLY` | **앱 검사만** (세션 설정 없음) |
 | CREATE 문 보기 | 서버의 `SHOW CREATE TABLE` | 메타데이터로 생성 (CREATE TABLE + INDEX + COMMENT) | 메타데이터로 생성 (+ MS_Description) |
 | 실행 계획 | `EXPLAIN` + `FORMAT=TREE` | `EXPLAIN` (QUERY PLAN 트리) | `SET SHOWPLAN_ALL ON` |
 | 주의사항 분석 | type=ALL, filesort, temporary | Seq Scan, 디스크 정렬, 큰 Nested Loop | Table/Clustered Index Scan, Sort, Key Lookup |
@@ -134,9 +134,16 @@
 
 두 단계로 막는다.
 
-1. **앱 검사**: 첫 키워드가 `SELECT / SHOW / DESC / DESCRIBE / EXPLAIN / USE / WITH` 일 때만 실행.
-   - `INTO OUTFILE / DUMPFILE` 포함 시 차단, `WITH … UPDATE/DELETE…` 차단.
+1. **앱 검사**: 첫 키워드가 `SELECT / SHOW / DESC / DESCRIBE / EXPLAIN / USE / WITH` 일 때만 실행하고, **문장 전체**를 DB 별 규칙(문자열 · 따옴표 식별자 · 주석 · PostgreSQL `$$` · MySQL `/*! */` · SQL Server `#임시테이블`)으로 나눠 본다.
+   - 어디에 있든 막는 단어: `INSERT / UPDATE / DELETE / MERGE / INTO / CREATE / ALTER / DROP / TRUNCATE / EXEC / CALL / SET / LOCK / ANALYZE …` (SQL Server 는 `;` 없이 문장을 이어 쓸 수 있어 `SELECT 1 DELETE FROM t` 도 막힌다).
+   - 상태를 바꾸는 함수: `set_config / nextval / setval / pg_terminate_backend / pg_advisory_lock* / dblink* / lo_*`, MySQL `GET_LOCK / RELEASE_LOCK / LOAD_FILE`, SQL Server `OPENQUERY / OPENROWSET / OPENDATASOURCE / sp_* / xp_*`.
+   - 행 잠금 `FOR UPDATE / FOR SHARE / FOR NO KEY UPDATE / FOR KEY SHARE / LOCK IN SHARE MODE`, `EXPLAIN ANALYZE` + 쓰기 문장도 막는다 (`EXPLAIN ANALYZE SELECT` 는 허용).
+   - 예외: `REPLACE(…)` 함수, `t.comment` · `AS lock` 처럼 열 이름 · 별칭, `SHOW CREATE TABLE`. 애매하면 막는 쪽이라 `lock`, `handler` 같은 열 이름은 `t.lock` 이나 따옴표로 쓴다.
+   - 막으면 걸린 단어를 알려 준다. 예: `읽기전용 접속에서는 실행할 수 없어요: DELETE (문장 안에 있음)`.
+   - 실행 계획(⇧⌘↩) · 전체 행 수 세기에도 같은 검사를 한다.
 2. **서버 설정**: 연결 직후 `SET SESSION TRANSACTION READ ONLY` → 앱 검사를 우회해도 서버가 DML 을 거부 (오류 1792).
+   - PostgreSQL 은 세션 설정에 더해 문장마다 `BEGIN READ ONLY` … `ROLLBACK` 으로 감싼다. 세션의 READ ONLY 를 `set_config` 로 꺼도 트랜잭션 안에서는 쓰기로 바꿀 수 없고, 롤백하므로 바꾼 설정도 남지 않는다.
+   - SQL Server 는 서버 측 읽기전용이 없어 앱 검사만 한다. 운영 DB 는 읽기 권한만 있는 계정을 쓴다.
 
 - 사이드바와 툴바에 빨간 **읽기전용** 표시.
 - 테이블 수정(ALTER) 화면의 실행 버튼이 비활성화된다.

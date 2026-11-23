@@ -305,11 +305,13 @@ struct QueryTabView: View {
             statements = controller.sqlToRun().map { SQLText.statements(in: $0).map(\.sql) } ?? []
         }
         guard !statements.isEmpty else { return }
+        let kind = app.profile(tab.profileID)?.kind ?? .mysql
         let confirm = RunConfirm(statements: statements,
-                                 wholeScript: all && statements.count > 1 && statements.contains { !SQLText.isReadOnly($0) },
+                                 wholeScript: all && statements.count > 1 && statements.contains { !SQLText.isReadOnly($0, kind: kind) },
                                  dangerous: AppState.confirmDangerous ? statements.filter { SQLText.danger($0) != nil } : [],
                                  discardedEdits: tab.edits.count,
-                                 production: app.profile(tab.profileID)?.environment == .production)
+                                 production: app.profile(tab.profileID)?.environment == .production,
+                                 kind: kind)
         if confirm.needsConfirm { pendingRun = confirm } else { start(confirm) }
     }
 
@@ -1078,8 +1080,10 @@ struct RunConfirm: Identifiable {
     var discardedEdits = 0
     /// 운영 접속: 데이터를 바꾸는 문장이 있으면 항상 확인
     var production = false
+    /// 쓰기 문장 판별에 쓰는 DB 종류 (주석 · 문자열 규칙이 다르다)
+    var kind: DatabaseKind = .mysql
 
-    private var writes: [String] { statements.filter { !SQLText.isReadOnly($0) } }
+    private var writes: [String] { statements.filter { !SQLText.isReadOnly($0, kind: kind) } }
     private var productionWrites: Bool { production && !explain && !writes.isEmpty }
 
     var needsConfirm: Bool { wholeScript || !dangerous.isEmpty || discardedEdits > 0 || productionWrites }

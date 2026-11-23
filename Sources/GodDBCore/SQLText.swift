@@ -1,6 +1,6 @@
 import Foundation
 
-/// SQL 문자열 처리 유틸 (구문 분리, 읽기전용 검사, LIMIT 자동 부여).
+/// SQL 문자열 처리 유틸 (구문 분리, 읽기전용 검사, LIMIT 자동 부여). 읽기전용 검사는 SQLReadOnlyGuard.swift
 public enum SQLText {
 
     /// 세미콜론 기준으로 구문을 나눈다. 따옴표·백틱·주석 안의 세미콜론은 무시한다.
@@ -142,23 +142,6 @@ public enum SQLText {
         let cleaned = stripComments(sql).trimmingCharacters(in: .whitespacesAndNewlines)
         let word = cleaned.prefix { $0.isLetter }
         return word.uppercased()
-    }
-
-    private static let readOnlyKeywords: Set<String> = ["SELECT", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "USE", "WITH"]
-    private static let writeWords = ["INSERT", "UPDATE", "DELETE", "REPLACE", "DROP", "ALTER", "CREATE", "TRUNCATE", "RENAME", "GRANT", "REVOKE"]
-
-    /// 읽기전용 접속에서 실행 가능한 구문인지 판별한다.
-    public static func isReadOnly(_ sql: String) -> Bool {
-        let kw = firstKeyword(sql)
-        guard readOnlyKeywords.contains(kw) else { return false }
-        let upper = stripComments(sql).uppercased()
-        if upper.range(of: "\\bINTO\\s+(OUT|DUMP)FILE\\b", options: .regularExpression) != nil { return false }
-        if kw == "WITH" {
-            for w in writeWords where upper.range(of: "\\b\(w)\\b", options: .regularExpression) != nil {
-                return false
-            }
-        }
-        return true
     }
 
     /// 되돌리기 어려운 문장 종류 (실행 전에 한 번 더 확인한다)

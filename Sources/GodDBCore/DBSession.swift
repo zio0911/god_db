@@ -2,6 +2,8 @@ import Foundation
 
 public enum DBError: LocalizedError {
     case readOnlyBlocked
+    /// 읽기전용 접속에서 막은 문장 (걸린 단어 · 함수를 알려 준다)
+    case readOnlyRejected(SQLText.ReadOnlyViolation)
     case notConnected
     case transactionOpen
     case cancelled
@@ -9,6 +11,7 @@ public enum DBError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .readOnlyBlocked: return tr("읽기전용 접속이라 이 쿼리는 실행할 수 없어요. (SELECT / SHOW / DESC / EXPLAIN 만 허용)")
+        case .readOnlyRejected(let v): return v.message
         case .notConnected: return tr("DB 연결이 끊어졌어요. 다시 연결해 주세요.")
         case .transactionOpen: return tr("커밋하지 않은 트랜잭션이 있어요. 먼저 커밋하거나 롤백해 주세요.")
         case .cancelled: return tr("쿼리를 취소했어요.")
@@ -226,12 +229,12 @@ public actor DBSession {
 
     public func execute(_ sql: String, limit: Int, page: Int = 0, sort: ResultSort? = nil,
                         capCells: Bool = true) async throws -> QueryResult {
-        if profile.readOnly && !SQLText.isReadOnly(sql) { throw DBError.readOnlyBlocked }
+        try checkReadOnly(sql)
         try await beginIfNeeded(for: sql)
         let source = sort.flatMap { dialect.sortedSQL(sql, sort: $0) } ?? sql
         let paged = dialect.pagedSQL(source, limit: limit, offset: max(0, page) * limit)
         let started = Date()
-        var (columns, rows) = try await raw(paged?.sql ?? source)
+        var (columns, rows) = try await readOnlyGuardedRaw(paged?.sql ?? source)
         let elapsed = Date().timeIntervalSince(started)
         var hasMore = false
         if let paged {
@@ -268,11 +271,33 @@ public actor DBSession {
         return result
     }
 
+    /// 읽기전용 접속이면 문장 전체를 검사해 쓰기 · 상태 변경을 막는다
+    func checkReadOnly(_ sql: String) throws {
+        guard profile.readOnly, let v = SQLText.readOnlyViolation(sql, kind: dialect.kind) else { return }
+        throw DBError.readOnlyRejected(v)
+    }
+
+    /// 읽기전용 PostgreSQL: 문장마다 READ ONLY 트랜잭션 안에서 실행하고 끝나면 롤백한다.
+    /// 세션의 READ ONLY 는 set_config · SET 으로 끌 수 있지만, BEGIN READ ONLY 로 연 트랜잭션은 안에서 쓰기로 바꿀 수 없다.
+    /// 롤백하므로 문장 안에서 바꾼 세션 설정(set_config(…, false) 등)도 남지 않는다. 앱 쪽 검사는 그대로 먼저 한다.
+    func readOnlyGuardedRaw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
+        guard profile.readOnly, dialect.kind == .postgres, !inTransaction else { return try await raw(sql) }
+        _ = try await raw("BEGIN READ ONLY")
+        do {
+            let r = try await raw(sql)
+            _ = try? await raw("ROLLBACK")
+            return r
+        } catch {
+            _ = try? await raw("ROLLBACK")
+            throw error
+        }
+    }
+
     /// 수동 커밋 모드에서 쓰기 문장이면 먼저 트랜잭션을 연다
     private func beginIfNeeded(for sql: String) async throws {
         guard !autoCommit, !inTransaction else { return }
         let kw = SQLText.firstKeyword(SQLText.stripComments(sql))
-        guard !SQLText.isReadOnly(sql), !Self.transactionControl.contains(kw) else { return }
+        guard !SQLText.isReadOnly(sql, kind: dialect.kind), !Self.transactionControl.contains(kw) else { return }
         // MySQL 의 DDL 은 어차피 자동 커밋되므로 트랜잭션을 열지 않는다
         if dialect.kind == .mysql, Self.ddl.contains(kw) { return }
         _ = try await raw(dialect.beginSQL)
@@ -294,7 +319,7 @@ public actor DBSession {
         default:
             if dialect.kind == .mysql, Self.ddl.contains(kw) {
                 inTransaction = false; pendingChanges = 0
-            } else if inTransaction, !SQLText.isReadOnly(sql) {
+            } else if inTransaction, !SQLText.isReadOnly(sql, kind: dialect.kind) {
                 pendingChanges += 1
             }
         }
@@ -328,18 +353,21 @@ public actor DBSession {
 
     /// 쿼리 결과의 전체 행 수 (SELECT 만)
     public func count(_ sql: String) async throws -> Int? {
+        try checkReadOnly(sql)
         guard let countSQL = dialect.countSQL(sql) else { return nil }
-        return try await raw(countSQL).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
+        return try await readOnlyGuardedRaw(countSQL).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
     }
 
     /// 실행 계획. 트리 형태 텍스트가 있으면 함께 돌려준다.
     public func explain(_ sql: String) async throws -> (result: QueryResult, tree: String?) {
+        // 읽기전용: 계획만 보더라도 쓰기 문장 · EXPLAIN ANALYZE 같은 실제 실행은 막는다
+        try checkReadOnly(sql)
         let steps = dialect.explain(sql)
         let started = Date()
         for s in steps.before { _ = try await raw(s) }
         let main: (columns: [String], rows: [[String?]])
         do {
-            main = try await raw(steps.main)
+            main = try await readOnlyGuardedRaw(steps.main)
         } catch {
             for s in steps.after { _ = try? await raw(s) }
             throw error
