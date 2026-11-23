@@ -67,12 +67,26 @@ public actor DBSession {
     /// DB 서버 연결(로그인 · 세션 설정까지)에 기다리는 최대 시간. SSH 터널은 따로 15초.
     public static let defaultConnectTimeout: Double = 15
 
+    /// - Parameter passwordProvider: 비밀번호를 그때그때 읽어 오는 곳 (예: 키체인).
+    ///   주면 연결한 뒤 세션이 비밀번호를 들고 있지 않고, 취소 · 별도 연결 · 다시 연결 때마다 여기서 읽는다 (메모리에 덜 남게).
     public static func connect(profile: ConnectionProfile, password: String?,
+                               passwordProvider: (@Sendable () -> String?)? = nil,
                                timeout: Double = defaultConnectTimeout) async throws -> DBSession {
         let session = DBSession(profile: profile)
         await session.setConnectTimeout(timeout)
+        await session.setPasswordProvider(passwordProvider)
         try await session.open(password: password)
         return session
+    }
+
+    private var passwordProvider: (@Sendable () -> String?)?
+    private func setPasswordProvider(_ p: (@Sendable () -> String?)?) { passwordProvider = p }
+
+    /// 새 연결을 열 때 쓸 주소: 비밀번호를 들고 있지 않으면 읽어 와서 채운다
+    private func liveEndpoint() -> DriverEndpoint? {
+        guard var e = endpoint else { return nil }
+        if e.password == nil, let provider = passwordProvider { e.password = provider() }
+        return e
     }
 
     private var connectTimeout = defaultConnectTimeout
@@ -97,6 +111,8 @@ public actor DBSession {
         self.endpoint = endpoint
         do {
             try await openDriver(endpoint)
+            // 비밀번호를 다시 읽어 올 곳이 있으면 세션은 비밀번호를 들고 있지 않는다
+            if passwordProvider != nil { self.endpoint?.password = nil }
         } catch {
             await driver?.close()
             driver = nil
@@ -157,7 +173,7 @@ public actor DBSession {
     /// 실행 중이던 호출은 DBError.cancelled 로 끝난다. 실행 중이 아니면 false.
     @discardableResult
     public func cancelRunning() async throws -> Bool {
-        guard running > 0, let endpoint, let id = serverSessionID else { return false }
+        guard running > 0, let endpoint = liveEndpoint(), let id = serverSessionID else { return false }
         cancelRequested = true
         let other = try await Self.makeDriver(profile.kind, endpoint)
         defer { Task { await other.close() } }
@@ -169,7 +185,7 @@ public actor DBSession {
     /// 시간이 넘은 조회는 그 연결만 끊으므로 사용자의 이 세션(열린 트랜잭션 · 실행 중인 쿼리)은 그대로다.
     /// 연결 전이면 nil.
     public func sideConnection() -> SideConnection? {
-        guard let endpoint, driver != nil else { return nil }
+        guard let endpoint = liveEndpoint(), driver != nil else { return nil }
         return SideConnection(kind: profile.kind, dialect: dialect, endpoint: endpoint, readOnly: profile.readOnly,
                               container: current, connectTimeout: min(connectTimeout, 10))
     }
@@ -180,7 +196,7 @@ public actor DBSession {
         driver = nil
         inTransaction = false
         pendingChanges = 0
-        guard let endpoint else { return }
+        guard let endpoint = liveEndpoint() else { return }
         do {
             try await openDriver(endpoint)
             if !current.isEmpty { _ = try? await driver?.query(dialect.useSQL(current)) }

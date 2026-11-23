@@ -346,10 +346,13 @@ final class AppState {
         }
         if profile.savePassword {
             if let password {
-                if !Keychain.setPassword(password, for: profile.id) {
+                if Keychain.setPassword(password, for: profile.id) {
+                    // 키체인에 있으면 메모리에 따로 두지 않는다 (필요할 때마다 키체인에서 읽음)
+                    sessionPasswords[profile.id] = nil
+                } else {
                     log(.warning, .app, tr("%@ 비밀번호를 키체인에 저장하지 못했어요. 이번 실행 중에만 기억해요.", profile.name))
+                    sessionPasswords[profile.id] = password
                 }
-                sessionPasswords[profile.id] = password
             }
         } else {
             Keychain.deletePassword(for: profile.id)
@@ -409,11 +412,20 @@ final class AppState {
         do { try store.save(profiles) } catch { logError(error, .app, context: tr("접속 목록 저장 실패")) }
     }
 
-    /// 키체인 또는 이번 실행 중 입력한 비밀번호
+    /// 키체인 또는 이번 실행 중 입력한 비밀번호.
+    /// 키체인에 저장한 비밀번호는 메모리에 남겨 두지 않고 쓸 때마다 키체인에서 읽는다 (메모리 덤프에 덜 남게).
     func password(for profile: ConnectionProfile) -> String? {
         if let pw = sessionPasswords[profile.id] { return pw }
         if let pw = AppPaths.uiTestPassword { return pw }   // 화면 자동 테스트: 로컬 Docker 테스트 DB
         return profile.savePassword ? Keychain.password(for: profile.id) : nil
+    }
+
+    /// 키체인에 저장한 비밀번호면 세션이 들고 있지 않고 필요할 때 키체인에서 읽게 한다.
+    /// 이번 실행 중에만 기억하는 비밀번호(키체인에 없음)는 nil — 그때는 세션이 들고 있어야 다시 연결할 수 있다.
+    func keychainPasswordProvider(_ profile: ConnectionProfile) -> (@Sendable () -> String?)? {
+        guard profile.savePassword, sessionPasswords[profile.id] == nil, AppPaths.uiTestPassword == nil else { return nil }
+        let id = profile.id
+        return { Keychain.password(for: id) }
     }
 
     /// 비밀번호 입력창에서 확인을 눌렀을 때
@@ -422,15 +434,18 @@ final class AppState {
         var p = profile
         p.savePassword = save
         if let i = profiles.firstIndex(where: { $0.id == p.id }) { profiles[i] = p }
-        if save {
-            if !Keychain.setPassword(password, for: p.id) {
-                log(.warning, .app, tr("%@ 비밀번호를 키체인에 저장하지 못했어요. 이번 실행 중에만 기억해요.", p.name))
-            }
+        // 키체인에 저장했으면 메모리에 따로 두지 않는다 (연결 · 다시 연결 때마다 키체인에서 읽음).
+        // 저장하지 않기로 했거나 키체인 저장이 실패했을 때만 이번 실행 중 메모리에 둔다.
+        if save, Keychain.setPassword(password, for: p.id) {
+            sessionPasswords[p.id] = nil
         } else {
-            Keychain.deletePassword(for: p.id)
+            if save {
+                log(.warning, .app, tr("%@ 비밀번호를 키체인에 저장하지 못했어요. 이번 실행 중에만 기억해요.", p.name))
+            } else {
+                Keychain.deletePassword(for: p.id)
+            }
+            sessionPasswords[p.id] = password
         }
-        // 이번 실행에서는 입력한 값을 그대로 쓴다 (키체인 저장/읽기가 실패해도 연결되도록)
-        sessionPasswords[p.id] = password
         persist()
         Task { await connect(p.id) }
     }
@@ -493,7 +508,8 @@ final class AppState {
             return
         }
         do {
-            let s = try await DBSession.connect(profile: profile, password: password)
+            let s = try await DBSession.connect(profile: profile, password: password,
+                                                passwordProvider: keychainPasswordProvider(profile))
             updateConnection(id) {
                 $0.session = s
                 $0.state = .connected
