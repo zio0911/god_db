@@ -1,6 +1,6 @@
 # GodDB 기능 명세
 
-> 버전 1.4.1 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, SQL Server 2016+, Redis 6+
+> 버전 1.4.2 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, Amazon Redshift, SQL Server 2016+, Redis 6+
 > 이 문서는 기능이 추가·변경될 때마다 함께 갱신한다.
 
 ## 목차
@@ -820,6 +820,16 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 
 ## 18. 변경 이력
+
+### 1.4.2
+- **Amazon Redshift 지원**: 새 접속 DB 종류에 Redshift (포트 5439 · TLS 켬, PostgreSQL 방식으로 연결). 테이블 · 컬럼 · 기본 키 · 외래 키 · 함수 조회를 Redshift 에 맞추고, 컬럼에 DISTKEY · SORTKEY 표시, CREATE TABLE 에 DISTKEY · SORTKEY. 사이드바 · 탭에 Redshift 아이콘
+  - PostgreSQL 로 만든 접속도 연결해 보면 Redshift 로 알아봄
+  - 스키마 목록에는 이 계정이 쓸 수 있는 스키마만
+  - 기본 키를 강제하지 않는 DB 라 결과 표 그 자리 편집은 막음 (UPDATE 문으로 수정)
+- **DBeaver 접속 정보 가져오기**: `.dbp`(프로젝트 내보내기) 또는 `data-sources.json`. MySQL · MariaDB · PostgreSQL · SQL Server · Redshift, SSH 터널, SSL, 폴더 → 그룹. 사용자 이름만 읽고 비밀번호는 가져오지 않음
+- **접속 목록 찾기 · 정렬 · 순서 바꾸기**: 찾기 칸(이름 · 주소 · DB · 그룹 · DB 종류), 정렬(직접 정한 순 · 이름순 · 최근 연결순 · DB 종류순, 연결된 접속 먼저), 접속 · 그룹을 끌어다 놓거나 우클릭 > 순서 바꾸기
+- **쿼리 오류 빨간 밑줄**: 없는 컬럼(비슷한 컬럼 안내) · 콤마 · 괄호 · 따옴표 · 키워드 오타를 바로 표시, 마우스를 올리면 이유. DB 에 실행 없이 문법 검사도 요청 (설정 > 일반 > 편집기)
+- 별칭 뒤 Tab 자동완성(`a.` 다음)에서 후보 목록이 비던 문제 수정
 
 ### 1.4.1
 - **보안**
