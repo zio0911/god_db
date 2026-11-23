@@ -1,8 +1,12 @@
 import Foundation
 
 /// PostgreSQL. 사이드바의 "DB" 선택은 스키마(search_path)를 뜻한다. 접속 DB 는 접속 설정에서 고른다.
+/// Amazon Redshift 도 PostgreSQL 접속으로 붙는다. 연결할 때 `version()` 으로 알아내 `redshift` 를 켜고,
+/// PostgreSQL 8.0 기반 카탈로그에서 동작하는 메타데이터 조회를 쓴다 (identity · prokind · unnest · LATERAL 없음).
 public struct PostgresDialect: SQLDialect {
-    public init() {}
+    /// Amazon Redshift 접속
+    public let redshift: Bool
+    public init(redshift: Bool = false) { self.redshift = redshift }
     public var kind: DatabaseKind { .postgres }
 
     public func quoteIdent(_ name: String) -> String {
@@ -16,12 +20,23 @@ public struct PostgresDialect: SQLDialect {
     public var readOnlySessionSQL: String? { "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY" }
     /// 큰 테이블의 순차 스캔은 기본으로 직전 스캔이 멈춘 곳부터 시작한다 (synchronize_seqscans).
     /// 그러면 ORDER BY 없는 결과를 LIMIT/OFFSET 으로 나눠 받을 때 페이지끼리 행이 겹치거나 빠진다. 항상 처음부터 읽게 한다.
-    public var sessionSetupSQL: String? { "SET synchronize_seqscans = off" }
+    public var sessionSetupSQL: String? { redshift ? nil : "SET synchronize_seqscans = off" }
     public var sessionIDSQL: String { "SELECT pg_backend_pid()" }
     public func cancelSQL(sessionID: Int) -> String { "SELECT pg_cancel_backend(\(sessionID))" }
 
     public var allTablesSQL: String? {
-        """
+        if redshift {
+            // Redshift 의 information_schema.tables 는 권한 있는 테이블만 보여 비어 있을 수 있다
+            return """
+            SELECT n.nspname, c.relname, CASE c.relkind WHEN 'v' THEN 'VIEW' ELSE 'BASE TABLE' END
+              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE c.relkind IN ('r', 'v') AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+               AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp%'
+               AND has_schema_privilege(n.nspname, 'USAGE')
+             ORDER BY 1, 2 LIMIT 20000
+            """
+        }
+        return """
         SELECT table_schema, table_name, table_type FROM information_schema.tables
         WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_schema NOT LIKE 'pg_toast%'
         ORDER BY table_schema, table_name LIMIT 20000
@@ -29,10 +44,11 @@ public struct PostgresDialect: SQLDialect {
     }
 
     public var databasesSQL: String {
+        // Redshift: 사용 권한(USAGE) 없는 스키마는 고르면 search_path 가 비어 "테이블 없음" 이 되므로 빼고 보여준다
         """
         SELECT nspname FROM pg_namespace
          WHERE nspname NOT IN ('pg_catalog', 'information_schema')
-           AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp%'
+           AND nspname NOT LIKE 'pg_toast%' AND nspname NOT LIKE 'pg_temp%'\(redshift ? "\n   AND has_schema_privilege(nspname, 'USAGE')" : "")
          ORDER BY nspname
         """
     }
@@ -53,7 +69,8 @@ public struct PostgresDialect: SQLDialect {
     }
 
     public func columnsSQL(_ schema: String) -> String {
-        """
+        if redshift { return redshiftColumnsSQL(schema) }
+        return """
         SELECT c.relname, a.attname, format_type(a.atttypid, a.atttypmod),
                CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END,
                pg_get_expr(d.adbin, d.adrelid),
@@ -73,7 +90,8 @@ public struct PostgresDialect: SQLDialect {
     }
 
     public func indexesSQL(_ schema: String) -> String {
-        """
+        if redshift { return redshiftPrimaryKeysSQL(schema) }
+        return """
         SELECT t.relname, i.relname, CASE WHEN ix.indisunique THEN '0' ELSE '1' END, a.attname,
                CASE WHEN ix.indisprimary THEN '1' ELSE '0' END,
                CASE WHEN EXISTS (SELECT 1 FROM pg_constraint con WHERE con.conindid = ix.indexrelid)
@@ -91,6 +109,20 @@ public struct PostgresDialect: SQLDialect {
 
     public func routinesSQL(_ schema: String) -> String {
         let s = quoteString(schema)
+        if redshift {
+            // 프로시저 구분은 pg_proc_info.prokind. 트리거는 없다
+            return """
+            SELECT 'VIEW', c.relname, COALESCE(obj_description(c.oid, 'pg_class'), '')
+              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = \(s) AND c.relkind = 'v'
+            UNION ALL
+            SELECT CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END, p.proname,
+                   COALESCE(obj_description(p.prooid, 'pg_proc'), '')
+              FROM pg_proc_info p JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = \(s)
+            ORDER BY 1, 2
+            """
+        }
         return """
         SELECT 'VIEW', c.relname, COALESCE(obj_description(c.oid, 'pg_class'), '')
           FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -116,6 +148,12 @@ public struct PostgresDialect: SQLDialect {
             SELECT pg_get_viewdef(c.oid, true) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = \(s) AND c.relname = \(name)
             """
+        case .procedure, .function where redshift:
+            // pg_get_functiondef 가 없다 → 본문만
+            return """
+            SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = \(s) AND p.proname = \(name) ORDER BY p.oid LIMIT 1
+            """
         case .procedure, .function:
             return """
             SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -136,6 +174,7 @@ public struct PostgresDialect: SQLDialect {
     }
 
     public func createTableSQL(_ table: TableMeta) -> String {
+        if redshift { return redshiftCreateTableSQL(table) }
         var lines = table.columns.sorted { $0.position < $1.position }.map { "  " + columnDefinition($0) }
         if let pk = table.indexes.first(where: \.isPrimary) {
             lines.append("  CONSTRAINT \(quoteIdent(pk.name)) PRIMARY KEY \(indexColumns(pk))")
@@ -246,4 +285,103 @@ public struct PostgresDialect: SQLDialect {
         }
         return out
     }
+
+    // MARK: - Redshift
+
+    /// 컬럼 순서는 PostgreSQL 과 같다. 6번째(extra)에 "distkey" · "sortkey N" (N = 정렬 키 안의 순서)
+    func redshiftColumnsSQL(_ schema: String) -> String {
+        """
+        SELECT c.relname, a.attname, format_type(a.atttypid, a.atttypmod),
+               CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END,
+               pg_get_expr(d.adbin, d.adrelid),
+               TRIM(CASE WHEN a.attisdistkey THEN 'distkey' ELSE '' END
+                    || CASE WHEN a.attsortkeyord <> 0 THEN ' sortkey ' || CAST(ABS(a.attsortkeyord) AS varchar) ELSE '' END),
+               CASE WHEN EXISTS (SELECT 1 FROM pg_constraint con
+                                  WHERE con.conrelid = c.oid AND con.contype = 'p' AND a.attnum = ANY(con.conkey))
+                    THEN 'PRI' ELSE '' END,
+               COALESCE(col_description(c.oid, a.attnum), ''), a.attnum
+          FROM pg_attribute a
+          JOIN pg_class c ON c.oid = a.attrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+         WHERE n.nspname = \(quoteString(schema)) AND c.relkind = 'r'
+           AND a.attnum > 0 AND NOT a.attisdropped
+         ORDER BY c.relname, a.attnum
+        """
+    }
+
+    /// Redshift 에는 인덱스가 없다. 기본 키(정보용 제약)만 인덱스 모양으로 돌려준다
+    func redshiftPrimaryKeysSQL(_ schema: String) -> String {
+        """
+        SELECT c.relname, con.conname, '0', a.attname, '1', '1'
+          FROM pg_constraint con
+          JOIN pg_class c ON c.oid = con.conrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN generate_series(1, 32) AS g(i)
+          JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[g.i]
+         WHERE con.contype = 'p' AND n.nspname = \(quoteString(schema))
+         ORDER BY c.relname, con.conname, g.i
+        """
+    }
+
+    /// 외래 키 (정보용 제약). unnest · LATERAL 대신 배열 첨자
+    func redshiftForeignKeysSQL(_ schema: String) -> String {
+        let s = quoteString(schema)
+        return """
+        SELECT c.relname, con.conname, a.attname, rc.relname, ra.attname, g.i
+          FROM pg_constraint con
+          JOIN pg_class c ON c.oid = con.conrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          JOIN pg_class rc ON rc.oid = con.confrelid
+          JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+          CROSS JOIN generate_series(1, 32) AS g(i)
+          JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[g.i]
+          JOIN pg_attribute ra ON ra.attrelid = con.confrelid AND ra.attnum = con.confkey[g.i]
+         WHERE con.contype = 'f' AND n.nspname = \(s) AND rn.nspname = \(s)
+         ORDER BY 1, 2, 6
+        """
+    }
+
+    /// "distkey" / "sortkey N" (extra 에서)
+    static func redshiftKeys(_ c: ColumnMeta) -> (dist: Bool, sort: Int?) {
+        let parts = c.extra.lowercased().split(separator: " ")
+        let sort = parts.firstIndex(of: "sortkey").flatMap { i in i + 1 < parts.count ? Int(parts[i + 1]) : nil }
+        return (parts.contains("distkey"), sort)
+    }
+
+    /// CREATE TABLE + DISTKEY · SORTKEY. 인덱스 · 시퀀스는 없다
+    func redshiftCreateTableSQL(_ table: TableMeta) -> String {
+        let columns = table.columns.sorted { $0.position < $1.position }
+        var lines = columns.map { "  " + columnDefinition($0) }
+        if let pk = table.indexes.first(where: \.isPrimary) {
+            lines.append("  CONSTRAINT \(quoteIdent(pk.name)) PRIMARY KEY \(indexColumns(pk))")
+        }
+        var tail = ""
+        if let dist = columns.first(where: { Self.redshiftKeys($0).dist }) {
+            tail += "\nDISTKEY (\(quoteIdent(dist.name)))"
+        }
+        let sort = columns.compactMap { c in Self.redshiftKeys(c).sort.map { ($0, c.name) } }.sorted { $0.0 < $1.0 }
+        if !sort.isEmpty {
+            tail += "\nSORTKEY (\(sort.map { quoteIdent($0.1) }.joined(separator: ", ")))"
+        }
+        var out = ["CREATE TABLE \(quoteIdent(table.name)) (\n" + lines.joined(separator: ",\n") + "\n)" + tail + ";"]
+        if !table.comment.isEmpty {
+            out.append("COMMENT ON TABLE \(quoteIdent(table.name)) IS \(quoteString(table.comment));")
+        }
+        for c in columns where !c.comment.isEmpty {
+            out.append("COMMENT ON COLUMN \(quoteIdent(table.name)).\(quoteIdent(c.name)) IS \(quoteString(c.comment));")
+        }
+        return out.joined(separator: "\n")
+    }
+
+    /// `version()` 결과에서 "Redshift 1.0.12345" (없으면 nil)
+    public static func redshiftVersion(_ version: String) -> String? {
+        guard let r = version.range(of: #"Redshift [0-9][0-9.]*"#, options: .regularExpression) else { return nil }
+        return String(version[r])
+    }
+}
+
+extension SQLDialect {
+    /// Amazon Redshift 접속인지
+    public var isRedshift: Bool { (self as? PostgresDialect)?.redshift == true }
 }

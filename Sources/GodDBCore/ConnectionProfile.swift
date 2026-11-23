@@ -81,6 +81,9 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     public var tlsVerify: Bool = true
     /// 사용자가 신뢰한 서버 인증서(맨 앞, DER)의 SHA-256 "3F:A2:…" (없으면 nil)
     public var tlsPinSHA256: String?
+    /// Amazon Redshift (kind 는 .postgres — PostgreSQL 프로토콜로 연결). 아이콘 · 종류 표시용,
+    /// 실제 Redshift 여부는 연결할 때 서버 버전으로 다시 알아낸다.
+    public var redshift: Bool = false
     /// 마지막으로 연결에 성공한 시각 (사이드바 "최근 연결순" 정렬)
     public var lastConnectedAt: Date?
 
@@ -132,8 +135,57 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         environment = try c.decodeIfPresent(ConnectionEnvironment.self, forKey: .environment) ?? .none
         tlsVerify = try c.decodeIfPresent(Bool.self, forKey: .tlsVerify) ?? true
         tlsPinSHA256 = try c.decodeIfPresent(String.self, forKey: .tlsPinSHA256)
+        redshift = try c.decodeIfPresent(Bool.self, forKey: .redshift) ?? false
         lastConnectedAt = try c.decodeIfPresent(Date.self, forKey: .lastConnectedAt)
     }
+}
+
+/// 새 접속 화면에서 고르는 DB 종류. Redshift 는 PostgreSQL 프로토콜이라 kind 는 .postgres + redshift 표시.
+public enum ConnectionType: String, CaseIterable, Identifiable, Sendable {
+    case mysql, postgres, redshift, mssql, redis
+
+    public var id: String { rawValue }
+
+    public var kind: DatabaseKind {
+        switch self {
+        case .mysql: return .mysql
+        case .postgres, .redshift: return .postgres
+        case .mssql: return .mssql
+        case .redis: return .redis
+        }
+    }
+
+    public var title: String { self == .redshift ? "Redshift" : kind.title }
+
+    public var defaultPort: Int { self == .redshift ? 5439 : kind.defaultPort }
+}
+
+extension ConnectionProfile {
+    /// 화면에 보이는 DB 종류 (Redshift 포함)
+    public var type: ConnectionType {
+        get {
+            if redshift && kind == .postgres { return .redshift }
+            switch kind {
+            case .mysql: return .mysql
+            case .postgres: return .postgres
+            case .mssql: return .mssql
+            case .redis: return .redis
+            }
+        }
+        set {
+            let old = type
+            guard newValue != old else { return }
+            // 포트가 이전 종류의 기본값이면 새 종류의 기본값으로
+            if port == old.defaultPort { port = newValue.defaultPort }
+            kind = newValue.kind
+            redshift = newValue == .redshift
+            // Redshift 는 TLS 가 기본
+            if newValue == .redshift { useTLS = true }
+        }
+    }
+
+    /// 표시용 종류 이름 (Redshift 면 "Redshift")
+    public var typeTitle: String { type.title }
 }
 
 /// 접속 환경 태그 (사이드바 · 탭 · 도구 막대에 색으로 표시)

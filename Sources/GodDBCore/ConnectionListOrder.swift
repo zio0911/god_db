@@ -7,7 +7,7 @@ public enum ConnectionSort: String, CaseIterable, Identifiable, Sendable {
     case name
     /// 최근 연결순 (연결한 적 없는 접속은 뒤로, 그 안에서는 이름순)
     case recent
-    /// DB 종류순 (MySQL · PostgreSQL · SQL Server · Redis), 같은 종류는 이름순
+    /// DB 종류순 (MySQL · PostgreSQL · Redshift · SQL Server · Redis), 같은 종류는 이름순
     case type
 
     public var id: String { rawValue }
@@ -28,7 +28,7 @@ public enum ConnectionListOrder {
     public static func matches(_ p: ConnectionProfile, query: String) -> Bool {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace)
         guard !words.isEmpty else { return true }
-        let hay = [p.name, p.host, p.database, p.group, p.kind.title, p.kind.rawValue, p.ssh?.host ?? "",
+        let hay = [p.name, p.host, p.database, p.group, p.typeTitle, p.kind.title, p.kind.rawValue, p.ssh?.host ?? "",
                    p.environment == .none ? "" : p.environment.title]
             .joined(separator: "\n").lowercased()
         return words.allSatisfy { hay.contains($0) }
@@ -60,7 +60,7 @@ public enum ConnectionListOrder {
                 default: return byName(a, b)
                 }
             case .type:
-                let ka = kindOrder(a.kind), kb = kindOrder(b.kind)
+                let ka = typeOrder(a), kb = typeOrder(b)
                 return ka == kb ? byName(a, b) : ka < kb
             }
         }
@@ -126,5 +126,6 @@ public enum ConnectionListOrder {
         return out
     }
 
-    static func kindOrder(_ k: DatabaseKind) -> Int { DatabaseKind.allCases.firstIndex(of: k) ?? 0 }
+    /// DB 종류 순서: 새 접속 화면과 같은 MySQL · PostgreSQL · Redshift · SQL Server · Redis
+    static func typeOrder(_ p: ConnectionProfile) -> Int { ConnectionType.allCases.firstIndex(of: p.type) ?? 0 }
 }

@@ -21,6 +21,10 @@ struct ConnectionListOrderTests {
             #expect(ConnectionListOrder.matches(p, query: q), "\(q)")
         }
         #expect(!ConnectionListOrder.matches(p, query: "회원"))
+        #expect(!ConnectionListOrder.matches(p, query: "redshift"))
+        var rs = profile("분석", .postgres)
+        rs.redshift = true
+        #expect(ConnectionListOrder.matches(rs, query: "redshift"))
         #expect(!ConnectionListOrder.matches(p, query: "주문 회원"))  // 낱말이 모두 들어 있어야
     }
 
@@ -37,6 +41,10 @@ struct ConnectionListOrderTests {
         #expect(names(.name) == ["A-pg", "a-redis", "b-mysql", "c-pg"])
         #expect(names(.recent) == ["c-pg", "A-pg", "b-mysql", "a-redis"])  // 연결한 적 없으면 뒤
         #expect(names(.type) == ["b-mysql", "A-pg", "c-pg", "a-redis"])
+        var r = profile("0-rs", .postgres)
+        r.redshift = true
+        #expect(ConnectionListOrder.sorted(all + [r, profile("0-ms", .mssql)], by: .type).map(\.name)
+                == ["b-mysql", "A-pg", "c-pg", "0-rs", "0-ms", "a-redis"])
         #expect(names(.name, connectedFirst: true, connected: [c.id, a.id]) == ["b-mysql", "c-pg", "A-pg", "a-redis"])
     }
 

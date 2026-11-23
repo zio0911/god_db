@@ -27,10 +27,17 @@ struct SidebarView: View {
                             Button(tr("접속 정보 가져오기…")) { app.chooseImportFile() }
                             Divider()
                             Button(tr("DataGrip 접속 정보 붙여넣기")) { app.pasteDataGrip() }
+                            Button(tr("DBeaver 접속 정보 가져오기…")) { app.chooseDBeaverFile() }
                         } label: {
-                            Image(systemName: "arrow.up.arrow.down.circle")
+                            // 아이콘만으로는 작아서 잘 안 보여 글자를 함께 쓴다 ("새 접속"과 같은 모양)
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.arrow.down")
+                                Text(tr("가져오기 · 내보내기"))
+                            }
                         }
-                        .menuStyle(.borderlessButton)
+                        .menuStyle(.button)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help(tr("접속 정보 내보내기 / 가져오기"))
@@ -153,7 +160,7 @@ struct ProfileRow: View {
                 .frame(width: 7, height: 7)
                 .opacity(state == .connecting ? 0 : 1)
                 .overlay { if state == .connecting { ProgressView().controlSize(.mini) } }
-            KindBadge(kind: profile.kind)
+            KindBadge(kind: profile.kind, redshift: profile.redshift)
             Text(profile.name).lineLimit(1)
                 .fontWeight(selected ? .semibold : .regular)
             EnvironmentBadge(environment: profile.environment)
@@ -222,11 +229,15 @@ struct ProfileRow: View {
 /// DB 종류 아이콘: 브랜드 로고(MySQL · PostgreSQL · Redis, Simple Icons)를 브랜드 색으로. SQL Server 는 자체 그림(MSSQLIcon).
 struct KindBadge: View {
     let kind: DatabaseKind
+    /// PostgreSQL 접속 중 Amazon Redshift
+    var redshift = false
     var size: CGFloat = 16
 
     var body: some View {
         Group {
-            if kind == .postgres {
+            if redshift && kind == .postgres {
+                RedshiftIcon()
+            } else if kind == .postgres {
                 PostgresIcon()
             } else if let path = BrandLogo.paths[kind] {
                 SVGLogoShape(path: path).fill(kind.iconColor)
@@ -239,8 +250,12 @@ struct KindBadge: View {
             }
         }
         .frame(width: size, height: size)
-        .help(kind.title)
-        .accessibilityLabel(kind.title)
+        .help(title)
+        .accessibilityLabel(title)
+    }
+
+    private var title: String {
+        redshift && kind == .postgres ? "Redshift" : kind.title
     }
 }
 

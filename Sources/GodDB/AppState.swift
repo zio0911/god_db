@@ -514,6 +514,12 @@ final class AppState {
                 $0.session = s
                 $0.state = .connected
             }
+            // PostgreSQL 로 저장한 접속이 실제로는 Redshift 면 종류 · 아이콘을 Redshift 로 (또는 그 반대)
+            if profile.kind == .postgres, profile.redshift != s.dialect.isRedshift,
+               let i = profiles.firstIndex(where: { $0.id == id }) {
+                profiles[i].redshift = s.dialect.isRedshift
+                persist()
+            }
             noteConnected(id)
             log(.success, .connection, tr("%@ 연결됨", "\(profile.name)") + (profile.readOnly ? tr(" (읽기전용)") : "")
                 + (connectedCount > 1 ? tr(" · 열린 접속 %@개", "\(connectedCount)") : ""),

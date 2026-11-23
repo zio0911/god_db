@@ -55,6 +55,15 @@
 | 컬럼 위치 (AFTER) | 지원 | 미지원 (항상 맨 뒤) | 미지원 (항상 맨 뒤) |
 | 코멘트 | `COMMENT` | `COMMENT ON` | 확장 속성 `MS_Description` |
 
+- **Amazon Redshift**: PostgreSQL 접속으로 붙인다 (기본 포트 5439, TLS 권장). 연결할 때 `version()` 으로 Redshift 를 알아내 아래처럼 바꿔 동작한다.
+  - 새 접속의 DB 종류에서 "Redshift" 를 고르면 포트 5439 · TLS 켬으로 채운다 (저장은 PostgreSQL 접속 + Redshift 표시). 사이드바 · 탭 · 비교 화면에 Redshift 아이콘(보라 원통, 직접 그림)
+  - PostgreSQL 로 만든 접속이 연결해 보니 Redshift 면 종류 · 아이콘을 Redshift 로 자동으로 바꿔 저장한다 (반대도)
+  - 스키마 목록에는 이 계정이 쓸 수 있는(USAGE) 스키마만 보인다 (권한 없는 스키마를 고르면 Redshift 가 search_path 를 비워 "테이블 없음" 이 되므로)
+  - 테이블 · 컬럼 · 기본 키 · 외래 키 · 함수 · 프로시저 조회를 Redshift 카탈로그에 맞춘 쿼리로 (트리거 · 인덱스 없음)
+  - 컬럼 정보(Extra)에 `distkey` · `sortkey N` 표시, CREATE 문에 `DISTKEY (...)` · `SORTKEY (...)`
+  - 서버 버전은 `version()` 에서 (`Amazon Redshift 1.0.x`)
+  - 기본 키 · 외래 키는 정보용 제약(강제되지 않음)이라 결과 표 편집은 막는다 → UPDATE 문으로
+  - 읽기전용은 PostgreSQL 과 같다 (앱 검사 + 읽기 전용 트랜잭션)
 - 한 번에 여러 문장 실행: PostgreSQL 드라이버는 스크립트를 문장 단위로 나눠 차례로 실행한다 (`$$ … $$` 함수 본문은 나누지 않음). SQL Server 는 배치로 한 번에 보낸다.
 - 오류 번역: PostgreSQL SQLSTATE(28P01, 3D000, 42P01, 42703, 42601, 42501, 25006…), SQL Server 번호(18456, 4060, 208, 207, 102, 229, 20009…)에 한국어 해결 방법을 붙인다.
 - 비밀번호 오류 재입력: MySQL 1045 / PostgreSQL 28P01 / SQL Server 18456.
@@ -532,7 +541,7 @@
 
 ## 24. 접속 정보 내보내기 · 가져오기
 
-- 사이드바 **접속** 목록 아래 ⇅ 메뉴 → "접속 정보 내보내기…" / "접속 정보 가져오기…"
+- 사이드바 **접속** 목록 아래 "⇅ 가져오기 · 내보내기" 메뉴 → "접속 정보 내보내기…" / "접속 정보 가져오기…" / "DataGrip 접속 정보 붙여넣기" / "DBeaver 접속 정보 가져오기…"
 - **내보내기**: 내보낼 접속을 체크 → 저장 위치 선택 → `goddb-connections-YYYYMMDD.json` (권한 600)
   - 기본은 비밀번호를 넣지 않는다. 받는 쪽에서 처음 연결할 때 입력.
   - "비밀번호 포함" 을 켜면 정한 암호(8자 이상)로 잠근다: PBKDF2-SHA256(20만 회) → AES-256-GCM. 암호는 파일에 없으니 따로 전달.
@@ -542,12 +551,20 @@
   - 이름이 다른 접속과 겹치면 ` (2)` 를 붙인다.
   - 비밀번호가 들어 있으면 암호를 넣어 함께 가져온다 (비우면 비밀번호 없이). 접속의 "비밀번호 저장" 설정에 따라 키체인 또는 실행 중에만 보관.
 - 내보내기·가져오기는 상태창과 로그 파일에 남는다.
-- **DataGrip 붙여넣기**: DataGrip 에서 데이터 소스를 고르고 ⌘C → GodDB 사이드바에서 ⌘V (또는 ⇅ 메뉴 > "DataGrip 접속 정보 붙여넣기")
+- **DataGrip 붙여넣기**: DataGrip 에서 데이터 소스를 고르고 ⌘C → GodDB 사이드바에서 ⌘V (또는 가져오기 · 내보내기 메뉴 > "DataGrip 접속 정보 붙여넣기")
   - `jdbc-url` 에서 종류·호스트·포트·DB·TLS 옵션, `user-name`, 이름, uuid(다시 붙여넣으면 같은 접속으로 인식)를 읽는다. 여러 개를 한 번에 붙여넣어도 된다.
-  - 지원: MySQL/MariaDB/Aurora, PostgreSQL, SQL Server(`;database=`, `\인스턴스`), Redis. 그 외 DB 는 "지원하지 않음"으로 알려준다.
+  - 지원: MySQL/MariaDB/Aurora, PostgreSQL, Redshift(`jdbc:redshift:` → PostgreSQL · 5439 · TLS), SQL Server(`;database=`, `\인스턴스`), Redis. 그 외 DB 는 "지원하지 않음"으로 알려준다.
   - 드라이버 래퍼 주소도 읽는다: `jdbc:aws-wrapper:mysql://`(AWS Advanced JDBC Wrapper), `jdbc:p6spy:`, `jdbc:log4jdbc:`, `jdbc:mysql:replication://`·`loadbalance://`(첫 호스트 사용), jTDS
   - 비밀번호는 DataGrip 이 따로 보관해서 들어 있지 않다 → 처음 연결할 때 입력.
   - SSH 터널을 쓰는 데이터 소스는 SSH 설정 id 만 들어 있다 → SSH 를 켠 상태로 가져오고 바스티온 정보는 접속 편집에서 넣으라고 안내.
+- **DBeaver 가져오기**: 가져오기 · 내보내기 메뉴 > "DBeaver 접속 정보 가져오기…" (또는 "접속 정보 가져오기…" 에서 DBeaver 파일을 골라도 된다)
+  - 받는 파일: DBeaver 파일 > 내보내기 > DBeaver > 프로젝트 로 만든 `.dbp`, 또는 DBeaver 작업 폴더(`~/Library/DBeaverData/workspace6/<프로젝트>/.dbeaver/`)의 `data-sources.json`. 파일 고르기는 작업 폴더가 있으면 거기서 시작한다.
+  - 지원: MySQL · MariaDB · PostgreSQL · SQL Server · Amazon Redshift (Redshift 종류로, 기본 포트 5439 · TLS 켬 — 드라이버 설정에서 SSL 을 끈 접속만 끔). 그 외(SQLite 등)는 건너뛰고 "지원하지 않는 접속 N개는 건너뛰었어요" 로 알려준다.
+  - 옮기는 것: 이름, 호스트, 포트, DB, 사용자, 읽기전용, SSL 사용 여부, SSH 터널(호스트 · 포트 · 사용자 · 키 파일), 폴더 → 그룹(`상위/하위`). 주소(URL) 방식 접속은 JDBC 주소에서 읽는다.
+  - 사용자 이름: DBeaver 는 사용자 이름을 비밀번호와 함께 `credentials-config.json` 에 암호화해 둔다 (`.dbp` 안, `data-sources.json` 과 같은 폴더). 이 파일에서 **사용자 이름만** 읽고 비밀번호는 읽자마자 버린다 (저장 · 표시 · 로그 없음). 파일이 없거나 못 읽으면 사용자 이름 없이 가져오고 안내.
+  - 비밀번호는 가져오지 않는다 → 처음 연결할 때 입력.
+  - DBeaver 접속 id 로 GodDB 접속 id 를 정하므로 다시 가져오면 "이미 있음 → 덮어씀" 으로 나온다.
+  - SSH 비밀번호 방식 · 점프 서버 · 프록시는 가져오지 않고 안내만 한다 (GodDB SSH 는 키 파일 / ssh-agent).
 
 ## 25. Redis
 
@@ -638,7 +655,7 @@
 - 접속 내보내기/가져오기에 그룹도 함께 들어간다.
 
 ### 접속 목록 찾기 · 정렬 · 순서 바꾸기 (#173)
-- **찾기**: 접속 목록 위 찾기 칸. 이름 · 주소 · DB 이름 · 그룹 · DB 종류 · SSH 호스트 · 환경으로 거른다 (띄어 쓴 낱말은 모두 들어 있어야). 걸린 접속이 있는 그룹만 펼쳐 보여주고 "N개 중 M개". ⓧ 또는 esc 로 지움.
+- **찾기**: 접속 목록 위 찾기 칸. 이름 · 주소 · DB 이름 · 그룹 · DB 종류(Redshift 포함) · SSH 호스트 · 환경으로 거른다 (띄어 쓴 낱말은 모두 들어 있어야). 걸린 접속이 있는 그룹만 펼쳐 보여주고 "N개 중 M개". ⓧ 또는 esc 로 지움.
 - **정렬**: "접속" 제목 오른쪽 메뉴. 직접 정한 순(기본) · 이름순 · 최근 연결순 · DB 종류순, "연결된 접속 먼저". 그룹 안 접속과 그룹 순서에 함께 적용, 고른 정렬은 다시 켜도 유지.
   - 최근 연결순: 접속마다 마지막 연결 시각을 저장한다. 연결한 적 없는 접속은 뒤로.
 - **순서 바꾸기**: 접속을 다른 접속 위로 끌어 놓으면 그 앞으로 (그 접속의 그룹으로) 옮긴다. 우클릭 > 순서 바꾸기 > 맨 위로 · 위로 · 아래로 · 맨 아래로 (같은 그룹 안).
@@ -798,6 +815,7 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - 비밀번호 방식 SSH 미지원.
 - SQL Server TLS 인증서 확인은 연결 전에 인증서를 따로 받아 판정하고, FreeTDS 는 `ca file` 로 다시 확인한다 (지문 비교는 못 함). 사설 CA 인증서를 고정했는데 서버가 루트를 보내지 않으면 FreeTDS 연결은 암호화만 한다 (§36).
 - SSH 바스티온이 `ProxyJump` 를 거쳐야 하면 `ssh-keyscan` 이 키를 받지 못한다 → 터미널에서 한 번 접속해 `~/.ssh/known_hosts` 에 키를 넣어 두면 그 키를 쓴다.
+- Amazon Redshift 는 Docker 이미지가 없어 자동 테스트는 SQL 생성 단위 테스트만 한다. 실제 동작은 Redshift 클러스터로 수동 확인. 스키마 비교 · 모델링 · AI 데이터 찾기는 Redshift 용으로 따로 맞추지 않았다.
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 
 ## 18. 변경 이력

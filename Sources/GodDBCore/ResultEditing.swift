@@ -63,6 +63,8 @@ public enum ResultEditingError: LocalizedError, Equatable {
     case noPrimaryKey(String)
     case primaryKeyNotSelected(String)
     case valuesTruncated
+    /// Redshift: 기본 키가 정보용이라 행을 하나로 고를 수 없다
+    case keysNotEnforced
 
     public var errorDescription: String? {
         switch self {
@@ -76,6 +78,8 @@ public enum ResultEditingError: LocalizedError, Equatable {
             return tr("결과에 기본 키 컬럼(%@)이 있어야 고칠 수 있어요. SELECT 에 넣어 주세요.", cols)
         case .valuesTruncated:
             return tr("값이 너무 커서 앞부분만 불러온 칸이 있어 이 결과는 표에서 고칠 수 없어요. UPDATE 문으로 수정하세요.")
+        case .keysNotEnforced:
+            return tr("Redshift 는 기본 키를 강제하지 않아 같은 키의 행이 여러 개일 수 있어서, 결과 표에서 고치지 않아요. UPDATE 문으로 수정하세요.")
         }
     }
 }
