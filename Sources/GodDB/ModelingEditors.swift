@@ -7,15 +7,26 @@ import SwiftUI
 struct ModelTableEditor: View {
     @Environment(AppState.self) private var app
     @Binding var model: DataModel
-    let tableIndex: Int
+    /// 편집할 테이블. 번호가 아니라 ID 로 찾는다 — 테이블을 지운 직전 그리기에서 옛 번호로 읽다가 앱이 꺼지던 문제
+    let tableID: UUID
     @Binding var selection: ModelSelection?
     let onDelete: () -> Void
     @State private var tab = 0
     @State private var selectedColumn: UUID?
 
+    /// 지금 모델에서 이 테이블의 위치 (지워졌으면 -1)
+    private var tableIndex: Int { model.tableIndex(tableID) ?? -1 }
+
     private var table: ModelTable { model.tables[tableIndex] }
 
     var body: some View {
+        // 테이블이 지워진 뒤 한 번 더 그려지는 경우 아무것도 그리지 않는다
+        if model.tables.indices.contains(tableIndex) {
+            editor
+        }
+    }
+
+    private var editor: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "tablecells").foregroundStyle(Color.accentColor)

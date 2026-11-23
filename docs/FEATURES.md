@@ -817,7 +817,7 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - SQL Server TLS 인증서 확인은 연결 전에 인증서를 따로 받아 판정하고, FreeTDS 는 `ca file` 로 다시 확인한다 (지문 비교는 못 함). 사설 CA 인증서를 고정했는데 서버가 루트를 보내지 않으면 FreeTDS 연결은 암호화만 한다 (§36).
 - SSH 바스티온이 `ProxyJump` 를 거쳐야 하면 `ssh-keyscan` 이 키를 받지 못한다 → 터미널에서 한 번 접속해 `~/.ssh/known_hosts` 에 키를 넣어 두면 그 키를 쓴다.
 - Amazon Redshift 는 Docker 이미지가 없어 자동 테스트는 SQL 생성 단위 테스트만 한다. 실제 동작은 Redshift 클러스터로 수동 확인. 스키마 비교 · 모델링 · AI 데이터 찾기는 Redshift 용으로 따로 맞추지 않았다.
-- 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
+- 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름 전체와, PostgreSQL · SQL Server 의 핵심 흐름(연결 · 실행 · 결과 복사 · 빨간 밑줄 · 위험 문장 확인 · 외래 키 따라가기 · 칸 편집 · 스키마 비교), 모델링(만들기 · 수정 · 관계 · 이동 · 되돌리기 · 삭제)을 확인한다. Redis 화면은 수동 확인.
 
 ## 18. 변경 이력
 
