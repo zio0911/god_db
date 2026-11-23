@@ -58,4 +58,19 @@ struct DollarQuoteTests {
         let tagged = SQLText.statements(in: "DO $body$ BEGIN PERFORM 1; END $body$; SELECT 1")
         #expect(tagged.count == 2)
     }
+
+    @Test func quotedTableNames() {
+        #expect(SQLCompleter.aliases(in: "SELECT * FROM [dbo].[tb_member] m")["m"] == "tb_member")
+        #expect(SQLCompleter.aliases(in: "SELECT * FROM \"public\".\"tb_order\" AS o")["o"] == "tb_order")
+        #expect(SQLCompleter.aliases(in: "SELECT * FROM `shop`.`tb_member` x")["x"] == "tb_member")
+    }
+
+    // a.username 처럼 잘못 쓴 이름 → 그 테이블 컬럼을 비슷한 순서로 (빈 목록이 아니게)
+    @Test func wrongColumnShowsClosestColumns() {
+        let s = SQLCompleter.suggestions(prefix: "mail", qualifier: "m",
+                                         statement: "SELECT m.mail FROM tb_member m", tables: SQLCompleterTests().tables)
+        #expect(s.first == "email")
+        #expect(Set(s) == ["email", "member_id"])
+        #expect(SQLCompleter.closest(to: "username", in: ["id", "name", "email"]).first == "name")
+    }
 }

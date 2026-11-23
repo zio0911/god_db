@@ -201,7 +201,8 @@
 | `FROM` / `JOIN` / `UPDATE` / `INTO` / `TABLE` / `DESC` 바로 뒤 | 테이블, 뷰 우선 |
 | 그 외 | 구문에 나온 테이블의 컬럼 → 키워드·함수 → 테이블 → 뷰/프로시저/함수 |
 
-- 별칭 해석: `FROM tb_member m`, `JOIN tb_order AS o`, `FROM a x, b y`, `shop.tb_member` 형식 지원. `WHERE`/`ON` 등은 별칭으로 보지 않는다.
+- 별칭 해석: `FROM tb_member m`, `JOIN tb_order AS o`, `FROM a x, b y`, `shop.tb_member`, `[dbo].[tb_member]`, `"public"."tb_member"` 형식 지원. `WHERE`/`ON` 등은 별칭으로 보지 않는다.
+- `m.` 뒤 목록은 점 뒤만 바꾼다 (`m.` 은 그대로). 잘못 쓴 컬럼(`m.username`) 끝에서 Tab → 맞는 후보가 없으면 그 테이블 컬럼을 비슷한 순서로 목록에 보여 준다.
 - 동작
   - 후보 1개 → 바로 채움
   - 후보 여러 개인데 공통 앞부분이 더 길면 → 공통 부분까지 채움 (한 번 더 Tab 하면 목록)
@@ -575,6 +576,20 @@
   - 상단에 "Cluster · 마스터 N개" 배지 (마우스를 올리면 노드 주소).
 - **Redis Sentinel**: 방식 "Sentinel", 호스트 칸에 센티널 주소(쉼표로 여러 개, 기본 포트 26379), 마스터 이름(예: `mymaster`). `SENTINEL get-master-addr-by-name` 으로 현재 마스터를 찾아 접속 (센티널 인증이 필요하면 같은 비밀번호로 다시 시도). 장애 조치 후에는 다시 연결하면 새 마스터로 붙는다.
 - 아직 안 되는 것: 복제본(replica) 읽기, RESP3, 모듈(JSON 등)은 Workbench 로만.
+
+### 쿼리 오류 빨간 밑줄
+
+- 입력하는 동안 잘못된 부분에 빨간 물결 밑줄. 마우스를 올리면 이유가 나온다 (화면 읽기 프로그램에도 전달).
+- **GodDB 검사** (입력을 0.3초 멈추면, 서버 요청 없음): 틀린 경고를 내지 않도록 확실한 경우만 표시한다.
+  - 없는 컬럼: `별칭.컬럼` (예: `a.username` → "users 테이블에 username 컬럼이 없어요" + "비슷한 컬럼: name"), JOIN 없는 테이블 하나짜리 SELECT 의 이름만 쓴 컬럼. 다른 스키마 · CTE · 서브쿼리 별칭 · 사이드바가 다른 DB 를 보고 있을 때는 검사하지 않는다.
+  - 콤마: 빠짐(`a.id a.name`), 두 번(`,,`), 뒤에 항목 없음(`name, FROM`), 앞에 항목 없음(`SELECT , id`)
+  - 닫히지 않은 괄호 · 따옴표 · 주석, 여는 괄호 없는 `)`
+  - 키워드 오타: 첫 단어(`SELEC`), `FORM` · `WEHRE` 등 (아는 테이블 · 컬럼 이름은 제외)
+- **DB 검사** (입력을 1초 멈추면, 커서가 있는 구문만): **실행하지 않고** 검사만 맡긴다. GodDB 검사에서 이미 문제가 보인 구문은 묻지 않는다.
+  - MySQL: `PREPARE` → `DEALLOCATE`, PostgreSQL · Redshift: `PREPARE … AS` → `DEALLOCATE` (오류 위치를 서버가 알려 줌), SQL Server: `sp_describe_first_result_set`
+  - SELECT · INSERT · UPDATE · DELETE · WITH (· REPLACE / VALUES / MERGE) 만. 쿼리 실행 중, PostgreSQL 트랜잭션이 열려 있을 때(오류가 나면 트랜잭션이 실패 상태가 되므로), 탭의 DB 가 세션의 DB 와 다를 때는 묻지 않는다.
+  - 실행 기록 · 감사 로그 · 유휴 끊기 시간에 남기지 않는다.
+- 설정 > 일반 > 편집기: "쿼리 오류에 빨간 밑줄"(기본 켬), "DB 에 검사 요청"(기본 켬).
 
 ## 26. INSERT 컬럼 힌트
 

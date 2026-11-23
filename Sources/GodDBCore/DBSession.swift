@@ -383,6 +383,24 @@ public actor DBSession {
         return (result, tree)
     }
 
+    /// SQLServerCheck 용: 검사 명령을 드라이버로 바로 보낸다.
+    /// 실행 중 표시 · 마지막 활동 시각(유휴 끊기)은 바꾸지 않는다. 드라이버가 요청을 차례로 처리한다.
+    func runCheck(_ sql: String) async -> SQLServerCheck.Failure? {
+        guard let driver, driver.isOpen else { return nil }
+        let (check, cleanup) = SQLServerCheck.commands(for: sql, kind: profile.kind)
+        var failure: SQLServerCheck.Failure? = nil
+        for command in check {
+            do {
+                _ = try await driver.query(command)
+            } catch {
+                failure = SQLServerCheck.failure(from: error, sql: sql, kind: profile.kind)
+                break
+            }
+        }
+        for command in cleanup { _ = try? await driver.query(command) }
+        return failure
+    }
+
     /// 모든 값을 문자열로 받는다.
     public func raw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
         guard let driver, driver.isOpen else { throw DBError.notConnected }
