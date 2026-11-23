@@ -36,6 +36,16 @@ struct RedshiftDialectTests {
         #expect(pg.foreignKeysSQL("public").contains("unnest"))
     }
 
+    /// #175: Redshift 분기가 PostgreSQL 프로시저까지 잡아 본문만 보여 주던 문제
+    @Test func routineDefinitionByKind() {
+        for kind in [RoutineMeta.Kind.procedure, .function] {
+            let r = RoutineMeta(kind: kind, name: "p1")
+            #expect(pg.definitionSQL(r, schema: "public").contains("pg_get_functiondef"), "\(kind)")
+            #expect(rs.definitionSQL(r, schema: "public").contains("p.prosrc"), "\(kind)")
+            #expect(!rs.definitionSQL(r, schema: "public").contains("pg_get_functiondef"), "\(kind)")
+        }
+    }
+
     @Test func distAndSortKeysFromExtra() {
         #expect(PostgresDialect.redshiftKeys(ColumnMeta(name: "a", columnType: "int", nullable: false, extra: "distkey sortkey 1")) == (true, 1))
         #expect(PostgresDialect.redshiftKeys(ColumnMeta(name: "b", columnType: "int", nullable: false, extra: "sortkey 2")) == (false, 2))

@@ -488,10 +488,10 @@ func diffRow(_ table: String, _ detail: String) -> (Node) -> Bool {
 }
 
 /// 기준 · 대상 접속과 DB 를 고르고 [비교]
-func startCompare(target: String, sourceDB: String, targetDB: String) throws {
+func startCompare(source: String = "UI MySQL · 개발", target: String, sourceDB: String, targetDB: String) throws {
     let pops = comparePickers()
     guard pops.count >= 2 else { throw Abort(message: "기준 · 대상 선택 상자가 없어요 (\(pops.count)개)") }
-    guard pick(pops[0], "UI MySQL · 개발") else { throw Abort(message: "기준 접속을 고를 수 없어요") }
+    guard pick(pops[0], source) else { throw Abort(message: "기준 접속 \(source) 을 고를 수 없어요") }
     guard pick(comparePickers()[1], target) else { throw Abort(message: "대상 접속 \(target) 을 고를 수 없어요") }
     let fields = app.snapshot().filter { $0.role == "AXTextField" && $0.label.contains("DB/스키마") }
         .sorted { $0.frame.minY < $1.frame.minY }
@@ -1133,7 +1133,12 @@ scenario("assistantInterrupt") {
 }
 
 /// 사이드바 접속 줄 (이름 그대로)
-func connRow(_ name: String) -> Node? { app.find(2, { !$0.modal && $0.role == "AXStaticText" && $0.value == name }) }
+/// 사이드바 접속 줄 (이름 그대로). 쿼리 화면에도 접속 이름이 보일 수 있어 찾기 칸과 같은 가로 범위만 본다
+func connRow(_ name: String) -> Node? {
+    let field = app.find(2, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("접속 찾기") })?.frame
+    return app.find(2, { n in !n.modal && n.role == "AXStaticText" && n.value == name
+        && (field.map { n.frame.midX > $0.minX - 40 && n.frame.midX < $0.maxX + 40 } ?? true) })
+}
 
 /// 마우스로 끌어다 놓기 (조금씩 움직여 끌기로 인식되게)
 func drag(_ from: Node, to: Node) {
@@ -1152,6 +1157,22 @@ func drag(_ from: Node, to: Node) {
     Thread.sleep(forTimeInterval: 0.8)
 }
 
+/// 그 자리에서 마우스로 끌기 (오프셋만큼)
+func drag(_ from: Node, by d: CGVector) {
+    let a = CGPoint(x: from.frame.midX, y: from.frame.midY)
+    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: a, mouseButton: .left))
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left))
+    Thread.sleep(forTimeInterval: 0.2)
+    for i in 1...20 {
+        let t = CGFloat(i) / 20
+        post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged,
+                     mouseCursorPosition: CGPoint(x: a.x + d.dx * t, y: a.y + d.dy * t), mouseButton: .left))
+        Thread.sleep(forTimeInterval: 0.02)
+    }
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: CGPoint(x: a.x + d.dx, y: a.y + d.dy), mouseButton: .left))
+    Thread.sleep(forTimeInterval: 0.6)
+}
+
 scenario("connList") {
     // 접속 목록 찾기 · 정렬 · 순서 바꾸기 (#173). 테스트 접속: UI MySQL(그룹 없음), UI 그룹 > UI MySQL Prod, UI 닫힌 포트
     guard let field = app.find(3, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("접속 찾기") }) else {
@@ -1159,8 +1180,11 @@ scenario("connList") {
     }
     click(field)
     paste("닫힌")
-    check("찾기: '닫힌' → UI 닫힌 포트만", connRow("UI 닫힌 포트") != nil && app.gone(2, { $0.role == "AXStaticText" && $0.value == "UI MySQL Prod" }))
-    check("찾기: 개수 '4개 중 1개'", app.find(2, hasText("4개 중 1개")) != nil)
+    let closedShown = connRow("UI 닫힌 포트") != nil
+    Thread.sleep(forTimeInterval: 0.6)
+    let prodHidden = connRow("UI MySQL Prod") == nil
+    check("찾기: '닫힌' → UI 닫힌 포트만", closedShown && prodHidden, "닫힌 포트 \(closedShown) · Prod 숨김 \(prodHidden)")
+    check("찾기: 개수 '6개 중 1개'", app.find(2, hasText("6개 중 1개")) != nil)
     key("escape")
     check("esc 로 지우면 다시 다 보임", connRow("UI MySQL Prod") != nil && connRow("UI MySQL") != nil)
 
@@ -1216,10 +1240,213 @@ scenario("connList") {
     if let mover = connRow("UI 둘째 그룹 접속"), let target = connRow("UI 닫힌 포트") {
         drag(mover, to: target)
         // UI 그룹: Prod · 닫힌 포트 · 둘째 그룹 접속 → 머리글 "UI 그룹, 3"
-        check("끌어다 놓기: 다른 그룹 접속이 UI 그룹으로 (그룹 3개)", groupLabel("UI 그룹")?.label.hasPrefix("UI 그룹, 3") == true,
+        // 머리글: "UI 그룹, [연결된 수, ]접속 수 | …" → 마지막 숫자
+        let count = groupLabel("UI 그룹")?.label.components(separatedBy: " | ").first?.components(separatedBy: ", ").last
+        check("끌어다 놓기: 다른 그룹 접속이 UI 그룹으로 (그룹 3개)", count == "3",
               groupLabel("UI 그룹")?.label ?? "그룹 줄 없음")
         check("끌어다 놓은 뒤 정렬이 '직접 정한 순'", app.find(2, { isSortMenu($0) && $0.value.contains("직접 정한 순") }) != nil)
     } else { check("끌어다 놓기 준비", false) }
+}
+
+// MARK: - PostgreSQL · SQL Server (#180): MySQL 과 같은 핵심 흐름을 다른 DB 에서
+
+struct OtherDB {
+    let key: String
+    /// 사이드바 접속 이름
+    let name: String
+    /// 사이드바 DB/스키마 선택에 보이는 값 (PostgreSQL 은 스키마)
+    let container: String
+    /// 보정 SQL 에 나오는 테이블 이름 모양
+    let quotedOrders: String
+}
+
+let otherDBs = [
+    OtherDB(key: "postgres", name: "UI PostgreSQL", container: "public", quotedOrders: "\"ui_orders\""),
+    OtherDB(key: "sqlServer", name: "UI SQL Server", container: "shop", quotedOrders: "[ui_orders]"),
+]
+
+for db in otherDBs {
+    scenario(db.key) {
+        func label(_ s: String) -> String { "[\(db.name)] " + s }
+        func help() -> String { editor().flatMap { attr($0.el, "AXHelp") as? String } ?? "" }
+
+        // 연결: 사이드바 DB/스키마 선택에 기본 값이 보이고 쿼리 탭이 열림
+        guard let row = app.find(5, { !$0.modal && $0.role == "AXStaticText" && $0.value == db.name }) else {
+            throw Abort(message: "\(db.name) 접속이 사이드바에 없어요")
+        }
+        click(row)
+        // SQL Server 테스트 컨테이너는 Apple 칩에서 에뮬레이션이라 연결 · 스키마 읽기가 느리다
+        let ready = app.find(45, { $0.role == "AXPopUpButton" && $0.value == db.container }) != nil
+        check(label("연결 · \(db.container) · 쿼리 탭"), ready && app.find(10, role("AXTextArea")) != nil)
+        guard ready else { return }
+        clearFilter()
+        check(label("사이드바에 ui_orders"), sidebarTable("ui_orders") != nil)
+        clearSidebarSearch()
+
+        // SELECT · 행 수
+        try setEditor("SELECT id, customer, amount FROM ui_orders ORDER BY id")
+        check(label("SELECT 실행 · 결과 표"), runAndWait(10, cell("park")) != nil)
+        check(label("결과 행 수 (5행)"), app.find(3, hasText("5행")) != nil)
+
+        // 결과 ⌘C
+        try setEditor("SELECT id, customer, note FROM ui_orders ORDER BY id")
+        if let lee = runAndWait(10, cell("lee")) {
+            click(lee)
+            setClipboard("")
+            key("c", cmd)
+            let copied = clipboard()
+            check(label("결과 표 ⌘C (머리글 포함 TSV)"), copied.hasPrefix("id\tcustomer\tnote") && copied.contains("2\tlee\tapple, pie"), copied)
+        } else { check(label("결과 표 ⌘C"), false, "결과 없음") }
+
+        // 빨간 밑줄: GodDB 검사 · DB 검사 (실행 안 함) · 올바른 쿼리
+        try setEditor("SELECT a.id, a.custmer, a.amount FROM ui_orders a")
+        Thread.sleep(forTimeInterval: 0.8)
+        check(label("없는 컬럼 빨간 밑줄 (custmer → customer)"), help().contains("custmer") && help().contains("customer"), help())
+        try setEditor("SELECT custmer FROM ui_orders a JOIN ui_orders b ON a.id = b.id")
+        Thread.sleep(forTimeInterval: 3)
+        check(label("DB 검사 결과 표시"), help().contains("DB 검사") && help().contains("custmer"), help())
+        try setEditor("SELECT id, customer FROM ui_orders ORDER BY id")
+        Thread.sleep(forTimeInterval: 3)
+        check(label("올바른 쿼리는 밑줄 없음"), help().isEmpty, help())
+
+        // 위험 문장 확인 → 취소하면 실행 안 됨
+        try setEditor("DELETE FROM ui_orders")
+        runQuery()
+        check(label("WHERE 없는 DELETE 는 실행 전 확인"), app.find(4, hasText("되돌리기 어려운 문장이 있어요")) != nil)
+        answer("취소")
+        try setEditor("SELECT COUNT(*) AS n FROM ui_orders")
+        runQuery()
+        check(label("취소하면 그대로 5행"), app.find(8, { $0.value == "5" }) != nil)
+
+        // 외래 키 따라가기
+        try setEditor("SELECT id, customer, customer_id FROM ui_orders ORDER BY id")
+        if let fk = runAndWait(10, cell("20")) {
+            check(label("외래 키 컬럼 머리글에 ↗"), app.find(2, { $0.text.contains("customer_id ↗") }) != nil)
+            cmdClick(fk)
+            check(label("⌘ 클릭 → '↗ ui_customers' (silver)"),
+                  app.find(8, hasText("↗ ui_customers")) != nil && app.find(8, cell("silver")) != nil && app.find(1, cell("gold")) == nil)
+        } else { check(label("외래 키 결과"), false) }
+
+        // 칸 그 자리 편집 → 적용 (UPDATE) → 원래 값으로
+        clearFilter()
+        try setEditor("SELECT id, customer, note FROM ui_orders ORDER BY id")
+        if runAndWait(10, cell("last")) != nil, openInlineEditor("last") != nil {
+            paste("inline ok")
+            key("return")
+            check(label("칸 편집 → 변경 1건"), app.find(3, hasText("변경 1건")) != nil)
+            check(label("[적용…] → 다시 읽은 값 'inline ok'"),
+                  applyEdits() && app.find(8, cell("inline ok")) != nil && app.find(1, cell("last")) == nil)
+            Thread.sleep(forTimeInterval: 0.8)
+            if openInlineEditor("inline ok") != nil {
+                paste("last")
+                key("return")
+                check(label("원래 값 'last' 로 되돌림"), applyEdits() && app.find(8, cell("last")) != nil)
+            }
+        } else { check(label("칸 더블클릭 → 그 자리 입력란"), false) }
+
+        // 스키마 비교: 기본 → shop_cmp (ui_orders.note 없음, ui_customers.name 코멘트 다름)
+        guard let seg = app.find(3, { $0.role == "AXRadioButton" && $0.label == "스키마 비교" }) else { check(label("스키마 비교 모드"), false); return }
+        click(seg)
+        defer { if let q = app.find(2, { $0.role == "AXRadioButton" && $0.label == "쿼리" }) { click(q) } }
+        Thread.sleep(forTimeInterval: 1)
+        try startCompare(source: db.name + " · 개발", target: db.name + " · 개발", sourceDB: db.container, targetDB: "shop_cmp")
+        let orders = app.find(25, diffRow("ui_orders", "컬럼 없음"))
+        let customers = app.find(2, diffRow("ui_customers", "코멘트 변경"))
+        check(label("스키마 비교: ui_orders 컬럼 없음 · ui_customers 코멘트 변경"), orders != nil && customers != nil)
+        if let o = orders {
+            click(o)
+            setClipboard("")
+            key("c", cmd)
+            let copied = clipboard()
+            check(label("스키마 비교: 보정 SQL 에 note 컬럼 추가"), copied.contains(db.quotedOrders) && copied.contains("note") && copied.uppercased().contains("ADD"), copied)
+        }
+    }
+}
+
+scenario("modeling") {
+    // 모델링: 새 모델 → 테이블 추가 → 이름 수정 → 1:N 관계 → 카드 이동 → 되돌리기 → 테이블 삭제 → 모델 삭제
+    guard let seg = app.find(3, { $0.role == "AXRadioButton" && $0.label == "모델링" }) else { throw Abort(message: "모델링 모드 버튼 없음") }
+    click(seg)
+    defer { if let q = app.find(2, { $0.role == "AXRadioButton" && $0.label == "쿼리" }) { click(q) } }
+    func tool(_ name: String) -> Node? { app.find(3, { $0.role == "AXButton" && $0.label.contains(name + " —") }) }
+    // 다이어그램 카드의 이름 (아래 편집기에도 같은 이름이 보일 수 있어 가장 위의 것)
+    func cardText(_ name: String) -> Node? {
+        let isName: (Node) -> Bool = { !$0.modal && $0.role == "AXStaticText" && $0.value == name }
+        guard app.find(3, isName) != nil else { return nil }
+        return app.snapshot().filter(isName).min { $0.frame.minY < $1.frame.minY }
+    }
+    func summary(_ t: Int, _ r: Int) -> Bool { app.find(4, hasText("테이블 \(t) · 관계 \(r)")) != nil }
+
+    // 새 모델 (빈 화면의 [새 모델], 모델이 있으면 + 메뉴)
+    if let b = app.find(2, button("새 모델")) {
+        press(b)
+    } else if let plus = app.find(2, { $0.role == "AXMenuButton" && $0.label.contains("새 모델 / 리버스") }) {
+        press(plus)
+        if let item = app.find(3, { $0.role == "AXMenuItem" && $0.label.hasPrefix("새 모델") }) { press(item) }
+    }
+    check("새 모델: 기본 테이블 '회원' (테이블 1 · 관계 0)", cardText("회원") != nil && summary(1, 0))
+    guard let member = cardText("회원") else { return }
+
+    // 테이블 추가: 도구 고르고 빈 곳 누르기
+    guard let add = tool("테이블 추가") else { check("테이블 추가 도구", false); return }
+    press(add)
+    clickAt(CGPoint(x: member.frame.maxX + 260, y: member.frame.maxY + 160))
+    check("테이블 추가 → 테이블 2 · 관계 0", summary(2, 0))
+
+    // 수정: 새 테이블이 선택돼 아래 편집기 → 논리명 · 물리명
+    guard let logical = app.find(4, { $0.role == "AXTextField" && $0.label.contains("논리명") }),
+          let physical = app.find(2, { $0.role == "AXTextField" && $0.label.contains("물리명") }) else {
+        check("새 테이블 편집기 (논리명 · 물리명)", false); return
+    }
+    click(logical); key("a", cmd); paste("주문"); key("tab")
+    click(physical); key("a", cmd); paste("tb_order"); key("tab")
+    check("논리명 수정 → 카드에 '주문'", cardText("주문") != nil)
+    guard let order = cardText("주문") else { return }
+
+    // 관계: 1:N → 부모(회원) → 자식(주문)
+    if let rel = tool("1:N 비식별 관계") {
+        press(rel)
+        // 편집기가 열리며 다이어그램이 다시 배치되므로 누르기 직전에 카드를 다시 찾는다
+        if let m = cardText("회원") { click(m) }
+        Thread.sleep(forTimeInterval: 0.4)
+        if let o = cardText("주문") { click(o) }
+        check("1:N 관계 → 테이블 2 · 관계 1", summary(2, 1),
+              app.snapshot().first { $0.text.contains("관계 ·") || $0.text.contains("테이블 2 · 관계") }?.text ?? "")
+    } else { check("1:N 관계 도구", false) }
+
+    // 이동: 선택 도구로 카드를 끌기 → 위치 바뀜 → 되돌리기로 제자리
+    if let sel = tool("선택 / 이동") { press(sel) }
+    guard let before = cardText("주문")?.frame else { return }
+    drag(cardText("주문")!, by: CGVector(dx: 140, dy: 90))
+    // 끈 만큼 옮겨진 '주문' 글자가 있어야 (아래 편집기의 같은 글자와 헷갈리지 않게 위치로 찾는다)
+    let moved = app.snapshot().first { !$0.modal && $0.role == "AXStaticText" && $0.value == "주문"
+        && abs($0.frame.minX - (before.minX + 140)) < 25 && abs($0.frame.minY - (before.minY + 90)) < 25 }
+    check("카드 끌기 → 끈 만큼 이동 (+140, +90)", moved != nil, "\(before.origin) → \(moved?.frame.origin.debugDescription ?? "못 찾음")")
+    if let undo = tool("되돌리기") {
+        press(undo)
+        let back = cardText("주문")?.frame ?? .zero
+        check("되돌리기 → 제자리", abs(back.minX - before.minX) < 5 && abs(back.minY - before.minY) < 5, "\(back.origin)")
+    } else { check("되돌리기 버튼", false) }
+
+    // 테이블 삭제: 카드 선택 → 편집기 휴지통 → 확인
+    if let o = cardText("주문") { click(o) }
+    if let trash = app.find(3, { $0.role == "AXButton" && $0.label.contains("테이블 삭제") }) {
+        press(trash)
+        let confirmed = answer("삭제")
+        check("테이블 삭제 → 테이블 1, '주문' 카드 없음", summary(1, 0) && app.gone(3, { $0.role == "AXStaticText" && $0.value == "주문" }),
+              "확인 창 \(confirmed) · " + (app.snapshot().first { $0.text.contains("테이블 ") && $0.text.contains("· 관계") }?.text ?? ""))
+    } else { check("테이블 삭제 버튼", false) }
+    closeLeftovers()
+
+    // 모델 삭제: 목록 우클릭 > 삭제… → 확인
+    if let row = app.find(3, { !$0.modal && $0.role == "AXStaticText" && $0.value.hasPrefix("새 모델") && $0.frame.minX < 700 }) {
+        click(row, right: true)
+        if let del = findMenuItem(3, { $0.label.hasPrefix("삭제") }) {
+            press(del)
+            answer("삭제")
+            check("모델 삭제 → '모델이 없어요'", app.find(4, hasText("모델이 없어요")) != nil)
+        } else { check("모델 우클릭 '삭제…'", false); key("escape") }
+    } else { check("모델 목록 줄", false, app.snapshot().filter { $0.value.hasPrefix("새 모델") }.map { "\($0.role) \($0.frame.origin)" }.joined(separator: ", ")) }
 }
 
 // 디버그: uitest <pid> --dump  → 지금 화면 요소 목록

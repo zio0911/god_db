@@ -27,9 +27,19 @@ DATA="$WORK/data"
 BUNDLE_ID=local.goddb.app.uitest
 MYSQL_PORT=33306
 MYSQL_PASSWORD=goddbtest
+# PostgreSQL · SQL Server 도 같은 비밀번호로 붙는다 (앱은 테스트 비밀번호 하나만 쓴다)
+PG_PORT=35432
+MSSQL_PORT=31433
+MSSQL_SA_PASSWORD='GodDb_test1!'
+pg_sql() { docker exec -i -e PGOPTIONS='-c client_min_messages=warning' goddb-pg-test psql -q -v ON_ERROR_STOP=1 -U postgres -d shop >/dev/null; }
+mssql_sql() { docker exec -i goddb-mssql-test /opt/mssql-tools18/bin/sqlcmd -C -b -f 65001 -S localhost -U sa -P "$MSSQL_SA_PASSWORD" >/dev/null; }
 
 docker exec goddb-mysql-test mysqladmin -uroot -p$MYSQL_PASSWORD ping >/dev/null 2>&1 \
   || { echo "로컬 테스트 MySQL 이 없어요. 먼저 ./scripts/test-dbs.sh up"; exit 2; }
+docker exec goddb-pg-test pg_isready -U postgres >/dev/null 2>&1 \
+  || { echo "로컬 테스트 PostgreSQL 이 없어요. 먼저 ./scripts/test-dbs.sh up"; exit 2; }
+echo "SELECT 1" | mssql_sql 2>/dev/null \
+  || { echo "로컬 테스트 SQL Server 가 없어요. 먼저 ./scripts/test-dbs.sh up"; exit 2; }
 
 if [[ $BUILD == 1 ]]; then
   echo "▶ 앱 빌드"
@@ -86,6 +96,50 @@ printf '%s\n' "DROP DATABASE IF EXISTS shop_cmp;" "CREATE DATABASE shop_cmp;" "$
   "ALTER TABLE shop_cmp.ui_orders DROP COLUMN note;" \
   "ALTER TABLE shop_cmp.ui_customers MODIFY name VARCHAR(50) NULL COMMENT '이름';" \
   | docker exec -i goddb-mysql-test mysql --default-character-set=utf8mb4 -uroot -p$MYSQL_PASSWORD 2>/dev/null
+# PostgreSQL: shop DB 의 public 스키마 + 비교용 shop_cmp 스키마 (note 컬럼 없음, name 코멘트 다름)
+pg_sql <<'SQL'
+DROP SCHEMA IF EXISTS shop_cmp CASCADE;
+DROP TABLE IF EXISTS ui_orders, ui_customers;
+CREATE TABLE ui_customers (id INT PRIMARY KEY, name VARCHAR(50) NULL, grade VARCHAR(10));
+COMMENT ON COLUMN ui_customers.name IS '고객 이름';
+INSERT INTO ui_customers VALUES (10,'kim','gold'),(20,'lee','silver'),(30,'park','bronze');
+CREATE TABLE ui_orders (id INT PRIMARY KEY, customer VARCHAR(50), amount INT, note VARCHAR(100),
+  customer_id INT NULL CONSTRAINT fk_ui_orders_customer REFERENCES ui_customers(id));
+INSERT INTO ui_orders VALUES (1,'kim',1200,'first',10),(2,'lee',3400,'apple, pie',20),(3,'park',560,NULL,30),
+  (4,'choi',7800,'second',10),(5,'jung',90,'last',NULL);
+CREATE SCHEMA shop_cmp;
+CREATE TABLE shop_cmp.ui_customers (LIKE public.ui_customers INCLUDING ALL);
+CREATE TABLE shop_cmp.ui_orders (LIKE public.ui_orders INCLUDING ALL);
+ALTER TABLE shop_cmp.ui_orders DROP COLUMN note;
+COMMENT ON COLUMN shop_cmp.ui_customers.name IS '이름';
+SQL
+# SQL Server: 테스트 전용 로그인 uitest (비밀번호 = 테스트 비밀번호) + shop · shop_cmp DB
+mssql_sql <<SQL
+IF SUSER_ID('uitest') IS NULL CREATE LOGIN uitest WITH PASSWORD = '$MYSQL_PASSWORD', CHECK_POLICY = OFF;
+ALTER SERVER ROLE sysadmin ADD MEMBER uitest;
+IF DB_ID('shop') IS NULL CREATE DATABASE shop;
+IF DB_ID('shop_cmp') IS NOT NULL BEGIN ALTER DATABASE shop_cmp SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE shop_cmp; END
+CREATE DATABASE shop_cmp;
+GO
+USE shop;
+DROP TABLE IF EXISTS ui_orders;
+DROP TABLE IF EXISTS ui_customers;
+CREATE TABLE ui_customers (id INT PRIMARY KEY, name NVARCHAR(50) NULL, grade NVARCHAR(10));
+EXEC sp_addextendedproperty 'MS_Description', N'고객 이름', 'SCHEMA', 'dbo', 'TABLE', 'ui_customers', 'COLUMN', 'name';
+INSERT INTO ui_customers VALUES (10,'kim','gold'),(20,'lee','silver'),(30,'park','bronze');
+CREATE TABLE ui_orders (id INT PRIMARY KEY, customer NVARCHAR(50), amount INT, note NVARCHAR(100),
+  customer_id INT NULL CONSTRAINT fk_ui_orders_customer REFERENCES ui_customers(id));
+INSERT INTO ui_orders VALUES (1,'kim',1200,'first',10),(2,'lee',3400,'apple, pie',20),(3,'park',560,NULL,30),
+  (4,'choi',7800,'second',10),(5,'jung',90,'last',NULL);
+GO
+USE shop_cmp;
+CREATE TABLE ui_customers (id INT PRIMARY KEY, name NVARCHAR(50) NULL, grade NVARCHAR(10));
+EXEC sp_addextendedproperty 'MS_Description', N'이름', 'SCHEMA', 'dbo', 'TABLE', 'ui_customers', 'COLUMN', 'name';
+CREATE TABLE ui_orders (id INT PRIMARY KEY, customer NVARCHAR(50), amount INT,
+  customer_id INT NULL CONSTRAINT fk_ui_orders_customer REFERENCES ui_customers(id));
+GO
+SQL
+
 cat > "$DATA/profiles.json" <<JSON
 [
  {"id":"00000000-0000-4000-8000-0000000000A1","kind":"mysql","name":"UI MySQL","host":"127.0.0.1","port":$MYSQL_PORT,
@@ -95,7 +149,11 @@ cat > "$DATA/profiles.json" <<JSON
  {"id":"00000000-0000-4000-8000-0000000000A3","kind":"mysql","name":"UI 닫힌 포트","host":"127.0.0.1","port":1,
   "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 그룹"},
  {"id":"00000000-0000-4000-8000-0000000000A4","kind":"mysql","name":"UI 둘째 그룹 접속","host":"127.0.0.1","port":1,
-  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 둘째 그룹"}
+  "username":"root","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development","group":"UI 둘째 그룹"},
+ {"id":"00000000-0000-4000-8000-0000000000A5","kind":"postgres","name":"UI PostgreSQL","host":"127.0.0.1","port":$PG_PORT,
+  "username":"postgres","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development"},
+ {"id":"00000000-0000-4000-8000-0000000000A6","kind":"mssql","name":"UI SQL Server","host":"127.0.0.1","port":$MSSQL_PORT,
+  "username":"uitest","database":"shop","useTLS":false,"readOnly":false,"savePassword":false,"environment":"development"}
 ]
 JSON
 
@@ -145,6 +203,9 @@ if [[ $KEEP == 0 ]]; then
   kill $APP_PID 2>/dev/null || true
   docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop \
     -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools, ui_points, ui_members, tb_mbr_info, tb_stdnt_info; DROP DATABASE IF EXISTS shop_cmp" 2>/dev/null || true
+  echo "DROP SCHEMA IF EXISTS shop_cmp CASCADE; DROP TABLE IF EXISTS ui_orders, ui_customers;" | pg_sql 2>/dev/null || true
+  printf '%s\n' "IF DB_ID('shop_cmp') IS NOT NULL BEGIN ALTER DATABASE shop_cmp SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE shop_cmp; END" \
+    "USE shop; DROP TABLE IF EXISTS ui_orders; DROP TABLE IF EXISTS ui_customers;" | mssql_sql 2>/dev/null || true
 fi
 echo
 echo "보고서: $WORK/report.txt"

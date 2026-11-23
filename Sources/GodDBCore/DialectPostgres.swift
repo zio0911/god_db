@@ -148,7 +148,7 @@ public struct PostgresDialect: SQLDialect {
             SELECT pg_get_viewdef(c.oid, true) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = \(s) AND c.relname = \(name)
             """
-        case .procedure, .function where redshift:
+        case .procedure where redshift, .function where redshift:
             // pg_get_functiondef 가 없다 → 본문만
             return """
             SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
