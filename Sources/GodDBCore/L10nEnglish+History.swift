@@ -18,5 +18,13 @@ extension L10nEnglish {
         "편집기에 넣기": "Put in Editor",
         "SQL 복사": "Copy SQL",
         "지우기": "Clear",
+        "히스토리 보관 기간": "Keep History",
+        "7일": "7 days",
+        "30일": "30 days",
+        "90일": "90 days",
+        "실행한 쿼리 기록을 지우지 않고 남겨요. 기록과 열어 둔 쿼리 탭 내용은 이 Mac 의 키체인 키로 암호화해서 저장해요.":
+            "Query history is kept forever. History and open query tabs are encrypted with a key in this Mac's keychain.",
+        "%@일이 지난 쿼리 기록은 자동으로 지워요. 기록과 열어 둔 쿼리 탭 내용은 이 Mac 의 키체인 키로 암호화해서 저장해요.":
+            "Query history older than %@ days is deleted automatically. History and open query tabs are encrypted with a key in this Mac's keychain.",
     ]
 }

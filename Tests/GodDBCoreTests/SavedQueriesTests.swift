@@ -162,7 +162,8 @@ struct SavedQueriesTests {
     @Test func storeRoundTripAndJSONKeys() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goddb-saved-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let store = SavedQueryStore(file: dir.appendingPathComponent("saved-queries.json"))
+        let crypto = LocalDataCrypto(provider: StaticLocalDataKeyProvider())
+        let store = SavedQueryStore(file: dir.appendingPathComponent("saved-queries.json"), crypto: crypto)
         #expect(store.load() == SavedQueryLibrary())
 
         let profile = UUID()
@@ -173,7 +174,11 @@ struct SavedQueriesTests {
         store.save(SavedQueryLibrary(queries: [a, b]))
         #expect(store.load() == SavedQueryLibrary(queries: [a, b]))
 
-        let data = try Data(contentsOf: store.file)
+        // 디스크는 암호화돼 있다 (GDBENC1). 풀면 Windows 판과 같은 JSON.
+        let raw = try Data(contentsOf: store.file)
+        #expect(LocalDataCrypto.isEncrypted(raw))
+        #expect(raw.range(of: Data("member".utf8)) == nil)
+        let data = try crypto.decryptDocument(raw)
         let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["version"] as? Int == 1)
         let queries = try #require(json["queries"] as? [[String: Any]])

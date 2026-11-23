@@ -194,9 +194,9 @@ final class RedisWorkspace {
     var consoleRunning = false
     /// 위험한 명령 확인 대기
     var pendingDangerous: [String]?
-    /// Workbench 편집기 글 (접속마다 기억)
+    /// Workbench 편집기 글 (접속마다 기억, 값이 들어 있을 수 있어 암호화해 둔다)
     var workbench: String = "" {
-        didSet { UserDefaults.standard.set(workbench, forKey: "GodDB.redis.workbench." + profileID.uuidString) }
+        didSet { LocalDataCrypto.shared.setDefaultsString(workbench, forKey: "GodDB.redis.workbench." + profileID.uuidString) }
     }
     /// 위험한 명령이 섞인 실행 확인 대기
     var pendingScript: [String]?
@@ -236,7 +236,7 @@ final class RedisWorkspace {
         self.profileID = profileID
         self.session = session
         self.app = app
-        workbench = UserDefaults.standard.string(forKey: "GodDB.redis.workbench." + profileID.uuidString)
+        workbench = LocalDataCrypto.shared.defaultsString(forKey: "GodDB.redis.workbench." + profileID.uuidString)
             ?? "// 한 줄에 명령 하나. ⌘↩ 실행 (선택 영역이 있으면 그 줄만)\n// 예: RPUSH queue:mail m1 m2\nPING\n"
     }
 
