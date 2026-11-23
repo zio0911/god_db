@@ -29,6 +29,44 @@ extension AppState {
                                    : tr("%@ 접속을 %@ 그룹으로 옮겼어요", profiles[i].name, g))
     }
 
+    /// 접속 순서 직접 바꾸기 (우클릭 > 순서 바꾸기)
+    func reorderProfile(_ id: UUID, _ move: ConnectionListOrder.Move) {
+        freezeVisibleOrder()
+        let next = ConnectionListOrder.moved(profiles, id, move)
+        guard next.map(\.id) != profiles.map(\.id) else { return }
+        profiles = next
+        persist()
+    }
+
+    /// 끌어다 놓기: 놓은 접속 바로 앞으로, 그 접속의 그룹으로
+    func reorderProfile(_ id: UUID, before target: UUID) {
+        freezeVisibleOrder()
+        let next = ConnectionListOrder.moved(profiles, id, before: target)
+        guard next.map(\.id) != profiles.map(\.id) || next.map(\.group) != profiles.map(\.group) else { return }
+        profiles = next
+        persist()
+    }
+
+    /// 다른 정렬로 보고 있으면, 지금 보이는 순서를 저장 순서로 굳히고 "직접 정한 순" 으로 바꾼다
+    /// (보이는 그대로에서 옮겨야 헷갈리지 않는다)
+    private func freezeVisibleOrder() {
+        let d = UserDefaults.standard
+        let sort = d.string(forKey: ConnectionListKeys.sort).flatMap(ConnectionSort.init(rawValue:)) ?? .manual
+        let connectedFirst = d.bool(forKey: ConnectionListKeys.connectedFirst)
+        guard sort != .manual || connectedFirst else { return }
+        profiles = ConnectionListOrder.visibleOrder(profiles, by: sort, connectedFirst: connectedFirst,
+                                                    isConnected: { connectionState($0) == .connected })
+        d.set(ConnectionSort.manual.rawValue, forKey: ConnectionListKeys.sort)
+        d.set(false, forKey: ConnectionListKeys.connectedFirst)
+    }
+
+    /// 연결 성공 시각 기록 (사이드바 "최근 연결순")
+    func noteConnected(_ id: UUID) {
+        guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+        profiles[i].lastConnectedAt = Date()
+        persist()
+    }
+
     func renameGroup(_ old: String, to new: String) {
         let n = new.trimmingCharacters(in: .whitespaces)
         guard !old.isEmpty, old != n else { return }
@@ -38,11 +76,51 @@ extension AppState {
     }
 }
 
-/// 사이드바 접속 목록: 그룹 없는 접속 먼저, 그다음 그룹별로 접었다 펼 수 있게
+/// 사이드바 접속 목록 정렬 · 찾기 설정 키
+enum ConnectionListKeys {
+    static let sort = "GodDB.sidebar.connectionSort"
+    static let connectedFirst = "GodDB.sidebar.connectedFirst"
+}
+
+/// "접속" 제목 오른쪽 정렬 메뉴
+struct ConnectionSortMenu: View {
+    @AppStorage(ConnectionListKeys.sort) private var sortRaw = ConnectionSort.manual.rawValue
+    @AppStorage(ConnectionListKeys.connectedFirst) private var connectedFirst = false
+
+    var body: some View {
+        let sort = ConnectionSort(rawValue: sortRaw) ?? .manual
+        Menu {
+            Picker(tr("접속 목록 정렬"), selection: $sortRaw) {
+                ForEach(ConnectionSort.allCases) { Text($0.title).tag($0.rawValue) }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+            Divider()
+            Toggle(tr("연결된 접속 먼저"), isOn: $connectedFirst)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "line.3.horizontal.decrease")
+                Text(sort.title)
+            }
+            .font(.caption)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(tr("접속 목록 정렬"))
+    }
+}
+
+/// 사이드바 접속 목록: 찾기 칸, 그룹 없는 접속 먼저, 그다음 그룹별로 접었다 펼 수 있게 (정렬 메뉴를 따른다)
 struct ProfileList: View {
     @Environment(AppState.self) private var app
     /// 접힌 그룹 (줄바꿈으로 구분해 저장)
     @AppStorage("GodDB.sidebar.collapsedGroups") private var collapsedRaw = ""
+    @AppStorage(ConnectionListKeys.sort) private var sortRaw = ConnectionSort.manual.rawValue
+    @AppStorage(ConnectionListKeys.connectedFirst) private var connectedFirst = false
+    @State private var query = ""
 
     private var collapsed: Set<String> { Set(collapsedRaw.split(separator: "\n").map(String.init)) }
 
@@ -52,13 +130,26 @@ struct ProfileList: View {
         collapsedRaw = c.sorted().joined(separator: "\n")
     }
 
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
+        let sort = ConnectionSort(rawValue: sortRaw) ?? .manual
+        let shown = ConnectionListOrder.sorted(app.profiles.filter { ConnectionListOrder.matches($0, query: query) },
+                                               by: sort, connectedFirst: connectedFirst,
+                                               isConnected: { app.connectionState($0) == .connected })
+        let groups = ConnectionListOrder.sortedGroups(app.profiles, by: sort)
+            .filter { g in shown.contains { $0.group == g } }
+        if !app.profiles.isEmpty {
+            ConnectionSearchField(query: $query)
+                .selectionDisabled()
+        }
         // 접속 · 그룹 줄은 목록 선택(테이블 여러 개 고르기)에 끼지 않는다. 접속 강조는 ProfileRow 가 직접 그린다
-        ForEach(app.profiles.filter { $0.group.isEmpty }) { ProfileRow(profile: $0).selectionDisabled() }
-        ForEach(app.profileGroups, id: \.self) { group in
-            let members = app.profiles.filter { $0.group == group }
-            DisclosureGroup(isExpanded: Binding(get: { !collapsed.contains(group) },
-                                                set: { setExpanded(group, $0) })) {
+        ForEach(shown.filter { $0.group.isEmpty }) { ProfileRow(profile: $0).selectionDisabled() }
+        ForEach(groups, id: \.self) { group in
+            let members = shown.filter { $0.group == group }
+            // 찾는 중에는 걸린 접속이 보이게 그룹을 펼친다 (접어 둔 상태는 그대로 둔다)
+            DisclosureGroup(isExpanded: Binding(get: { searching || !collapsed.contains(group) },
+                                                set: { if !searching { setExpanded(group, $0) } })) {
                 ForEach(members) { ProfileRow(profile: $0).selectionDisabled() }
             } label: {
                 HStack(spacing: 6) {
@@ -85,6 +176,35 @@ struct ProfileList: View {
             // 그룹 이름이 꼬리표가 되어 선택되는 것을 막는다 (하위 접속을 눌렀는데 그룹 전체가 선택돼 보이던 문제)
             .selectionDisabled()
         }
+        if searching {
+            Text(shown.isEmpty ? tr("찾는 접속이 없어요") : tr("%@개 중 %@개", "\(app.profiles.count)", "\(shown.count)"))
+                .font(.caption2).foregroundStyle(.secondary)
+                .selectionDisabled()
+        }
+    }
+}
+
+/// 접속 찾기 칸 (esc 로 지움)
+struct ConnectionSearchField: View {
+    @Binding var query: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(tr("접속 찾기 (이름 · 주소 · DB · 그룹)"), text: $query)
+                .textFieldStyle(.plain)
+                .onExitCommand { query = "" }
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(tr("지우기"))
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 

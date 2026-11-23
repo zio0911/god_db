@@ -81,6 +81,8 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     public var tlsVerify: Bool = true
     /// 사용자가 신뢰한 서버 인증서(맨 앞, DER)의 SHA-256 "3F:A2:…" (없으면 nil)
     public var tlsPinSHA256: String?
+    /// 마지막으로 연결에 성공한 시각 (사이드바 "최근 연결순" 정렬)
+    public var lastConnectedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -130,6 +132,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         environment = try c.decodeIfPresent(ConnectionEnvironment.self, forKey: .environment) ?? .none
         tlsVerify = try c.decodeIfPresent(Bool.self, forKey: .tlsVerify) ?? true
         tlsPinSHA256 = try c.decodeIfPresent(String.self, forKey: .tlsPinSHA256)
+        lastConnectedAt = try c.decodeIfPresent(Date.self, forKey: .lastConnectedAt)
     }
 }
 

@@ -10,7 +10,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             // 기본 목록 선택색(진한 파랑)이 눈이 아프다는 의견으로, 선택은 직접 그린다 (TableNode)
             List {
-                Section(tr("접속")) {
+                Section {
                     ProfileList()
                     HStack {
                         Button {
@@ -34,6 +34,12 @@ struct SidebarView: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help(tr("접속 정보 내보내기 / 가져오기"))
+                    }
+                } header: {
+                    HStack {
+                        Text(tr("접속"))
+                        Spacer()
+                        if app.profiles.count > 1 { ConnectionSortMenu() }
                     }
                 }
 
@@ -165,6 +171,12 @@ struct ProfileRow: View {
         .background(selected ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 5))
         .contentShape(Rectangle())
         .draggable(profile.id.uuidString)
+        // 다른 접속을 이 줄에 놓으면 이 접속 바로 앞으로 (이 접속의 그룹으로) 옮긴다
+        .dropDestination(for: String.self) { items, _ in
+            let ids = items.compactMap(UUID.init(uuidString:)).filter { $0 != profile.id }
+            for id in ids { app.reorderProfile(id, before: profile.id) }
+            return !ids.isEmpty
+        }
         .onTapGesture(count: 1) {
             // 다른 접속은 끊지 않고 이 접속을 열거나 보기로 바꾼다.
             Task { await app.open(profile.id) }
@@ -186,6 +198,12 @@ struct ProfileRow: View {
             Button(tr("편집…")) { app.edit(profile) }
             Button(tr("복제")) { app.duplicate(profile) }
             ProfileGroupMenu(profile: profile)
+            Menu(tr("순서 바꾸기")) {
+                Button(tr("맨 위로")) { app.reorderProfile(profile.id, .top) }
+                Button(tr("위로")) { app.reorderProfile(profile.id, .up) }
+                Button(tr("아래로")) { app.reorderProfile(profile.id, .down) }
+                Button(tr("맨 아래로")) { app.reorderProfile(profile.id, .bottom) }
+            }
             Divider()
             Button(tr("삭제…"), role: .destructive) { confirmDelete = true }
         }
