@@ -102,7 +102,12 @@ struct PostgresIcon: View {
 
 extension BrandLogo {
     /// 메뉴 항목처럼 SwiftUI 모양을 못 쓰는 곳용 이미지 (브랜드 색 그대로)
-    @MainActor static func image(_ kind: DatabaseKind, size: CGFloat = 14) -> NSImage {
+    @MainActor static func image(_ kind: DatabaseKind, redshift: Bool = false, size: CGFloat = 14) -> NSImage {
+        if redshift && kind == .postgres {
+            let r = ImageRenderer(content: RedshiftIcon().frame(width: size, height: size))
+            r.scale = 2
+            if let img = r.nsImage { img.size = NSSize(width: size, height: size); return img }
+        }
         if kind == .postgres {
             let r = ImageRenderer(content: PostgresIcon().frame(width: size, height: size))
             r.scale = 2

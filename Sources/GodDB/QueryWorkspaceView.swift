@@ -82,7 +82,7 @@ struct TabChip: View {
             } else {
                 Circle().fill(connected ? Color.green : Color.secondary.opacity(0.4)).frame(width: 6, height: 6)
             }
-            if let profile { KindBadge(kind: profile.kind) }
+            if let profile { KindBadge(kind: profile.kind, redshift: profile.redshift) }
             VStack(alignment: .leading, spacing: 0) {
                 Text(tab.isDirty ? "● " + tab.title : tab.title).lineLimit(1)
                     .help(tab.fileURL?.path ?? "")

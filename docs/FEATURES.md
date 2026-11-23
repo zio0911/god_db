@@ -55,6 +55,15 @@
 | 컬럼 위치 (AFTER) | 지원 | 미지원 (항상 맨 뒤) | 미지원 (항상 맨 뒤) |
 | 코멘트 | `COMMENT` | `COMMENT ON` | 확장 속성 `MS_Description` |
 
+- **Amazon Redshift**: PostgreSQL 접속으로 붙인다 (기본 포트 5439, TLS 권장). 연결할 때 `version()` 으로 Redshift 를 알아내 아래처럼 바꿔 동작한다.
+  - 새 접속의 DB 종류에서 "Redshift" 를 고르면 포트 5439 · TLS 켬으로 채운다 (저장은 PostgreSQL 접속 + Redshift 표시). 사이드바 · 탭 · 비교 화면에 Redshift 아이콘(보라 원통, 직접 그림)
+  - PostgreSQL 로 만든 접속이 연결해 보니 Redshift 면 종류 · 아이콘을 Redshift 로 자동으로 바꿔 저장한다 (반대도)
+  - 스키마 목록에는 이 계정이 쓸 수 있는(USAGE) 스키마만 보인다 (권한 없는 스키마를 고르면 Redshift 가 search_path 를 비워 "테이블 없음" 이 되므로)
+  - 테이블 · 컬럼 · 기본 키 · 외래 키 · 함수 · 프로시저 조회를 Redshift 카탈로그에 맞춘 쿼리로 (트리거 · 인덱스 없음)
+  - 컬럼 정보(Extra)에 `distkey` · `sortkey N` 표시, CREATE 문에 `DISTKEY (...)` · `SORTKEY (...)`
+  - 서버 버전은 `version()` 에서 (`Amazon Redshift 1.0.x`)
+  - 기본 키 · 외래 키는 정보용 제약(강제되지 않음)이라 결과 표 편집은 막는다 → UPDATE 문으로
+  - 읽기전용은 PostgreSQL 과 같다 (앱 검사 + 읽기 전용 트랜잭션)
 - 한 번에 여러 문장 실행: PostgreSQL 드라이버는 스크립트를 문장 단위로 나눠 차례로 실행한다 (`$$ … $$` 함수 본문은 나누지 않음). SQL Server 는 배치로 한 번에 보낸다.
 - 오류 번역: PostgreSQL SQLSTATE(28P01, 3D000, 42P01, 42703, 42601, 42501, 25006…), SQL Server 번호(18456, 4060, 208, 207, 102, 229, 20009…)에 한국어 해결 방법을 붙인다.
 - 비밀번호 오류 재입력: MySQL 1045 / PostgreSQL 28P01 / SQL Server 18456.
@@ -791,6 +800,7 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - 비밀번호 방식 SSH 미지원.
 - SQL Server TLS 인증서 확인은 연결 전에 인증서를 따로 받아 판정하고, FreeTDS 는 `ca file` 로 다시 확인한다 (지문 비교는 못 함). 사설 CA 인증서를 고정했는데 서버가 루트를 보내지 않으면 FreeTDS 연결은 암호화만 한다 (§36).
 - SSH 바스티온이 `ProxyJump` 를 거쳐야 하면 `ssh-keyscan` 이 키를 받지 못한다 → 터미널에서 한 번 접속해 `~/.ssh/known_hosts` 에 키를 넣어 두면 그 키를 쓴다.
+- Amazon Redshift 는 Docker 이미지가 없어 자동 테스트는 SQL 생성 단위 테스트만 한다. 실제 동작은 Redshift 클러스터로 수동 확인. 스키마 비교 · 모델링 · AI 데이터 찾기는 Redshift 용으로 따로 맞추지 않았다.
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 
 ## 18. 변경 이력
