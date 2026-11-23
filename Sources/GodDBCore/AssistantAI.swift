@@ -117,7 +117,9 @@ public enum AssistantAI {
     // MARK: 문맥
 
     /// 질문·선택에서 자세히 볼 테이블 고르기: 이름(물리명) 또는 코멘트 첫 줄(논리명)이 질문에 나오면
-    public static func mentionedTables(_ text: String, in tables: [TableMeta], limit: Int = 12) -> [TableMeta] {
+    /// aliases: 테이블 설명(#178)의 title · terms (소문자 테이블 이름 → 말)
+    public static func mentionedTables(_ text: String, in tables: [TableMeta], limit: Int = 12,
+                                       aliases: [String: [String]] = [:]) -> [TableMeta] {
         let lower = text.lowercased()
         guard !lower.isEmpty else { return [] }
         var hits: [(TableMeta, Int)] = []
@@ -131,7 +133,14 @@ public enum AssistantAI {
             let logical = t.comment.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
             if logical.count >= 2, logical.count <= 30, let r = lower.range(of: logical.lowercased()) {
                 hits.append((t, lower.distance(from: lower.startIndex, to: r.lowerBound)))
+                continue
             }
+            let other = (aliases[bare] ?? []).compactMap { a -> Int? in
+                let a = a.trimmingCharacters(in: .whitespaces).lowercased()
+                guard a.count >= 2, a.count <= 30, let r = lower.range(of: a) else { return nil }
+                return lower.distance(from: lower.startIndex, to: r.lowerBound)
+            }.min()
+            if let at = other { hits.append((t, at)) }
         }
         return hits.sorted { $0.1 < $1.1 }.prefix(limit).map(\.0)
     }
@@ -219,12 +228,12 @@ public enum AssistantAI {
         """
         You are GodDB's database assistant, helping a developer working with a \(kind.title) database.
         You receive metadata only: table structures, comments (business names), keys, indexes, relations, approximate sizes,
-        automatic checks, the SQL in the editor and data locations the team saved (table notes).
+        automatic checks, the SQL in the editor and table descriptions the team wrote (business meaning, code values, rules).
         You see only small samples of candidate columns in data-finding mode; otherwise no row data — if the answer needs data,
         give a SELECT the user can run.
         Rules:
         - Base statements on the given metadata. Do not invent tables or columns; say when something is not in the context.
-        - Use comments to explain business meaning. Mention notable points (missing keys/indexes, nullable FKs, large tables).
+        - Use comments and the team's table descriptions to explain business meaning; prefer code values from the descriptions when writing WHERE conditions. Mention notable points (missing keys/indexes, nullable FKs, large tables).
         - SQL in \(kind.title) syntax inside ```sql blocks. Never run or recommend DROP/TRUNCATE/DELETE without a WHERE and a warning.
         - You also get a short GodDB manual and the current app state. For questions about GodDB itself (who made it,
           how to use a feature, shortcuts, where settings are) answer from that manual; do not invent menus or features.

@@ -1056,39 +1056,80 @@ if CommandLine.arguments.dropFirst(2).first == "--click", let t = CommandLine.ar
     if let f = attr(app.ax, kAXFocusedUIElementAttribute) { let n = node(f as! AXUIElement); print("focused:", n.role, n.value.prefix(40)) }
     exit(0)
 }
-scenario("tableNote") {
-    // 테이블 메모 (AI 없이): ui_schools 우클릭 > 테이블 메모… → 메모 추가 → 찾는 말 입력 → 저장 → 사이드바 📝 → 지우면 📝 사라짐
+scenario("tableDescriptions") {
+    // 테이블 설명 (#178, AI 없이): 사이드바 DB 머리 우클릭 > 테이블 설명 (AI 참고)… → JSON 가져오기 → 맞춰 보기
+    // → AI 어시스턴트 데이터 찾기가 설명의 찾는 말로 바로 답 (AI 호출 없음)
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
-    clearFilter()
-    guard let table = sidebarTable("ui_schools") else {
-        throw Abort(message: "사이드바에 ui_schools 가 없어요")
+    // "DB" 글자는 접근성에 안 보일 수 있어서, 옆의 DB 고르기 팝업(값 shop)을 찾아 그 왼쪽 글자 자리를 실제로 우클릭한다
+    guard let picker = app.find(5, { !$0.modal && $0.role == "AXPopUpButton" && $0.value == "shop" }) else {
+        throw Abort(message: "사이드바 DB 고르기(shop)가 없어요")
     }
-    defer { clearSidebarSearch() }
-    click(table, right: true)
-    guard let item = findMenuItem(3, { $0.label.contains("테이블 메모…") }) else {
-        check("우클릭 '테이블 메모…'", false); key("escape"); return
+    clickAt(CGPoint(x: picker.frame.minX - 14, y: picker.frame.midY), right: true)
+    guard let item = findMenuItem(3, { $0.label.contains("테이블 설명 (AI 참고)") }) else {
+        check("DB 머리 우클릭 '테이블 설명 (AI 참고)…'", false); key("escape"); return
     }
     press(item)
-    guard let add = app.find(4, { $0.modal && button("메모 추가")($0) }) else { check("테이블 메모 창 열기", false); return }
-    check("테이블 메모 창 열기 (메모 없음)", app.find(2, { $0.modal && $0.text.contains("메모가 없어요") }) != nil)
-    press(add)
-    guard let terms = app.find(3, { $0.modal && $0.role == "AXTextField" && $0.label.contains("찾는 말") }) else {
-        check("[메모 추가] → 찾는 말 칸", false); return
+    check("테이블 설명 창 열기 (설명 없음)", app.find(4, { $0.modal && $0.text.contains("아직 테이블 설명이 없어요") }) != nil)
+    guard let importButton = app.find(2, { $0.modal && $0.role == "AXButton" && $0.text.contains("JSON 가져오기") }) else {
+        check("[JSON 가져오기…] 버튼", false); closeLeftovers(); return
     }
-    click(terms)
-    paste("학교명, 학교 이름")
-    guard let save = app.find(2, { $0.modal && button("저장")($0) }) else { check("[저장] 버튼", false); return }
-    press(save)
-    check("저장하면 창이 닫힘", app.gone(3, { $0.modal && $0.role == "AXTextField" }))
-    check("사이드바 ui_schools 옆 📝", app.find(4, { !$0.modal && $0.label.contains("테이블 메모 있음") }) != nil)
+    press(importButton)
+    Thread.sleep(forTimeInterval: 1.2)
+    // 열기 창: ⌘⇧G 로 경로를 넣고 연다
+    key("g", [cmd, shift])
+    Thread.sleep(forTimeInterval: 0.6)
+    paste(ProcessInfo.processInfo.environment["GODDB_UI_DESC_JSON"] ?? "")
+    key("return")
+    Thread.sleep(forTimeInterval: 0.8)
+    key("return")
+    check("JSON 가져오기 → 테이블 2개 · 코드 값 2개",
+          app.find(5, { $0.modal && $0.text.contains("테이블 2개 · 컬럼 2개 · 코드 값 2개") }) != nil)
+    check("DB 와 맞춰 보기: 없는 테이블 표시",
+          app.find(2, { $0.modal && $0.text.contains("DB 에 없는 테이블 1개 (no_such_table)") }) != nil)
+    check("목록에 title", app.find(2, { $0.modal && $0.role == "AXStaticText" && $0.value == "회원 정보" }) != nil)
+    if !answer("닫기") { key("escape") }
+    check("창 닫힘", app.gone(3, { $0.modal && $0.text.contains("Claude 로 만들기") }))
 
-    // 📝 를 누르면 같은 창 → 삭제 → 저장 → 📝 사라짐
-    guard let badge = app.find(2, { !$0.modal && $0.label.contains("테이블 메모 있음") }) else { return }
-    press(badge)
-    check("📝 → 메모 창에 저장한 찾는 말", app.find(4, { $0.modal && $0.role == "AXTextField" && $0.value == "학교명, 학교 이름" }) != nil)
-    if let del = app.find(2, { $0.modal && $0.label.contains("메모 삭제") }) { press(del) }
-    if let save = app.find(2, { $0.modal && button("저장")($0) }) { press(save) }
-    check("메모를 지우면 📝 사라짐", app.gone(4, { !$0.modal && $0.label.contains("테이블 메모 있음") }))
+    guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
+    click(ai)
+    defer { click(ai) }
+    check("AI 패널 칩 '테이블 설명 · 테이블 2개'", app.find(3, hasText("테이블 설명 · 테이블 2개")) != nil)
+    if let finder = app.find(3, { $0.role == "AXButton" && $0.text.contains("데이터 위치 찾기") }) { press(finder) }
+    guard let field = app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role)
+        && ($0.label.contains("찾을 데이터") || $0.label.contains("질문을 입력")) }) else { check("입력칸", false); return }
+    click(field)
+    paste("연락처 어디 있어?")
+    key("return")
+    check("데이터 찾기: 설명의 찾는 말 '연락처' → tb_mbr_info.mbr_tel_no (AI 없이)",
+          app.find(8, { $0.role == "AXStaticText" && $0.text.contains("tb_mbr_info.mbr_tel_no") }) != nil)
+    check("데이터 찾기: '테이블 설명에서 찾음' 칩", app.find(3, hasText("테이블 설명에서 찾음")) != nil)
+}
+
+scenario("assistantInterrupt") {
+    // #177 (로컬 Ollama 필요): 답하는 중에 새 글을 보내면 지금 답은 멈추고 새 글이 먼저 들어간다
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
+    click(ai)
+    defer { click(ai) }
+    if let newChat = app.find(2, { $0.role == "AXButton" && $0.label.contains("새 대화") }) { press(newChat) }
+    guard let field = app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role) && $0.label.contains("질문을 입력") }) else {
+        check("입력칸", false); return
+    }
+    click(field)
+    paste("이 DB 의 테이블을 하나씩 아주 자세히 설명하고, 각 테이블마다 예시 SQL 을 세 개씩 써 줘")
+    key("return")
+    let stop = { (n: Node) in n.role == "AXButton" && n.label.components(separatedBy: " | ").contains("취소") && !n.modal }
+    check("첫 질문: 답하는 중 (멈춤 버튼)", app.find(15, stop) != nil)
+    click(field)
+    paste("두 번째 질문: 1 더하기 1 은?")
+    key("return")
+    check("답하는 중에 보낸 글이 대화에 들어감",
+          app.find(5, { $0.role == "AXStaticText" && $0.value.contains("두 번째 질문: 1 더하기 1") }) != nil)
+    check("첫 답은 '(취소했어요)'", app.find(8, hasText("(취소했어요)")) != nil)
+    check("입력칸이 비워짐", (app.find(2, { ["AXTextField", "AXTextArea"].contains($0.role) && $0.label.contains("질문을 입력") })?.value ?? "x").isEmpty)
+    check("새 글에 대한 답이 시작됨 (멈춤 버튼 그대로)", app.find(5, stop) != nil)
+    // 두 번째 답이 끝나기를 기다리지 않고 멈춘다
+    if let s = app.find(2, stop) { press(s) }
 }
 
 /// 사이드바 접속 줄 (이름 그대로)

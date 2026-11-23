@@ -158,7 +158,7 @@ cat > "$DATA/profiles.json" <<JSON
 JSON
 
 # AI 데이터 찾기 시나리오는 이 PC 의 Ollama 가 필요하다. 꺼져 있으면 켜고 응답할 때까지 기다린다.
-if [[ ${#SCENARIOS[@]} -eq 0 || " ${SCENARIOS[*]} " == *" dataFinder "* ]]; then
+if [[ ${#SCENARIOS[@]} -eq 0 || " ${SCENARIOS[*]} " == *" dataFinder "* || " ${SCENARIOS[*]} " == *" assistantInterrupt "* ]]; then
   if ! curl -s -m 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
     echo "▶ Ollama 켜기"
     if [[ -d /Applications/Ollama.app ]]; then
@@ -174,6 +174,17 @@ if [[ ${#SCENARIOS[@]} -eq 0 || " ${SCENARIOS[*]} " == *" dataFinder "* ]]; then
     echo "  ⚠️ Ollama 가 켜지지 않았거나 qwen3:30b 가 없어요 — AI 데이터 찾기 시나리오는 실패할 수 있어요 (ollama pull qwen3:30b)"
   fi
 fi
+
+# 테이블 설명 시나리오용 JSON (#178)
+cat > "$WORK/table-descriptions.json" <<'JSON'
+{ "format": "goddb-table-descriptions", "version": 1, "database": "shop",
+  "tables": [
+    { "name": "tb_mbr_info", "title": "회원 정보",
+      "columns": [ { "name": "mbr_tel_no", "title": "회원 전화번호", "terms": ["연락처"] },
+                   { "name": "mbr_nm", "values": { "kim": "김", "lee": "이" } } ] },
+    { "name": "no_such_table" } ] }
+JSON
+export GODDB_UI_DESC_JSON="$WORK/table-descriptions.json"
 
 echo "▶ 앱 실행"
 GODDB_UI_TEST=1 GODDB_DATA_DIR="$DATA" GODDB_UI_TEST_PASSWORD=$MYSQL_PASSWORD \

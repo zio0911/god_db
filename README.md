@@ -29,6 +29,7 @@ SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https
 | 실행 계획 | EXPLAIN + 풀스캔/filesort 등 주의사항, 트리 보기 |
 | 객체 보기 | 인덱스, 뷰, 프로시저, 함수, 트리거 정의 |
 | AI 어시스턴트 | **이 PC 의 Ollama 만** 사용 — PC 밖으로 나가지 않음. 테이블 구조 · 코멘트 · 크기 통계 · 편집기 SQL 을 보내고 **데이터 행은 보내지 않음** (예외: 데이터 위치 찾기는 후보 컬럼 값을 컬럼마다 최대 20개 확인). 답하는 중에 새 글을 보내면 그 답을 멈추고 새 글을 먼저 |
+| 테이블 설명 (AI 참고) | 소스를 본 Claude 에게 받은 테이블 · 컬럼 · 코드 값 설명 JSON 을 DB 마다 넣어 두면 AI 어시스턴트 · 데이터 찾기가 참고 ([양식](docs/table-descriptions.md)) |
 | 상태창 | 모든 이벤트/오류 기록, 오류 해결 방법 안내 (⇧⌘L) |
 | 업데이트 | Developer ID 서명 · Apple 공증 DMG, 자동 업데이트(Sparkle) |
 
