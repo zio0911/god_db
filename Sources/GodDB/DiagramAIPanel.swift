@@ -17,6 +17,8 @@ final class DiagramChat {
     var running = false
     var thinkingChars = 0
     var task: Task<Void, Never>?
+    /// 지금 작업 번호: 멈춘 작업이 늦게 끝나면서 새 작업 상태를 건드리지 않게
+    private(set) var generation = 0
 
     /// 대화 기록 (다이어그램마다, 90일 보관)
     let scope: String
@@ -37,6 +39,29 @@ final class DiagramChat {
         task?.cancel()
         task = nil
         running = false
+    }
+
+    /// 새 작업 시작: 답하는 중이면 그 답은 멈춘다 (#177 — 답하는 중에 보낸 글이 사라지지 않게). 작업 번호를 돌려준다.
+    func begin() -> Int {
+        if running { cancel() }
+        generation += 1
+        running = true
+        thinkingChars = 0
+        return generation
+    }
+
+    /// 답 말풍선 고치기 (id 로 찾는다 — 그 사이 새 대화로 바꿨으면 아무것도 하지 않는다)
+    func edit(_ id: UUID, _ change: (inout Message) -> Void) {
+        guard let i = messages.firstIndex(where: { $0.id == id }) else { return }
+        change(&messages[i])
+    }
+
+    /// 작업 끝: 그 사이 새 작업이 시작됐으면 상태는 새 작업 것이라 그대로 둔다
+    func finish(_ gen: Int) {
+        guard gen == generation else { return }
+        running = false
+        task = nil
+        persist()
     }
 
     private func show(_ c: DiagramConversation) {
@@ -113,12 +138,11 @@ final class DiagramChat {
              temperature: Double = 0.3,
              build: @escaping @MainActor ([(role: String, content: String)]) async throws -> [OllamaClient.Message]) {
         let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty, !running else { return }
+        guard !q.isEmpty else { return }
+        let gen = begin()
         messages.append(.init(role: "user", text: q))
         messages.append(.init(role: "assistant", text: ""))
-        let answerIndex = messages.count - 1
-        running = true
-        thinkingChars = 0
+        let answerID = messages[messages.count - 1].id
         let history = messages.dropLast().filter { !$0.failed }.map { (role: $0.role, content: $0.text) }
         task = Task { [weak self] in
             guard let self else { return }
@@ -139,23 +163,23 @@ final class DiagramChat {
                     case .thinking(let t): thinkingChars += t.count
                     case .content(let c):
                         raw += c
-                        messages[answerIndex].text = DiagramAI.clean(raw)
+                        edit(answerID) { $0.text = DiagramAI.clean(raw) }
                     }
                 }
-                if messages[answerIndex].text.isEmpty { messages[answerIndex].text = tr("(답변 없음)") }
+                // 멈추면 스트림이 오류 없이 끝날 수 있다 → 답이 끝난 것으로 보지 않게
+                try Task.checkCancellation()
+                edit(answerID) { if $0.text.isEmpty { $0.text = tr("(답변 없음)") } }
                 // 감사 로그에는 질문·답변 내용 없이 한 줄 요약만
                 LogFile.shared.append(LogEntry(level: .success, source: .schema, message: "",
                     audit: AuditRecord(.ai, result: "\(Self.featureName(failureContext)) 답변 · \(Int(Date().timeIntervalSince(started)))초 · \(model)")))
-            } catch is CancellationError {
-                messages[answerIndex].text += (messages[answerIndex].text.isEmpty ? "" : "\n\n") + tr("(취소했어요)")
+            } catch where error is CancellationError || Task.isCancelled {
+                edit(answerID) { $0.text += ($0.text.isEmpty ? "" : "\n\n") + tr("(취소했어요)") }
             } catch {
-                messages[answerIndex].failed = true
-                messages[answerIndex].text = app.logError(error, .schema, context: failureContext,
-                                                          audit: AuditRecord(.ai, statement: Self.featureName(failureContext)))
+                let text = app.logError(error, .schema, context: failureContext,
+                                        audit: AuditRecord(.ai, statement: Self.featureName(failureContext)))
+                edit(answerID) { $0.failed = true; $0.text = text }
             }
-            running = false
-            task = nil
-            persist()
+            finish(gen)
         }
     }
 }

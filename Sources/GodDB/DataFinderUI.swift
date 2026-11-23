@@ -115,7 +115,9 @@ extension AppState {
         guard let p = selectedProfile, p.kind.isSQL, state == .connected, let session else { return }
         let chat = assistant.chat(assistantScope)
         let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty, !chat.running else { return }
+        guard !q.isEmpty else { return }
+        // 답하는 중이면 그 답은 멈추고 이 질문을 먼저 (#177)
+        if chat.running { chat.cancel() }
         assistant.finderMode = false
         let terms = DataFinder.keyTerms(q)
         let db = currentDatabase
@@ -153,8 +155,7 @@ extension AppState {
             }
         }
 
-        chat.running = true
-        chat.thinkingChars = 0
+        let gen = chat.begin()
         let notes = tableNotes.notes(profileID: p.id, database: db)
         let target = db.isEmpty ? p.name : "\(p.name)/\(db)"
         chat.task = Task { [weak self] in
@@ -170,16 +171,16 @@ extension AppState {
                 guard let model = AISettings.effectiveModel(installed: installed), !model.isEmpty else { throw OllamaError.noModel }
 
                 // 0) 모델 확인 (앱을 켜 둔 동안 모델별로 기억). 실패하면 조용히 넘어가지 않고 알린다.
-                chat.messages[answerIndex].text = tr("🔎 AI 모델 ‹%@› 확인 중…", model)
+                chat.edit(messageID) { $0.text = tr("🔎 AI 모델 ‹%@› 확인 중…", model) }
                 let health = await ModelProbe.check(model: model, client: client)
                 try Task.checkCancellation()
                 guard health.isOK else {
                     card.modelProblem = FinderModelProblem(model: model, reason: health.reason)
                     self.assistant.finderCards[messageID] = card
-                    chat.messages[answerIndex].text = Self.finderSummary(card)
+                    chat.edit(messageID) { $0.text = Self.finderSummary(card) }
                     self.log(.warning, .schema, tr("AI 데이터 찾기 · 모델 %@ 응답 없음 · %@", model, health.reason),
                              audit: AuditRecord(.ai, target: target, result: "실패: 데이터 찾기 · 모델 응답 없음 (\(model))"))
-                    self.finishFinder(chat)
+                    self.finishFinder(chat, gen)
                     self.probeAlternatives(messageID: messageID, failing: model, installed: installed, client: client)
                     return
                 }
@@ -190,9 +191,9 @@ extension AppState {
                     progress: { step in
                         await MainActor.run {
                             switch step {
-                            case .picking: chat.messages[answerIndex].text = tr("🔎 후보 테이블 · 컬럼을 고르는 중…")
-                            case .sampling: chat.messages[answerIndex].text = tr("🔎 후보 컬럼 값을 확인하는 중…")
-                            case .judging: chat.messages[answerIndex].text = tr("🔎 값을 보고 판단하는 중…")
+                            case .picking: chat.edit(messageID) { $0.text = tr("🔎 후보 테이블 · 컬럼을 고르는 중…") }
+                            case .sampling: chat.edit(messageID) { $0.text = tr("🔎 후보 컬럼 값을 확인하는 중…") }
+                            case .judging: chat.edit(messageID) { $0.text = tr("🔎 값을 보고 판단하는 중…") }
                             }
                         }
                     },
@@ -210,11 +211,11 @@ extension AppState {
                 card.aiError = found.aiError
                 guard let verdict = found.verdict else {
                     card.samplesSent = 0
-                    chat.messages[answerIndex].text = tr("🔎 %@: 맞는 테이블 · 컬럼을 찾지 못했어요. 다른 말로 물어보세요.", card.title)
-                    if found.usedFallback { chat.messages[answerIndex].text += "\n\n" + Self.withoutAIText(card) }
+                    chat.edit(messageID) { $0.text = tr("🔎 %@: 맞는 테이블 · 컬럼을 찾지 못했어요. 다른 말로 물어보세요.", card.title) }
+                    if found.usedFallback { chat.edit(messageID) { $0.text += "\n\n" + Self.withoutAIText(card) } }
                     self.logFinder(target: target, model: model, title: card.title, result: nil,
                                    candidates: candidateCount, sampleQueries: sampleQueries)
-                    self.finishFinder(chat)
+                    self.finishFinder(chat, gen)
                     return
                 }
                 card.samplesSent = found.sampled.reduce(0) { n, s in
@@ -236,20 +237,20 @@ extension AppState {
                                      noteID: nil, confirmed: false, source: .ai)
                 }
                 self.assistant.finderCards[messageID] = card
-                chat.messages[answerIndex].text = Self.finderSummary(card)
+                chat.edit(messageID) { $0.text = Self.finderSummary(card) }
                 self.logFinder(target: target, model: model, title: card.title, result: current.location,
                                candidates: candidateCount, sampleQueries: sampleQueries)
-            } catch is CancellationError {
+            } catch where error is CancellationError || Task.isCancelled {
                 await sampler.close()
-                chat.messages[answerIndex].text = tr("(취소했어요)")
+                chat.edit(messageID) { $0.text = tr("(취소했어요)") }
             } catch {
                 await sampler.close()
-                chat.messages[answerIndex].failed = true
-                chat.messages[answerIndex].text = self.logError(error, .schema, context: tr("AI 데이터 찾기 실패"),
+                let text = self.logError(error, .schema, context: tr("AI 데이터 찾기 실패"),
                     audit: AuditRecord(.ai, target: target, statement: DataFinder.auditResult(candidates: candidateCount,
                                                                                                 sampleQueries: sampleQueries)))
+                chat.edit(messageID) { $0.failed = true; $0.text = text }
             }
-            self.finishFinder(chat)
+            self.finishFinder(chat, gen)
         }
     }
 
@@ -294,10 +295,8 @@ extension AppState {
         return s
     }
 
-    private func finishFinder(_ chat: DiagramChat) {
-        chat.running = false
-        chat.task = nil
-        chat.persist()
+    private func finishFinder(_ chat: DiagramChat, _ gen: Int) {
+        chat.finish(gen)
     }
 
     /// 감사 로그: `AI | 접속/DB | 데이터 찾기 · 후보 N · 샘플 조회 M` (질문 · 값은 남기지 않는다)
