@@ -166,6 +166,8 @@ final class DiagramChat {
                         edit(answerID) { $0.text = DiagramAI.clean(raw) }
                     }
                 }
+                // 멈추면 스트림이 오류 없이 끝날 수 있다 → 답이 끝난 것으로 보지 않게
+                try Task.checkCancellation()
                 edit(answerID) { if $0.text.isEmpty { $0.text = tr("(답변 없음)") } }
                 // 감사 로그에는 질문·답변 내용 없이 한 줄 요약만
                 LogFile.shared.append(LogEntry(level: .success, source: .schema, message: "",
