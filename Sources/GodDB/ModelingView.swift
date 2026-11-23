@@ -360,8 +360,8 @@ struct ModelEditorView: View {
     private var selectionEditor: some View {
         switch selection {
         case .table(let id):
-            if let i = model.tableIndex(id) {
-                ModelTableEditor(model: $model, tableIndex: i, selection: $selection,
+            if model.tableIndex(id) != nil {
+                ModelTableEditor(model: $model, tableID: id, selection: $selection,
                                  onDelete: { confirmDelete = .table(id) })
             }
         case .relation(let id):
@@ -375,6 +375,8 @@ struct ModelEditorView: View {
 
     private func delete(_ s: ModelSelection) {
         modeling.checkpoint(model.id)
+        // 편집기가 지울 대상을 더 그리지 않게 선택부터 푼다
+        selection = nil
         switch s {
         case .table(let id): model.removeTable(id)
         case .relation(let id): model.removeRelation(id, dropColumns: true)

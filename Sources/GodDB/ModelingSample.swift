@@ -59,7 +59,7 @@ enum ModelingSample {
             shot("modeling-\(mode)", ModelingView(), size: NSSize(width: 1300, height: 720))
         }
         if let b = app.modeling.binding(m.id) {
-            shot("modeling-table-editor", ModelTableEditor(model: b, tableIndex: 0, selection: .constant(nil), onDelete: {}),
+            shot("modeling-table-editor", ModelTableEditor(model: b, tableID: b.wrappedValue.tables[0].id, selection: .constant(nil), onDelete: {}),
                  size: NSSize(width: 1250, height: 300))
             shot("modeling-relation-editor", ModelRelationEditor(model: b, relationID: m.relations[1].id, selection: .constant(nil)),
                  size: NSSize(width: 1000, height: 280))
