@@ -213,6 +213,7 @@ struct DBeaverImportTests {
         let new = try #require(r.sources.first { $0.profile.name == "분석" }).profile
         #expect(new.kind == .postgres && new.port == 5439 && new.database == "dev" && new.username == "analyst")
         #expect(new.useTLS && new.tlsVerify)
+        #expect(new.redshift && new.type == .redshift)
         let old = try #require(r.sources.first { $0.profile.name == "옛 분석" }).profile
         #expect(old.kind == .postgres && old.port == 5439)
         #expect(!old.useTLS)
@@ -220,7 +221,7 @@ struct DBeaverImportTests {
         #expect(url.host == "url.example.test" && url.port == 5440 && url.database == "sales" && url.useTLS)
 
         let jdbc = try #require(DataGripImport.profile(fromJDBC: "jdbc:redshift://c.example.test/dev"))
-        #expect(jdbc.kind == .postgres && jdbc.port == 5439 && jdbc.useTLS)
+        #expect(jdbc.kind == .postgres && jdbc.port == 5439 && jdbc.useTLS && jdbc.redshift)
     }
 
     @Test func errors() {

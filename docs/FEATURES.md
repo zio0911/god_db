@@ -55,6 +55,15 @@
 | 컬럼 위치 (AFTER) | 지원 | 미지원 (항상 맨 뒤) | 미지원 (항상 맨 뒤) |
 | 코멘트 | `COMMENT` | `COMMENT ON` | 확장 속성 `MS_Description` |
 
+- **Amazon Redshift**: PostgreSQL 접속으로 붙인다 (기본 포트 5439, TLS 권장). 연결할 때 `version()` 으로 Redshift 를 알아내 아래처럼 바꿔 동작한다.
+  - 새 접속의 DB 종류에서 "Redshift" 를 고르면 포트 5439 · TLS 켬으로 채운다 (저장은 PostgreSQL 접속 + Redshift 표시). 사이드바 · 탭 · 비교 화면에 Redshift 아이콘(보라 원통, 직접 그림)
+  - PostgreSQL 로 만든 접속이 연결해 보니 Redshift 면 종류 · 아이콘을 Redshift 로 자동으로 바꿔 저장한다 (반대도)
+  - 스키마 목록에는 이 계정이 쓸 수 있는(USAGE) 스키마만 보인다 (권한 없는 스키마를 고르면 Redshift 가 search_path 를 비워 "테이블 없음" 이 되므로)
+  - 테이블 · 컬럼 · 기본 키 · 외래 키 · 함수 · 프로시저 조회를 Redshift 카탈로그에 맞춘 쿼리로 (트리거 · 인덱스 없음)
+  - 컬럼 정보(Extra)에 `distkey` · `sortkey N` 표시, CREATE 문에 `DISTKEY (...)` · `SORTKEY (...)`
+  - 서버 버전은 `version()` 에서 (`Amazon Redshift 1.0.x`)
+  - 기본 키 · 외래 키는 정보용 제약(강제되지 않음)이라 결과 표 편집은 막는다 → UPDATE 문으로
+  - 읽기전용은 PostgreSQL 과 같다 (앱 검사 + 읽기 전용 트랜잭션)
 - 한 번에 여러 문장 실행: PostgreSQL 드라이버는 스크립트를 문장 단위로 나눠 차례로 실행한다 (`$$ … $$` 함수 본문은 나누지 않음). SQL Server 는 배치로 한 번에 보낸다.
 - 오류 번역: PostgreSQL SQLSTATE(28P01, 3D000, 42P01, 42703, 42601, 42501, 25006…), SQL Server 번호(18456, 4060, 208, 207, 102, 229, 20009…)에 한국어 해결 방법을 붙인다.
 - 비밀번호 오류 재입력: MySQL 1045 / PostgreSQL 28P01 / SQL Server 18456.
@@ -201,7 +210,8 @@
 | `FROM` / `JOIN` / `UPDATE` / `INTO` / `TABLE` / `DESC` 바로 뒤 | 테이블, 뷰 우선 |
 | 그 외 | 구문에 나온 테이블의 컬럼 → 키워드·함수 → 테이블 → 뷰/프로시저/함수 |
 
-- 별칭 해석: `FROM tb_member m`, `JOIN tb_order AS o`, `FROM a x, b y`, `shop.tb_member` 형식 지원. `WHERE`/`ON` 등은 별칭으로 보지 않는다.
+- 별칭 해석: `FROM tb_member m`, `JOIN tb_order AS o`, `FROM a x, b y`, `shop.tb_member`, `[dbo].[tb_member]`, `"public"."tb_member"` 형식 지원. `WHERE`/`ON` 등은 별칭으로 보지 않는다.
+- `m.` 뒤 목록은 점 뒤만 바꾼다 (`m.` 은 그대로). 잘못 쓴 컬럼(`m.username`) 끝에서 Tab → 맞는 후보가 없으면 그 테이블 컬럼을 비슷한 순서로 목록에 보여 준다.
 - 동작
   - 후보 1개 → 바로 채움
   - 후보 여러 개인데 공통 앞부분이 더 길면 → 공통 부분까지 채움 (한 번 더 Tab 하면 목록)
@@ -549,7 +559,7 @@
   - SSH 터널을 쓰는 데이터 소스는 SSH 설정 id 만 들어 있다 → SSH 를 켠 상태로 가져오고 바스티온 정보는 접속 편집에서 넣으라고 안내.
 - **DBeaver 가져오기**: 가져오기 · 내보내기 메뉴 > "DBeaver 접속 정보 가져오기…" (또는 "접속 정보 가져오기…" 에서 DBeaver 파일을 골라도 된다)
   - 받는 파일: DBeaver 파일 > 내보내기 > DBeaver > 프로젝트 로 만든 `.dbp`, 또는 DBeaver 작업 폴더(`~/Library/DBeaverData/workspace6/<프로젝트>/.dbeaver/`)의 `data-sources.json`. 파일 고르기는 작업 폴더가 있으면 거기서 시작한다.
-  - 지원: MySQL · MariaDB · PostgreSQL · SQL Server · Amazon Redshift (PostgreSQL 접속으로, 기본 포트 5439 · TLS 켬 — 드라이버 설정에서 SSL 을 끈 접속만 끔). 그 외(SQLite 등)는 건너뛰고 "지원하지 않는 접속 N개는 건너뛰었어요" 로 알려준다.
+  - 지원: MySQL · MariaDB · PostgreSQL · SQL Server · Amazon Redshift (Redshift 종류로, 기본 포트 5439 · TLS 켬 — 드라이버 설정에서 SSL 을 끈 접속만 끔). 그 외(SQLite 등)는 건너뛰고 "지원하지 않는 접속 N개는 건너뛰었어요" 로 알려준다.
   - 옮기는 것: 이름, 호스트, 포트, DB, 사용자, 읽기전용, SSL 사용 여부, SSH 터널(호스트 · 포트 · 사용자 · 키 파일), 폴더 → 그룹(`상위/하위`). 주소(URL) 방식 접속은 JDBC 주소에서 읽는다.
   - 사용자 이름: DBeaver 는 사용자 이름을 비밀번호와 함께 `credentials-config.json` 에 암호화해 둔다 (`.dbp` 안, `data-sources.json` 과 같은 폴더). 이 파일에서 **사용자 이름만** 읽고 비밀번호는 읽자마자 버린다 (저장 · 표시 · 로그 없음). 파일이 없거나 못 읽으면 사용자 이름 없이 가져오고 안내.
   - 비밀번호는 가져오지 않는다 → 처음 연결할 때 입력.
@@ -583,6 +593,20 @@
   - 상단에 "Cluster · 마스터 N개" 배지 (마우스를 올리면 노드 주소).
 - **Redis Sentinel**: 방식 "Sentinel", 호스트 칸에 센티널 주소(쉼표로 여러 개, 기본 포트 26379), 마스터 이름(예: `mymaster`). `SENTINEL get-master-addr-by-name` 으로 현재 마스터를 찾아 접속 (센티널 인증이 필요하면 같은 비밀번호로 다시 시도). 장애 조치 후에는 다시 연결하면 새 마스터로 붙는다.
 - 아직 안 되는 것: 복제본(replica) 읽기, RESP3, 모듈(JSON 등)은 Workbench 로만.
+
+### 쿼리 오류 빨간 밑줄
+
+- 입력하는 동안 잘못된 부분에 빨간 물결 밑줄. 마우스를 올리면 이유가 나온다 (화면 읽기 프로그램에도 전달).
+- **GodDB 검사** (입력을 0.3초 멈추면, 서버 요청 없음): 틀린 경고를 내지 않도록 확실한 경우만 표시한다.
+  - 없는 컬럼: `별칭.컬럼` (예: `a.username` → "users 테이블에 username 컬럼이 없어요" + "비슷한 컬럼: name"), JOIN 없는 테이블 하나짜리 SELECT 의 이름만 쓴 컬럼. 다른 스키마 · CTE · 서브쿼리 별칭 · 사이드바가 다른 DB 를 보고 있을 때는 검사하지 않는다.
+  - 콤마: 빠짐(`a.id a.name`), 두 번(`,,`), 뒤에 항목 없음(`name, FROM`), 앞에 항목 없음(`SELECT , id`)
+  - 닫히지 않은 괄호 · 따옴표 · 주석, 여는 괄호 없는 `)`
+  - 키워드 오타: 첫 단어(`SELEC`), `FORM` · `WEHRE` 등 (아는 테이블 · 컬럼 이름은 제외)
+- **DB 검사** (입력을 1초 멈추면, 커서가 있는 구문만): **실행하지 않고** 검사만 맡긴다. GodDB 검사에서 이미 문제가 보인 구문은 묻지 않는다.
+  - MySQL: `PREPARE` → `DEALLOCATE`, PostgreSQL · Redshift: `PREPARE … AS` → `DEALLOCATE` (오류 위치를 서버가 알려 줌), SQL Server: `sp_describe_first_result_set`
+  - SELECT · INSERT · UPDATE · DELETE · WITH (· REPLACE / VALUES / MERGE) 만. 쿼리 실행 중, PostgreSQL 트랜잭션이 열려 있을 때(오류가 나면 트랜잭션이 실패 상태가 되므로), 탭의 DB 가 세션의 DB 와 다를 때는 묻지 않는다.
+  - 실행 기록 · 감사 로그 · 유휴 끊기 시간에 남기지 않는다.
+- 설정 > 일반 > 편집기: "쿼리 오류에 빨간 밑줄"(기본 켬), "DB 에 검사 요청"(기본 켬).
 
 ## 26. INSERT 컬럼 힌트
 
@@ -784,6 +808,7 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - 비밀번호 방식 SSH 미지원.
 - SQL Server TLS 인증서 확인은 연결 전에 인증서를 따로 받아 판정하고, FreeTDS 는 `ca file` 로 다시 확인한다 (지문 비교는 못 함). 사설 CA 인증서를 고정했는데 서버가 루트를 보내지 않으면 FreeTDS 연결은 암호화만 한다 (§36).
 - SSH 바스티온이 `ProxyJump` 를 거쳐야 하면 `ssh-keyscan` 이 키를 받지 못한다 → 터미널에서 한 번 접속해 `~/.ssh/known_hosts` 에 키를 넣어 두면 그 키를 쓴다.
+- Amazon Redshift 는 Docker 이미지가 없어 자동 테스트는 SQL 생성 단위 테스트만 한다. 실제 동작은 Redshift 클러스터로 수동 확인. 스키마 비교 · 모델링 · AI 데이터 찾기는 Redshift 용으로 따로 맞추지 않았다.
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름만 확인한다. PostgreSQL · SQL Server · Redis 화면은 수동 확인.
 
 ## 18. 변경 이력

@@ -31,17 +31,22 @@ public enum SQLCompleter {
 
     /// 구문에서 "알리아스/테이블명(소문자) → 실제 테이블명" 을 찾는다.
     public static func aliases(in statement: String) -> [String: String] {
-        let pattern = "\\b(?:FROM|JOIN|UPDATE|INTO)\\s+`?([A-Za-z0-9_$.]+)`?(?:\\s+(?:AS\\s+)?`?([A-Za-z0-9_$]+)`?)?"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [:] }
+        // 이름은 `t` · "t" · [t] 로 감쌀 수 있고 db.schema.t 처럼 점으로 이어질 수 있다
+        let ident = "[`\"\\[]?[A-Za-z0-9_$]+[`\"\\]]?"
+        let name = "(\(ident)(?:\\.\(ident))*)"
+        let alias = "(?:\\s+(?:AS\\s+)?[`\"\\[]?([A-Za-z0-9_$]+)[`\"\\]]?)?"
+        guard let regex = try? NSRegularExpression(pattern: "\\b(?:FROM|JOIN|UPDATE|INTO)\\s+" + name + alias,
+                                                   options: [.caseInsensitive]) else { return [:] }
         var map: [String: String] = [:]
         let ns = statement as NSString
         // 쉼표로 이어진 FROM a x, b y 도 처리
-        let commaRegex = try? NSRegularExpression(pattern: ",\\s*`?([A-Za-z0-9_$.]+)`?(?:\\s+(?:AS\\s+)?`?([A-Za-z0-9_$]+)`?)?", options: [.caseInsensitive])
+        let commaRegex = try? NSRegularExpression(pattern: ",\\s*" + name + alias, options: [.caseInsensitive])
         for regex in [regex, commaRegex].compactMap({ $0 }) {
             for m in regex.matches(in: statement, range: NSRange(location: 0, length: ns.length)) {
                 guard m.range(at: 1).location != NSNotFound else { continue }
                 var table = ns.substring(with: m.range(at: 1))
                 if let dot = table.lastIndex(of: ".") { table = String(table[table.index(after: dot)...]) }
+                table = table.trimmingCharacters(in: CharacterSet(charactersIn: "`\"[]"))
                 map[table.lowercased()] = table
                 if m.range(at: 2).location != NSNotFound {
                     let alias = ns.substring(with: m.range(at: 2))
@@ -75,6 +80,10 @@ public enum SQLCompleter {
             let tableName = aliasMap[q] ?? byName[q]?.name
             if let t = tableName.flatMap({ byName[$0.lowercased()] }) {
                 t.columns.sorted { $0.position < $1.position }.forEach { add($0.name) }
+                // 잘못 쓴 이름(a.username)이라 맞는 게 없으면 그 테이블 컬럼을 비슷한 순서로
+                if out.isEmpty, !p.isEmpty {
+                    return Array(closest(to: prefix, in: t.columns.map(\.name)).prefix(limit))
+                }
             }
             return Array(out.prefix(limit))
         }
@@ -99,5 +108,34 @@ public enum SQLCompleter {
         routines.filter { $0.kind != .trigger }.forEach { add($0.name) }
 
         return Array(out.prefix(limit))
+    }
+
+    /// 이름을 비슷한 순서로 (포함 관계 먼저, 그다음 편집 거리)
+    public static func closest(to word: String, in names: [String]) -> [String] {
+        let w = word.lowercased()
+        func score(_ name: String) -> Int {
+            let n = name.lowercased()
+            if n.contains(w) || w.contains(n) { return abs(n.count - w.count) }
+            return 100 + editDistance(w, n)
+        }
+        return names.enumerated().sorted { a, b in
+            let (sa, sb) = (score(a.element), score(b.element))
+            return sa != sb ? sa < sb : a.offset < b.offset
+        }.map(\.element)
+    }
+
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        if a.isEmpty { return b.count }
+        if b.isEmpty { return a.count }
+        var prev = Array(0...b.count)
+        for i in 1...a.count {
+            var cur = [i] + Array(repeating: 0, count: b.count)
+            for j in 1...b.count {
+                cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
+            }
+            prev = cur
+        }
+        return prev[b.count]
     }
 }

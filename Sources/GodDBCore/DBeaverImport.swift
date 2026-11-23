@@ -198,6 +198,7 @@ public enum DBeaverImport {
                                   port: redshift ? 5439 : kind.defaultPort)
         // Redshift 드라이버는 SSL 이 기본 (끈 설정은 아래 sslmode=disable / ssl=false 에서 끔)
         p.useTLS = redshift
+        p.redshift = redshift
         p.host = string(cfg["host"])?.trimmingCharacters(in: .whitespaces) ?? ""
         if let port = string(cfg["port"]).flatMap({ Int($0.trimmingCharacters(in: .whitespaces)) }) { p.port = port }
         p.database = string(cfg["database"]) ?? ""

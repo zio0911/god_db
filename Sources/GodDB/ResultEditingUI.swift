@@ -51,6 +51,7 @@ extension AppState {
         guard let result = tab.result, !result.columns.isEmpty, !tab.isPlan, let sql = result.sql else { return nil }
         if profile(tab.profileID)?.readOnly == true { return .failure(DBError.readOnlyBlocked) }
         if result.truncatedCells > 0 { return .failure(ResultEditingError.valuesTruncated) }
+        if connections[tab.profileID]?.session?.dialect.isRedshift == true { return .failure(ResultEditingError.keysNotEnforced) }
         let tables = connections[tab.profileID]?.tables ?? []
         return Result { try ResultEditing.target(sql: sql, columns: result.columns.map(\.name), tables: tables) }
     }

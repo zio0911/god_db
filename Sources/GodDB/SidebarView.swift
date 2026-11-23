@@ -154,7 +154,7 @@ struct ProfileRow: View {
                 .frame(width: 7, height: 7)
                 .opacity(state == .connecting ? 0 : 1)
                 .overlay { if state == .connecting { ProgressView().controlSize(.mini) } }
-            KindBadge(kind: profile.kind)
+            KindBadge(kind: profile.kind, redshift: profile.redshift)
             Text(profile.name).lineLimit(1)
                 .fontWeight(selected ? .semibold : .regular)
             EnvironmentBadge(environment: profile.environment)
@@ -211,11 +211,15 @@ struct ProfileRow: View {
 /// DB 종류 아이콘: 브랜드 로고(MySQL · PostgreSQL · Redis, Simple Icons)를 브랜드 색으로. SQL Server 는 자체 그림(MSSQLIcon).
 struct KindBadge: View {
     let kind: DatabaseKind
+    /// PostgreSQL 접속 중 Amazon Redshift
+    var redshift = false
     var size: CGFloat = 16
 
     var body: some View {
         Group {
-            if kind == .postgres {
+            if redshift && kind == .postgres {
+                RedshiftIcon()
+            } else if kind == .postgres {
                 PostgresIcon()
             } else if let path = BrandLogo.paths[kind] {
                 SVGLogoShape(path: path).fill(kind.iconColor)
@@ -228,8 +232,12 @@ struct KindBadge: View {
             }
         }
         .frame(width: size, height: size)
-        .help(kind.title)
-        .accessibilityLabel(kind.title)
+        .help(title)
+        .accessibilityLabel(title)
+    }
+
+    private var title: String {
+        redshift && kind == .postgres ? "Redshift" : kind.title
     }
 }
 

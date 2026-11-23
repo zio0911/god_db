@@ -34,6 +34,10 @@ final class EditorController {
 
     /// 자동완성에 쓸 현재 스키마 (테이블, 뷰/프로시저)
     var schemaProvider: () -> ([TableMeta], [RoutineMeta]) = { ([], []) }
+    /// 빨간 밑줄 검사용 (테이블, 접속 종류, 지금 DB)
+    var lintContext: () -> (tables: [TableMeta], kind: DatabaseKind?, schema: String?) = { ([], nil, nil) }
+    /// DB 에 검사만 맡기기 (nil: 묻지 않음, .some(nil): 문제 없음)
+    var serverChecker: (String) async -> SQLServerCheck.Failure?? = { _ in nil }
 
     static let wordChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_$"))
 
@@ -124,6 +128,7 @@ struct SQLEditorView: NSViewRepresentable {
         tv.string = text
         SQLHighlighter.apply(to: tv)
         controller.textView = tv
+        tv.scheduleLint(controller: controller)
         return scroll
     }
 
@@ -134,6 +139,7 @@ struct SQLEditorView: NSViewRepresentable {
         if tv.string != text {
             tv.string = text
             SQLHighlighter.apply(to: tv)
+            (tv as? HintTextView)?.scheduleLint(controller: controller)
         }
     }
 
@@ -145,6 +151,7 @@ struct SQLEditorView: NSViewRepresentable {
             guard let tv = notification.object as? NSTextView else { return }
             parent.text = tv.string
             SQLHighlighter.apply(to: tv)
+            (tv as? HintTextView)?.scheduleLint(controller: parent.controller)
         }
 
         /// Tab: 입력 중인 단어가 있으면 자동완성, 없으면 공백 4칸
@@ -167,7 +174,8 @@ struct SQLEditorView: NSViewRepresentable {
                 // 공통 접두어가 더 길면 먼저 채우고, 그래도 여러 개면 목록을 띄운다.
                 let common = Self.commonPrefix(candidates)
                 let typed = (tv.string as NSString).substring(with: ctx.range)
-                if common.count > typed.count {
+                // 잘못 쓴 이름의 "비슷한 후보" 목록이면 공통 접두어로 바꾸지 않고 목록만 띄운다
+                if common.count > typed.count, common.lowercased().hasPrefix(typed.lowercased()) {
                     tv.insertText(common, replacementRange: ctx.range)
                 } else {
                     tv.complete(nil)
@@ -248,6 +256,96 @@ final class HintTextView: NSTextView {
     /// INSERT 컬럼 이름 표시는 항상 켬 (설정에서 끄는 옵션 제거)
     static var enabled: Bool { true }
 
+    // MARK: 빨간 밑줄
+
+    private(set) var issues: [SQLIssue] = []
+    private var localTimer: Timer?
+    private var serverTask: Task<Void, Never>?
+
+    /// 입력이 멈추면 검사: 바로(0.3초) GodDB 검사, 1초 뒤 커서 구문을 DB 에 검사 요청
+    func scheduleLint(controller: EditorController) {
+        localTimer?.invalidate()
+        serverTask?.cancel()
+        // 글자가 바뀌면 DB 검사 결과는 낡았으니 지운다
+        if issues.contains(where: { $0.source == .server }) { setIssues(issues.filter { $0.source == .local }) }
+        guard EditorLint.enabled else { if !issues.isEmpty { setIssues([]) }; return }
+        localTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.runLocalLint(controller: controller) }
+        }
+        let text = string
+        let cursor = selectedRange().location
+        serverTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self, EditorLint.serverEnabled,
+                  let stmt = SQLText.statements(in: text).first(where: { $0.range.lowerBound <= cursor && cursor <= $0.range.upperBound })
+            else { return }
+            // GodDB 검사에서 이미 문제가 보이면 DB 에 묻지 않는다
+            let ns = text as NSString
+            let found = ns.range(of: stmt.sql, options: [], range: NSRange(location: min(stmt.range.lowerBound, ns.length),
+                                                                           length: ns.length - min(stmt.range.lowerBound, ns.length)))
+            guard found.location != NSNotFound else { return }
+            let local = SQLLint.check(text, tables: controller.lintContext().tables, kind: controller.lintContext().kind,
+                                      schema: controller.lintContext().schema)
+            if local.contains(where: { NSIntersectionRange($0.range, found).length > 0 }) { return }
+            guard let result = await controller.serverChecker(stmt.sql), !Task.isCancelled, self.string == text else { return }
+            guard let failure = result else { return }
+            let range = failure.range.map { NSRange(location: $0.location + found.location, length: $0.length) }
+                ?? NSRange(location: found.location, length: found.length)
+            let issue = SQLIssue(range: range, message: tr("DB 검사: %@", failure.message), source: .server)
+            self.setIssues(self.issues.filter { $0.source == .local } + [issue])
+        }
+    }
+
+    private func runLocalLint(controller: EditorController) {
+        let ctx = controller.lintContext()
+        guard ctx.kind != .redis else { setIssues([]); return }
+        let local = SQLLint.check(string, tables: ctx.tables, kind: ctx.kind, schema: ctx.schema)
+        setIssues(local + issues.filter { $0.source == .server })
+    }
+
+    private func setIssues(_ new: [SQLIssue]) {
+        let length = (string as NSString).length
+        issues = new.filter { NSMaxRange($0.range) <= length }
+        guard let lm = layoutManager else { return }
+        lm.removeTemporaryAttribute(.toolTip, forCharacterRange: NSRange(location: 0, length: length))
+        for i in issues { lm.addTemporaryAttribute(.toolTip, value: i.text, forCharacterRange: i.range) }
+        // 화면 읽기 · 화면 자동 테스트용
+        setAccessibilityHelp(issues.isEmpty ? nil : issues.map(\.text).joined(separator: "\n"))
+        needsDisplay = true
+    }
+
+    private func drawIssues() {
+        guard !issues.isEmpty, let lm = layoutManager, let tc = textContainer else { return }
+        NSColor.systemRed.setStroke()
+        let origin = textContainerOrigin
+        for issue in issues {
+            let glyphs = lm.glyphRange(forCharacterRange: issue.range, actualCharacterRange: nil)
+            lm.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                                       in: tc) { rect, _ in
+                let r = rect.offsetBy(dx: origin.x, dy: origin.y)
+                let y = r.maxY - 1.5
+                let path = NSBezierPath()
+                path.lineWidth = 1
+                var x = r.minX
+                path.move(to: NSPoint(x: x, y: y))
+                var up = true
+                while x < r.maxX {
+                    x += 2
+                    path.line(to: NSPoint(x: min(x, r.maxX), y: up ? y - 2 : y))
+                    up.toggle()
+                }
+                path.stroke()
+            }
+        }
+    }
+
+    /// 자동완성 목록이 바꿀 범위. 기본 동작은 `a.` 까지 단어로 잡아 컬럼 후보가 0개가 되므로 점 뒤부터만.
+    override var rangeForUserCompletion: NSRange {
+        let sel = selectedRange()
+        guard sel.length == 0 else { return super.rangeForUserCompletion }
+        return EditorController.completionContext(in: string as NSString, cursor: sel.location).range
+    }
+
     static func width(_ text: String) -> CGFloat {
         (text as NSString).size(withAttributes: [.font: hintFont]).width + 10
     }
@@ -266,6 +364,7 @@ final class HintTextView: NSTextView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        drawIssues()
         guard !hints.isEmpty, let lm = layoutManager, let tc = textContainer else { return }
         let attrs: [NSAttributedString.Key: Any] = [.font: Self.hintFont, .foregroundColor: NSColor.secondaryLabelColor]
         let length = (string as NSString).length

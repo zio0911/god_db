@@ -22,7 +22,9 @@ public enum DBError: LocalizedError {
 /// 접속 하나 (필요하면 SSH 터널 포함). DB 종류에 맞는 드라이버와 문법(Dialect)을 쓴다. 쿼리는 순차 실행된다.
 public actor DBSession {
     public nonisolated let profile: ConnectionProfile
-    public nonisolated let dialect: any SQLDialect
+    /// 문법. PostgreSQL 접속이 Redshift 로 확인되면 연결 직후 Redshift 용으로 바뀐다 (connect 가 돌려주기 전)
+    public nonisolated var dialect: any SQLDialect { dialectBox.value }
+    private nonisolated let dialectBox: DialectBox
     private var tunnel: SSHTunnel?
     private var driver: (any DBDriver)?
     /// 다시 연결 · 취소용 연결에 쓰는 주소 (터널을 거쳤다면 로컬 주소)
@@ -64,7 +66,7 @@ public actor DBSession {
 
     public init(profile: ConnectionProfile) {
         self.profile = profile
-        self.dialect = Dialects.of(profile.kind)
+        self.dialectBox = DialectBox(Dialects.of(profile.kind))
     }
 
     /// DB 서버 연결(로그인 · 세션 설정까지)에 기다리는 최대 시간. SSH 터널은 따로 15초.
@@ -145,16 +147,26 @@ public actor DBSession {
         driver = opened.driver
         tlsStatus = opened.driver.tlsStatus
         serverSessionID = opened.sessionID
+        if opened.redshift, !dialect.isRedshift { dialectBox.value = PostgresDialect(redshift: true) }
     }
 
     struct OpenedDriver: Sendable {
         let driver: any DBDriver
         let sessionID: Int?
+        var redshift = false
     }
 
     static func prepareDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint,
                                       dialect: any SQLDialect, readOnly: Bool) async throws -> OpenedDriver {
         let d = try await makeDriver(kind, endpoint)
+        var dialect = dialect
+        var redshift = false
+        if kind == .postgres, !dialect.isRedshift,
+           let v = try? await d.query("SELECT version()").rows.first?.first ?? nil,
+           PostgresDialect.redshiftVersion(v) != nil {
+            redshift = true
+            dialect = PostgresDialect(redshift: true)
+        }
         do {
             if let sql = dialect.sessionSetupSQL { _ = try? await d.query(sql) }
             if readOnly, let sql = dialect.readOnlySessionSQL {
@@ -166,7 +178,7 @@ public actor DBSession {
             throw error
         }
         let id = try? await d.query(dialect.sessionIDSQL).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
-        return OpenedDriver(driver: d, sessionID: id)
+        return OpenedDriver(driver: d, sessionID: id, redshift: redshift || dialect.isRedshift)
     }
 
     /// 실행 중인 쿼리가 있는지
@@ -383,6 +395,24 @@ public actor DBSession {
         return (result, tree)
     }
 
+    /// SQLServerCheck 용: 검사 명령을 드라이버로 바로 보낸다.
+    /// 실행 중 표시 · 마지막 활동 시각(유휴 끊기)은 바꾸지 않는다. 드라이버가 요청을 차례로 처리한다.
+    func runCheck(_ sql: String) async -> SQLServerCheck.Failure? {
+        guard let driver, driver.isOpen else { return nil }
+        let (check, cleanup) = SQLServerCheck.commands(for: sql, kind: profile.kind)
+        var failure: SQLServerCheck.Failure? = nil
+        for command in check {
+            do {
+                _ = try await driver.query(command)
+            } catch {
+                failure = SQLServerCheck.failure(from: error, sql: sql, kind: profile.kind)
+                break
+            }
+        }
+        for command in cleanup { _ = try? await driver.query(command) }
+        return failure
+    }
+
     /// 모든 값을 문자열로 받는다.
     public func raw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
         guard let driver, driver.isOpen else { throw DBError.notConnected }
@@ -411,6 +441,11 @@ public actor DBSession {
 
     /// 서버 버전 (예: MySQL 8.0.36, PostgreSQL 16.4, SQL Server 16.0.4315.2 Developer Edition)
     public func serverVersion() async throws -> String {
+        if dialect.isRedshift {
+            // SHOW server_version 은 슈퍼유저만 → version() 에서 "Redshift 1.0.x"
+            let v = try await raw("SELECT version()").rows.first?.first ?? nil
+            return "Amazon " + (v.flatMap(PostgresDialect.redshiftVersion) ?? "Redshift")
+        }
         let v = try await raw(dialect.versionSQL).rows.first?.first ?? nil
         return "\(profile.kind.title) \(v ?? "")".trimmingCharacters(in: .whitespaces)
     }
@@ -529,5 +564,16 @@ public enum SchemaBuilder {
             }
         }
         return order.compactMap { tables[$0] }
+    }
+}
+
+/// 세션 문법 보관 (연결 직후 한 번 바뀔 수 있어 잠금으로 읽고 쓴다)
+final class DialectBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: any SQLDialect
+    init(_ d: any SQLDialect) { current = d }
+    var value: any SQLDialect {
+        get { lock.lock(); defer { lock.unlock() }; return current }
+        set { lock.lock(); current = newValue; lock.unlock() }
     }
 }

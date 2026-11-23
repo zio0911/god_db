@@ -93,7 +93,7 @@ extension AppState {
         persist()
         log(.success, .app, tr("접속 정보 %@개 가져옴 · %@", "\(incoming.count)", fileName)
             + (saved > 0 ? tr(" · 비밀번호 %@개", "\(saved)") : ""),
-            detail: incoming.map { "\($0.name) (\($0.kind.title) \($0.host):\($0.port))" }.joined(separator: "\n"),
+            detail: incoming.map { "\($0.name) (\($0.typeTitle) \($0.host):\($0.port))" }.joined(separator: "\n"),
             audit: AuditRecord(.settings, result: "접속 정보 \(incoming.count)개 가져옴" + (saved > 0 ? " · 비밀번호 \(saved)개" : ""),
                                statement: fileName + " · " + incoming.map(\.name).joined(separator: ", ")))
     }
@@ -162,7 +162,7 @@ struct ExportConnectionsSheet: View {
                                          set: { if $0 { selected.insert(p.id) } else { selected.remove(p.id) } })) {
                         HStack {
                             Text(p.name)
-                            Text("\(p.kind.title) · \(p.host):\(String(p.port))").foregroundStyle(.secondary)
+                            Text("\(p.typeTitle) · \(p.host):\(String(p.port))").foregroundStyle(.secondary)
                             if p.ssh != nil { Text("SSH").font(.caption).foregroundStyle(.secondary) }
                         }
                     }
@@ -316,7 +316,7 @@ private struct ImportRowDetails: View {
 
     var body: some View {
         let p = profile
-        let address = "\(p.kind.title) · \(p.host):\(String(p.port))" + (p.database.isEmpty ? "" : " / " + p.database)
+        let address = "\(p.typeTitle) · \(p.host):\(String(p.port))" + (p.database.isEmpty ? "" : " / " + p.database)
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 if !p.group.isEmpty { Text(p.group + " ›").foregroundStyle(.tertiary) }

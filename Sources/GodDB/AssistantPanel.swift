@@ -101,7 +101,7 @@ extension AppState {
         if !groups.isEmpty { s += " in groups \(groups.sorted().joined(separator: ", "))" }
         s += "\n"
         if let p = selectedProfile {
-            s += "  Selected connection: \(p.name) (\(p.kind.title))\(p.readOnly ? ", read-only" : ""), "
+            s += "  Selected connection: \(p.name) (\(p.typeTitle))\(p.readOnly ? ", read-only" : ""), "
             s += state == .connected ? "connected, database/schema \(currentDatabase), \(tables.count) tables\n" : "not connected\n"
         } else {
             s += "  No connection selected\n"
