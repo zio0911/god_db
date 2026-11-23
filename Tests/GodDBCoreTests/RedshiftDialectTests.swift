@@ -53,6 +53,30 @@ struct RedshiftDialectTests {
         #expect(ddl.contains("COMMENT ON COLUMN \"sales\".\"shop_id\" IS '매장';"))
     }
 
+    @Test func connectionTypeRedshift() throws {
+        var p = ConnectionProfile(kind: .postgres, port: 5432, useTLS: false)
+        #expect(p.type == .postgres)
+        p.type = .redshift
+        #expect(p.kind == .postgres && p.redshift && p.port == 5439 && p.useTLS)
+        #expect(p.typeTitle == "Redshift")
+        p.type = .mysql
+        #expect(p.kind == .mysql && !p.redshift && p.port == 3306)
+        // 포트를 바꿔 둔 접속은 그대로
+        p.type = .redshift
+        p.port = 15439
+        p.type = .postgres
+        #expect(p.port == 15439 && !p.redshift)
+        #expect(ConnectionType.allCases.map(\.title) == ["MySQL", "PostgreSQL", "Redshift", "SQL Server", "Redis"])
+
+        // 저장 · 읽기, 예전 파일(redshift 없음)은 false
+        var r = ConnectionProfile(kind: .postgres)
+        r.redshift = true
+        let back = try JSONDecoder().decode(ConnectionProfile.self, from: JSONEncoder().encode(r))
+        #expect(back.redshift && back.type == .redshift)
+        let old = #"{"id":"6F1C2A6E-1B8B-4B6E-9C55-0C1F0E6A9A10","kind":"postgres","name":"a","host":"h","port":5432,"username":"u"}"#
+        #expect(try !JSONDecoder().decode(ConnectionProfile.self, from: Data(old.utf8)).redshift)
+    }
+
     @Test func editingIsBlockedMessageIsTranslated() {
         let ko = ResultEditingError.keysNotEnforced.errorDescription ?? ""
         #expect(ko.contains("Redshift"))

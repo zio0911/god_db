@@ -36,15 +36,9 @@ struct ConnectionEditorView: View {
         VStack(spacing: 0) {
             Form {
                 Section(tr("일반")) {
-                    Picker(tr("DB 종류"), selection: Binding(
-                        get: { profile.kind },
-                        set: { kind in
-                            // 포트가 이전 종류의 기본값이면 새 종류의 기본값으로 바꾼다.
-                            if profile.port == profile.kind.defaultPort { profile.port = kind.defaultPort }
-                            profile.kind = kind
-                        }
-                    )) {
-                        ForEach(DatabaseKind.allCases) { Text($0.title).tag($0) }
+                    // Redshift 는 PostgreSQL 프로토콜 (kind .postgres + redshift), 포트 5439 · TLS 켬
+                    Picker(tr("DB 종류"), selection: $profile.type) {
+                        ForEach(ConnectionType.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     TextField(tr("이름"), text: $profile.name)
@@ -76,7 +70,7 @@ struct ConnectionEditorView: View {
                             .font(.caption).foregroundStyle(.orange)
                     }
                 }
-                Section(profile.kind.title) {
+                Section(profile.typeTitle) {
                     if profile.kind == .redis {
                         Picker(tr("방식"), selection: Binding(get: { profile.redisMode }, set: { mode in
                             // 센티널 기본 포트 26379 ↔ 6379
@@ -284,7 +278,7 @@ struct ConnectionEditorView: View {
             }
             let session = try await DBSession.connect(profile: draft, password: password)
             // 연결은 이미 성공. 버전 조회가 안 되더라도(권한 등) 실패로 보지 않는다.
-            let version = ((try? await session.serverVersion()) ?? draft.kind.title) + " · " + (await session.tlsStatus).text
+            let version = ((try? await session.serverVersion()) ?? draft.typeTitle) + " · " + (await session.tlsStatus).text
             await session.close()
             testMessage = (true, tr("연결 성공 · %@", "\(version)"))
             app.log(.success, .connection, tr("%@ 연결 테스트 성공 · %@", "\(draft.name)", "\(version)"))
