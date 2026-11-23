@@ -74,7 +74,8 @@ struct TLSDatabaseIntegrationTests {
     // MARK: - SQL Server (F9-3: 인증서를 미리 받아 판정 → FreeTDS 도 ca file 로 다시 확인)
 
     func mssql(pin: String? = nil, verify: Bool = true) -> (ConnectionProfile, String)? {
-        guard var (p, pw) = MultiDB.profile(.mssql, database: "master") else { return nil }
+        guard let (base, pw) = MultiDB.profile(.mssql, database: "master") else { return nil }
+        var p = base
         p.useTLS = true
         p.tlsVerify = verify
         p.tlsPinSHA256 = pin
@@ -134,10 +135,11 @@ struct TLSDatabaseIntegrationTests {
         let ok = try await MSSQLDriver.open(endpoint, ip: "127.0.0.1", check: MSSQLTLS.FreeTDSCheck(caPEM: chainPEM, hostname: nil))
         await ok.close()
         // 시스템 루트 묶음과 함께 넣어도 OpenSSL 이 읽고 연결 (신뢰된 인증서 경로와 같은 모양), 인증서의 이름으로 이름 확인 통과
-        let cn = TLSVerify.certInfo(der: try #require(probe.chain.first)).subject
-            .components(separatedBy: ", ").first { $0.hasPrefix("CN=") }.map { String($0.dropFirst(3)) }
+        let leaf = try #require(probe.chain.first)
+        let cn: String = try #require(TLSVerify.certInfo(der: leaf).subject
+            .components(separatedBy: ", ").first { $0.hasPrefix("CN=") }.map { String($0.dropFirst(3)) })
         let named = try await MSSQLDriver.open(endpoint, ip: "127.0.0.1",
-                                               check: MSSQLTLS.FreeTDSCheck(caPEM: MSSQLTLS.systemRootsPEM + chainPEM, hostname: try #require(cn)))
+                                               check: MSSQLTLS.FreeTDSCheck(caPEM: MSSQLTLS.systemRootsPEM + chainPEM, hostname: cn))
         await named.close()
 
         // 시스템 루트만 → 자체 서명이라 거부
