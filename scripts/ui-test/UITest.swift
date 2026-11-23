@@ -1091,6 +1091,96 @@ scenario("tableNote") {
     check("메모를 지우면 📝 사라짐", app.gone(4, { !$0.modal && $0.label.contains("테이블 메모 있음") }))
 }
 
+/// 사이드바 접속 줄 (이름 그대로)
+func connRow(_ name: String) -> Node? { app.find(2, { !$0.modal && $0.role == "AXStaticText" && $0.value == name }) }
+
+/// 마우스로 끌어다 놓기 (조금씩 움직여 끌기로 인식되게)
+func drag(_ from: Node, to: Node) {
+    let a = CGPoint(x: from.frame.midX, y: from.frame.midY), b = CGPoint(x: to.frame.midX, y: to.frame.midY)
+    post(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: a, mouseButton: .left))
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left))
+    Thread.sleep(forTimeInterval: 0.3)
+    for i in 1...20 {
+        let t = CGFloat(i) / 20
+        post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged,
+                     mouseCursorPosition: CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t), mouseButton: .left))
+        Thread.sleep(forTimeInterval: 0.03)
+    }
+    Thread.sleep(forTimeInterval: 0.3)
+    post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left))
+    Thread.sleep(forTimeInterval: 0.8)
+}
+
+scenario("connList") {
+    // 접속 목록 찾기 · 정렬 · 순서 바꾸기 (#173). 테스트 접속: UI MySQL(그룹 없음), UI 그룹 > UI MySQL Prod, UI 닫힌 포트
+    guard let field = app.find(3, { !$0.modal && $0.role == "AXTextField" && $0.label.contains("접속 찾기") }) else {
+        throw Abort(message: "접속 찾기 칸이 없어요")
+    }
+    click(field)
+    paste("닫힌")
+    check("찾기: '닫힌' → UI 닫힌 포트만", connRow("UI 닫힌 포트") != nil && app.gone(2, { $0.role == "AXStaticText" && $0.value == "UI MySQL Prod" }))
+    check("찾기: 개수 '4개 중 1개'", app.find(2, hasText("4개 중 1개")) != nil)
+    key("escape")
+    check("esc 로 지우면 다시 다 보임", connRow("UI MySQL Prod") != nil && connRow("UI MySQL") != nil)
+
+    // 그룹 우클릭 > 순서 바꾸기 > 맨 위로 → 'UI 둘째 그룹' 이 'UI 그룹' 위로
+    // 그룹 줄은 "그룹 이름, 접속 수" 로 읽히는 머리글
+    func groupLabel(_ g: String) -> Node? { app.find(2, { !$0.modal && $0.role == "AXHeading" && $0.label.hasPrefix(g + ",") }) }
+    if let g2 = groupLabel("UI 둘째 그룹"), let g1 = groupLabel("UI 그룹") {
+        check("처음: UI 그룹이 UI 둘째 그룹 위", g1.frame.minY < g2.frame.minY)
+        click(g2, right: true)
+        if let sub = findMenuItem(3, { $0.label.contains("순서 바꾸기") }) { press(sub) }
+        if let top = findMenuItem(3, { $0.label.components(separatedBy: " | ").first == "맨 위로" }) {
+            press(top)
+            Thread.sleep(forTimeInterval: 0.6)
+            if let a = groupLabel("UI 둘째 그룹"), let b = groupLabel("UI 그룹") {
+                check("그룹 맨 위로: UI 둘째 그룹이 UI 그룹 위로", a.frame.minY < b.frame.minY)
+            } else { check("그룹 맨 위로 뒤 그룹 줄", false) }
+        } else { check("그룹 우클릭 > 순서 바꾸기 > 맨 위로", false); key("escape"); key("escape") }
+    } else { check("테스트 그룹 두 개", false) }
+
+    // 우클릭 > 순서 바꾸기 > 맨 위로 (같은 그룹 안: 닫힌 포트가 Prod 위로)
+    guard let closed = connRow("UI 닫힌 포트") else { throw Abort(message: "UI 닫힌 포트 없음") }
+    click(closed, right: true)
+    if let sub = findMenuItem(3, { $0.label.contains("순서 바꾸기") }) { press(sub) }
+    guard let top = findMenuItem(3, { $0.label.components(separatedBy: " | ").first == "맨 위로" }) else {
+        check("우클릭 > 순서 바꾸기 > 맨 위로", false); key("escape"); key("escape"); return
+    }
+    press(top)
+    Thread.sleep(forTimeInterval: 0.6)
+    if let c = connRow("UI 닫힌 포트"), let p = connRow("UI MySQL Prod") {
+        check("맨 위로: 그룹 안에서 UI 닫힌 포트가 UI MySQL Prod 위로", c.frame.minY < p.frame.minY)
+    } else { check("맨 위로 뒤 접속 줄", false) }
+
+    // 정렬 메뉴 > 이름순 → 다시 Prod 가 위 (M < 닫)
+    let isSortMenu: (Node) -> Bool = { !$0.modal && $0.label.contains("접속 목록 정렬") && ["AXMenuButton", "AXPopUpButton", "AXButton"].contains($0.role) }
+    guard let sortButton = app.find(3, isSortMenu) else {
+        check("정렬 메뉴 버튼", false); return
+    }
+    check("정렬 메뉴 처음 값 '직접 정한 순'", sortButton.text.contains("직접 정한 순"), sortButton.text)
+    // 머리글 전체가 단추 범위로 잡혀 오른쪽 끝(보이는 글자)을 실제로 누른다
+    clickAt(CGPoint(x: sortButton.frame.maxX - 15, y: sortButton.frame.midY))
+    Thread.sleep(forTimeInterval: 0.6)
+    // 메뉴 항목이 손쉬운 사용 목록에 잡히지 않아 위치로 누른다: 단추 바로 아래 두 번째 줄 = 이름순
+    clickAt(CGPoint(x: sortButton.frame.maxX - 60, y: sortButton.frame.midY + 55))
+    Thread.sleep(forTimeInterval: 0.6)
+    // 이름순이면 그룹도 이름순: 앞에서 맨 위로 올린 'UI 둘째 그룹' 이 다시 'UI 그룹' 아래로
+    if let a = groupLabel("UI 그룹"), let b = groupLabel("UI 둘째 그룹") {
+        check("이름순: 그룹도 이름순 (UI 그룹이 UI 둘째 그룹 위)", a.frame.minY < b.frame.minY)
+    } else { check("이름순 뒤 그룹 줄", false) }
+    check("정렬 메뉴 글자 '이름순'", app.find(2, { isSortMenu($0) && $0.value.contains("이름순") }) != nil)
+
+    // 끌어다 놓기: UI 둘째 그룹 접속을 UI 닫힌 포트 위에 놓으면 UI 그룹으로 → 정렬은 '직접 정한 순' 으로
+    // (연결된 접속을 끄는 경우는 아직 자동 테스트에서 끌기가 시작되지 않아 따로 확인)
+    if let mover = connRow("UI 둘째 그룹 접속"), let target = connRow("UI 닫힌 포트") {
+        drag(mover, to: target)
+        // UI 그룹: Prod · 닫힌 포트 · 둘째 그룹 접속 → 머리글 "UI 그룹, 3"
+        check("끌어다 놓기: 다른 그룹 접속이 UI 그룹으로 (그룹 3개)", groupLabel("UI 그룹")?.label.hasPrefix("UI 그룹, 3") == true,
+              groupLabel("UI 그룹")?.label ?? "그룹 줄 없음")
+        check("끌어다 놓은 뒤 정렬이 '직접 정한 순'", app.find(2, { isSortMenu($0) && $0.value.contains("직접 정한 순") }) != nil)
+    } else { check("끌어다 놓기 준비", false) }
+}
+
 // 디버그: uitest <pid> --dump  → 지금 화면 요소 목록
 if CommandLine.arguments.dropFirst(2).first == "--dump" {
     for n in app.snapshot() where !["AXRow", "AXCell", "AXColumn", "AXScrollBar", "AXValueIndicator"].contains(n.role)

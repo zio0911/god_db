@@ -520,6 +520,7 @@ final class AppState {
                 profiles[i].redshift = s.dialect.isRedshift
                 persist()
             }
+            noteConnected(id)
             log(.success, .connection, tr("%@ 연결됨", "\(profile.name)") + (profile.readOnly ? tr(" (읽기전용)") : "")
                 + (connectedCount > 1 ? tr(" · 열린 접속 %@개", "\(connectedCount)") : ""),
                 audit: AuditRecord(.connect, target: profile.name, result: profile.readOnly ? "성공 (읽기전용)" : "성공",

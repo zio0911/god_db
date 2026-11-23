@@ -702,6 +702,7 @@ extension AppState {
             await ws.loadTopology()
             redisWorkspaces[id] = ws
             updateConnection(id) { $0.state = .connected }
+            noteConnected(id)
             let version = (try? await s.info("server").first?.1.first { $0.0 == "redis_version" }?.1) ?? ""
             log(.success, .connection, tr("%@ 연결됨", "\(profile.name)") + " · Redis \(version) · db\(await s.db)"
                 + (ws.topologyText.isEmpty ? "" : " · " + ws.topologyText)

@@ -84,6 +84,8 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     /// Amazon Redshift (kind 는 .postgres — PostgreSQL 프로토콜로 연결). 아이콘 · 종류 표시용,
     /// 실제 Redshift 여부는 연결할 때 서버 버전으로 다시 알아낸다.
     public var redshift: Bool = false
+    /// 마지막으로 연결에 성공한 시각 (사이드바 "최근 연결순" 정렬)
+    public var lastConnectedAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -134,6 +136,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         tlsVerify = try c.decodeIfPresent(Bool.self, forKey: .tlsVerify) ?? true
         tlsPinSHA256 = try c.decodeIfPresent(String.self, forKey: .tlsPinSHA256)
         redshift = try c.decodeIfPresent(Bool.self, forKey: .redshift) ?? false
+        lastConnectedAt = try c.decodeIfPresent(Date.self, forKey: .lastConnectedAt)
     }
 }
 
