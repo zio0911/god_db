@@ -968,9 +968,13 @@ scenario("jsonView") {
 /// 결과 표 칸을 더블클릭해 그 자리 입력란을 연다 (먼저 한 번 눌러 행을 고른다 — 오른쪽 패널이 열리며 칸 위치가 바뀌므로)
 func openInlineEditor(_ value: String) -> Node? {
     // 고르지 않은 행을 바로 더블클릭 (실제로 쓰는 방식 — 첫 클릭에 행 편집 패널이 열리며 표가 다시 배치된다)
-    guard let c = app.find(5, cell(value)) else { return nil }
-    click(c, double: true)
-    return app.find(3, { $0.role == "AXTextField" && $0.label.contains("칸 편집") })
+    // 적용 직후 표를 다시 그리는 중이면 더블클릭이 빗나갈 수 있어 한 번 더 (칸 위치를 다시 찾는다)
+    for _ in 0..<2 {
+        guard let c = app.find(5, cell(value)) else { return nil }
+        click(c, double: true)
+        if let f = app.find(3, { $0.role == "AXTextField" && $0.label.contains("칸 편집") }) { return f }
+    }
+    return nil
 }
 
 /// 편집 막대 [적용…] → 확인 창 [적용]
@@ -1056,32 +1060,70 @@ if CommandLine.arguments.dropFirst(2).first == "--click", let t = CommandLine.ar
     if let f = attr(app.ax, kAXFocusedUIElementAttribute) { let n = node(f as! AXUIElement); print("focused:", n.role, n.value.prefix(40)) }
     exit(0)
 }
+/// 열기 창에서 파일 고르기 (⌘⇧G 로 경로)
+func chooseInOpenPanel(_ path: String) {
+    Thread.sleep(forTimeInterval: 1.2)
+    key("g", [cmd, shift])
+    Thread.sleep(forTimeInterval: 0.6)
+    paste(path)
+    key("return")
+    Thread.sleep(forTimeInterval: 0.8)
+    key("return")
+    Thread.sleep(forTimeInterval: 0.8)
+}
+
+/// 저장 창에서 폴더 · 이름을 넣고 저장
+func saveInPanel(_ path: String) {
+    let url = URL(fileURLWithPath: path)
+    try? FileManager.default.removeItem(at: url)
+    Thread.sleep(forTimeInterval: 1.2)
+    key("g", [cmd, shift])
+    Thread.sleep(forTimeInterval: 0.6)
+    paste(url.deletingLastPathComponent().path)
+    key("return")
+    Thread.sleep(forTimeInterval: 0.8)
+    key("a", cmd)
+    paste(url.lastPathComponent)
+    key("return")
+    Thread.sleep(forTimeInterval: 1.0)
+}
+
+func fileText(_ path: String, wait: Double = 4) -> String {
+    let end = Date().addingTimeInterval(wait)
+    repeat {
+        if let t = try? String(contentsOfFile: path, encoding: .utf8) { return t }
+        Thread.sleep(forTimeInterval: 0.3)
+    } while Date() < end
+    return ""
+}
+
+let uiWork = ProcessInfo.processInfo.environment["GODDB_UI_WORK"] ?? NSTemporaryDirectory()
+
+/// 사이드바 DB 머리 우클릭 > 테이블 설명 (AI 참고)… ('DB' 글자는 접근성에 안 보여서 DB 고르기 팝업 왼쪽을 누른다)
+@discardableResult
+func openDescriptions(_ db: String = "shop") -> Bool {
+    guard let picker = app.find(10, { !$0.modal && $0.role == "AXPopUpButton" && $0.value == db }) else { return false }
+    clickAt(CGPoint(x: picker.frame.minX - 14, y: picker.frame.midY), right: true)
+    guard let item = findMenuItem(3, { $0.label.contains("테이블 설명 (AI 참고)") }) else { key("escape"); return false }
+    press(item)
+    return app.find(4, { $0.modal && $0.text.contains("Claude 로 만들기") }) != nil
+}
+
+func sheetButton(_ title: String) -> Node? {
+    app.find(3, { $0.modal && $0.role == "AXButton" && $0.label.components(separatedBy: " | ").contains(title) })
+}
+
 scenario("tableDescriptions") {
     // 테이블 설명 (#178, AI 없이): 사이드바 DB 머리 우클릭 > 테이블 설명 (AI 참고)… → JSON 가져오기 → 맞춰 보기
     // → AI 어시스턴트 데이터 찾기가 설명의 찾는 말로 바로 답 (AI 호출 없음)
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
-    // "DB" 글자는 접근성에 안 보일 수 있어서, 옆의 DB 고르기 팝업(값 shop)을 찾아 그 왼쪽 글자 자리를 실제로 우클릭한다
-    guard let picker = app.find(5, { !$0.modal && $0.role == "AXPopUpButton" && $0.value == "shop" }) else {
-        throw Abort(message: "사이드바 DB 고르기(shop)가 없어요")
-    }
-    clickAt(CGPoint(x: picker.frame.minX - 14, y: picker.frame.midY), right: true)
-    guard let item = findMenuItem(3, { $0.label.contains("테이블 설명 (AI 참고)") }) else {
-        check("DB 머리 우클릭 '테이블 설명 (AI 참고)…'", false); key("escape"); return
-    }
-    press(item)
+    guard openDescriptions() else { check("DB 머리 우클릭 > 테이블 설명 (AI 참고)… 창", false); return }
     check("테이블 설명 창 열기 (설명 없음)", app.find(4, { $0.modal && $0.text.contains("아직 테이블 설명이 없어요") }) != nil)
     guard let importButton = app.find(2, { $0.modal && $0.role == "AXButton" && $0.text.contains("JSON 가져오기") }) else {
         check("[JSON 가져오기…] 버튼", false); closeLeftovers(); return
     }
     press(importButton)
-    Thread.sleep(forTimeInterval: 1.2)
-    // 열기 창: ⌘⇧G 로 경로를 넣고 연다
-    key("g", [cmd, shift])
-    Thread.sleep(forTimeInterval: 0.6)
-    paste(ProcessInfo.processInfo.environment["GODDB_UI_DESC_JSON"] ?? "")
-    key("return")
-    Thread.sleep(forTimeInterval: 0.8)
-    key("return")
+    chooseInOpenPanel(uiWork + "/table-descriptions.json")
     check("JSON 가져오기 → 테이블 2개 · 코드 값 2개",
           app.find(5, { $0.modal && $0.text.contains("테이블 2개 · 컬럼 2개 · 코드 값 2개") }) != nil)
     check("DB 와 맞춰 보기: 없는 테이블 표시",
@@ -1130,6 +1172,175 @@ scenario("assistantInterrupt") {
     check("새 글에 대한 답이 시작됨 (멈춤 버튼 그대로)", app.find(5, stop) != nil)
     // 두 번째 답이 끝나기를 기다리지 않고 멈춘다
     if let s = app.find(2, stop) { press(s) }
+}
+
+scenario("assistantInterruptMore") {
+    // #179: 답하는 중 [새 대화] 를 눌러도 앱이 꺼지지 않음 · 답하는 중 데이터 찾기를 보내면 지금 답은 멈추고 찾기가 먼저
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
+    click(ai)
+    defer { click(ai) }
+    let stop = { (n: Node) in n.role == "AXButton" && n.label.components(separatedBy: " | ").contains("취소") && !n.modal }
+    func field() -> Node? { app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role) && $0.label.contains("질문을 입력") }) }
+    func newChat() { if let b = app.find(2, { $0.role == "AXButton" && $0.label.contains("새 대화") }) { press(b) } }
+    newChat()
+    guard let f = field() else { check("입력칸", false); return }
+    click(f)
+    paste("이 DB 의 테이블을 하나씩 아주 자세히 설명하고, 각 테이블마다 예시 SQL 을 세 개씩 써 줘")
+    key("return")
+    check("[새 대화] 전: 답하는 중", app.find(15, stop) != nil)
+    newChat()
+    Thread.sleep(forTimeInterval: 4)
+    check("답하는 중 [새 대화] → 앱이 꺼지지 않음", kill(app.pid, 0) == 0)
+    check("새 대화는 비어 있고 멈춤 버튼 없음", app.find(1, stop) == nil && app.find(1, hasText("이 DB 의 테이블을 하나씩")) == nil)
+
+    guard let f2 = field() else { check("입력칸 (새 대화)", false); return }
+    click(f2)
+    paste("이 DB 의 핵심 테이블과 업무 도메인을 아주 자세히 요약해 줘")
+    key("return")
+    check("데이터 찾기 전: 답하는 중", app.find(15, stop) != nil)
+    click(f2)
+    paste("회원 전화번호 어디 있어?")
+    key("return")
+    check("답하는 중 데이터 찾기 → 첫 답 '(취소했어요)'", app.find(8, hasText("(취소했어요)")) != nil)
+    check("답하는 중 데이터 찾기 → 찾기 결과 tb_mbr_info.mbr_tel_no",
+          app.find(150, { $0.role == "AXStaticText" && $0.text.contains("tb_mbr_info.mbr_tel_no") }) != nil)
+    if let s = app.find(1, stop) { press(s) }
+}
+
+scenario("tableDescriptionsMore") {
+    // #181: 테이블 메모 메뉴 없음 · 요청문 복사 · 빈 양식 저장 · 내보내기 · 깨진 JSON · 다른 DB 확인 · [아니에요] · [맞아요] · 지우기 · 예전 메모 옮기기
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    clearFilter()
+    if let t = sidebarTable("ui_schools") {
+        click(t, right: true)
+        Thread.sleep(forTimeInterval: 0.5)
+        let items = contextMenuItems()
+        check("테이블 우클릭에 '테이블 메모…' 없음", !items.isEmpty && !items.contains { $0.label.contains("테이블 메모") },
+              items.map(\.label).joined(separator: ", "))
+        key("escape")
+    } else { check("사이드바 ui_schools", false) }
+    clearSidebarSearch()
+
+    guard openDescriptions() else { check("테이블 설명 창 열기", false); return }
+    check("앞 시나리오에서 가져온 설명 (테이블 2개)", app.find(3, { $0.modal && $0.text.contains("테이블 2개 · 컬럼 2개") }) != nil)
+
+    // 분석 요청문 복사
+    setClipboard("")
+    if let copy = sheetButton("복사") { press(copy) }
+    let prompt = clipboard()
+    check("요청문 복사: 양식 이름 · DB 이름", prompt.contains("goddb-table-descriptions") && prompt.contains("`shop`"), String(prompt.prefix(60)))
+
+    // 빈 양식: 이름 · 코멘트 · 지금 설명은 들어가고 데이터 값은 없음
+    let skeletonPath = uiWork + "/ui-skeleton.json"
+    if let b = sheetButton("양식 저장…") { press(b); saveInPanel(skeletonPath) }
+    let skeleton = fileText(skeletonPath)
+    check("빈 양식 저장: 테이블 · 코멘트(고객 이름) · 기존 title(회원 정보)",
+          skeleton.contains("\"ui_customers\"") && skeleton.contains("고객 이름") && skeleton.contains("회원 정보"), String(skeleton.prefix(80)))
+    check("빈 양식에 데이터 값 없음 (silver · bronze · 한빛초등학교)",
+          !skeleton.isEmpty && !skeleton.contains("silver") && !skeleton.contains("bronze") && !skeleton.contains("한빛초등학교"))
+
+    // 내보내기
+    let exportPath = uiWork + "/ui-export.json"
+    if let b = sheetButton("내보내기…") { press(b); saveInPanel(exportPath) }
+    let exported = fileText(exportPath)
+    check("내보내기: 가져온 설명 그대로 (회원 정보 · 연락처 · 코드 값)",
+          exported.contains("회원 정보") && exported.contains("연락처") && exported.contains("\"kim\""), String(exported.prefix(80)))
+
+    // 깨진 JSON: 어디가 틀렸는지
+    if let b = sheetButton("JSON 가져오기…") { press(b); chooseInOpenPanel(uiWork + "/ui-bad.json") }
+    check("깨진 양식 → 'tables[0].columns[0].values' 위치 안내",
+          app.find(4, { $0.modal && $0.text.contains("양식이 맞지 않아요: tables[0].columns[0].values") }) != nil)
+    check("깨진 양식은 넣지 않음 (그대로 테이블 2개)", app.find(2, { $0.modal && $0.text.contains("테이블 2개 · 컬럼 2개") }) != nil)
+
+    // 다른 DB 이름 → 확인 창 → 취소
+    if let b = sheetButton("JSON 가져오기…") { press(b); chooseInOpenPanel(uiWork + "/ui-other-db.json") }
+    check("다른 DB 의 JSON → 넣을지 확인", app.find(4, hasText("‘other_db’ DB 용이에요")) != nil)
+    answer("취소")
+    check("취소하면 그대로 (테이블 2개)", app.find(3, { $0.modal && $0.text.contains("테이블 2개 · 컬럼 2개") }) != nil)
+    if !answer("닫기") { key("escape") }
+
+    // [아니에요] (설명에서 찾은 답) → 설명에서 그 말이 빠짐
+    guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
+    click(ai)
+    func find(_ q: String, expect: [String], timeout: Double) -> Bool {
+        if let finder = app.find(2, { $0.role == "AXButton" && $0.text.contains("데이터 위치 찾기") }) { press(finder) }
+        guard let f = app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role)
+            && ($0.label.contains("찾을 데이터") || $0.label.contains("질문을 입력")) }) else { return false }
+        click(f)
+        paste(q)
+        key("return")
+        return app.find(timeout, { n in n.role == "AXStaticText" && expect.contains { n.text.contains($0) } }) != nil
+    }
+    // 같은 대화에 앞 카드가 남아 있을 수 있어 가장 아래(최신) 카드의 버튼을 누른다
+    func cardButton(_ title: String) -> Node? {
+        _ = app.find(3, { $0.role == "AXButton" && $0.label.components(separatedBy: " | ").contains(title) })
+        return app.snapshot().filter { $0.role == "AXButton" && $0.label.components(separatedBy: " | ").contains(title) }
+            .max { $0.frame.minY < $1.frame.minY }
+    }
+    if let b = app.find(2, { $0.role == "AXButton" && $0.label.contains("새 대화") }) { press(b) }
+    check("데이터 찾기 '연락처' → 설명에서 바로", find("연락처 어디 있어?", expect: ["tb_mbr_info.mbr_tel_no"], timeout: 8))
+    if let no = cardButton("아니에요") { press(no) } else { check("[아니에요] 버튼", false) }
+    // [맞아요] (AI 답) → 설명에 찾는 말이 더해짐
+    check("데이터 찾기 '학년' → AI 답",
+          find("학년 정보는 어디 있어?", expect: ["tb_stdnt_info.schyr", "ui_students.grade_level"], timeout: 150))
+    if let yes = cardButton("맞아요") { press(yes) } else { check("[맞아요] 버튼", false) }
+    click(ai)
+
+    guard openDescriptions() else { check("테이블 설명 창 다시 열기", false); return }
+    let export2 = uiWork + "/ui-export2.json"
+    if let b = sheetButton("내보내기…") { press(b); saveInPanel(export2) }
+    let after = fileText(export2)
+    check("[아니에요] → 설명에서 '연락처' 빠짐 (title 은 그대로)", !after.isEmpty && !after.contains("연락처") && after.contains("회원 전화번호"))
+    check("[맞아요] → 설명에 '학년' 이 찾는 말로 들어감", after.contains("학년"), String(after.prefix(120)))
+
+    // 지우기 (확인)
+    let clearButton = sheetButton("지우기")
+    if let b = clearButton { press(b) }
+    check("지우기 확인 창", app.find(3, hasText("이 DB 의 테이블 설명을 지울까요?")) != nil)
+    // 창 안의 [지우기] 와 이름이 같아서, 위치가 다른 (확인 창의) 버튼을 누른다
+    if let confirm = app.snapshot().first(where: { $0.modal && button("지우기")($0) && $0.frame != clearButton?.frame }) {
+        press(confirm)
+    } else { check("확인 창의 [지우기]", false) }
+    check("지운 뒤 '아직 테이블 설명이 없어요'", app.find(4, { $0.modal && $0.text.contains("아직 테이블 설명이 없어요") }) != nil)
+    if !answer("닫기") { key("escape") }
+
+    // 예전 테이블 메모(table-notes.json, 운영 접속)는 확인된 것만 옮겨져 있다
+    guard let prod = app.find(3, role("AXStaticText", "UI MySQL Prod")) else { check("운영 테스트 접속", false); return }
+    click(prod)
+    _ = app.find(10, hasText("운영 접속 ·"))
+    guard openDescriptions() else { check("운영 접속 테이블 설명 창", false); return }
+    check("예전 메모 옮기기: 확인된 메모 1개 → 테이블 1개 · 컬럼 1개",
+          app.find(4, { $0.modal && $0.text.contains("테이블 1개 · 컬럼 1개 · 코드 값 0개") }) != nil)
+    check("옮긴 메모 테이블 ui_schools 가 목록에", app.find(2, { $0.modal && $0.role == "AXStaticText" && $0.value == "ui_schools" }) != nil)
+    check("미확인(AI) 메모 ui_students 는 옮기지 않음", app.find(1, { $0.modal && $0.role == "AXStaticText" && $0.value == "ui_students" }) == nil)
+    if !answer("닫기") { key("escape") }
+}
+
+scenario("pgProcedure") {
+    // #176: PostgreSQL 프로시저 정의가 본문만이 아니라 CREATE OR REPLACE PROCEDURE 전체 (함수도 그대로)
+    guard let row = app.find(5, { !$0.modal && $0.role == "AXStaticText" && $0.value == "UI PostgreSQL" }) else {
+        throw Abort(message: "UI PostgreSQL 접속이 없어요")
+    }
+    click(row)
+    guard app.find(30, { $0.role == "AXPopUpButton" && $0.value == "public" }) != nil else { check("[PG] 연결", false); return }
+    func open(_ name: String) -> String {
+        // 테이블이 많으면 루틴 줄은 화면 밖이라 그려지지 않는다 → 사이드바 검색(루틴도 거른다)으로 찾는다
+        guard let r = sidebarTable(name) else { return "(사이드바에 \(name) 없음)" }
+        click(r, double: true)
+        let end = Date().addingTimeInterval(6)
+        repeat {
+            let t = editorText()
+            if t.contains(name) && t.contains("CREATE") { return t }
+            Thread.sleep(forTimeInterval: 0.3)
+        } while Date() < end
+        return editorText()
+    }
+    let proc = open("ui_touch")
+    check("[PG] 프로시저 정의 = CREATE OR REPLACE PROCEDURE 전체", proc.contains("CREATE OR REPLACE PROCEDURE public.ui_touch"), String(proc.prefix(80)))
+    let fn = open("ui_add")
+    check("[PG] 함수 정의 = CREATE OR REPLACE FUNCTION 전체", fn.contains("CREATE OR REPLACE FUNCTION public.ui_add"), String(fn.prefix(80)))
+    clearSidebarSearch()
 }
 
 /// 사이드바 접속 줄 (이름 그대로)

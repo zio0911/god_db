@@ -112,6 +112,10 @@ CREATE TABLE shop_cmp.ui_customers (LIKE public.ui_customers INCLUDING ALL);
 CREATE TABLE shop_cmp.ui_orders (LIKE public.ui_orders INCLUDING ALL);
 ALTER TABLE shop_cmp.ui_orders DROP COLUMN note;
 COMMENT ON COLUMN shop_cmp.ui_customers.name IS '이름';
+DROP PROCEDURE IF EXISTS ui_touch(INT);
+DROP FUNCTION IF EXISTS ui_add(INT, INT);
+CREATE PROCEDURE ui_touch(p INT) LANGUAGE plpgsql AS $$ BEGIN PERFORM p; END $$;
+CREATE FUNCTION ui_add(a INT, b INT) RETURNS INT LANGUAGE sql AS $$ SELECT a + b $$;
 SQL
 # SQL Server: 테스트 전용 로그인 uitest (비밀번호 = 테스트 비밀번호) + shop · shop_cmp DB
 mssql_sql <<SQL
@@ -140,6 +144,16 @@ CREATE TABLE ui_orders (id INT PRIMARY KEY, customer NVARCHAR(50), amount INT,
 GO
 SQL
 
+# 예전 테이블 메모 (운영 접속 A2): 확인된 것 1개 + AI 미확인 1개 → 확인된 것만 테이블 설명으로 옮겨져야 한다
+cat > "$DATA/table-notes.json" <<'JSON'
+{ "version": 1, "notes": [
+ { "id": "11111111-1111-4111-8111-111111111111", "profileID": "00000000-0000-4000-8000-0000000000A2", "database": "shop",
+   "table": "ui_schools", "columns": ["name"], "terms": ["학교명"], "memo": "학교 이름", "source": "user", "confirmed": true,
+   "createdAt": "2026-11-01T00:00:00Z", "updatedAt": "2026-11-01T00:00:00Z" },
+ { "id": "22222222-2222-4222-8222-222222222222", "profileID": "00000000-0000-4000-8000-0000000000A2", "database": "shop",
+   "table": "ui_students", "columns": [], "terms": ["학생"], "memo": "", "source": "ai", "confirmed": false,
+   "createdAt": "2026-11-01T00:00:00Z", "updatedAt": "2026-11-01T00:00:00Z" } ] }
+JSON
 cat > "$DATA/profiles.json" <<JSON
 [
  {"id":"00000000-0000-4000-8000-0000000000A1","kind":"mysql","name":"UI MySQL","host":"127.0.0.1","port":$MYSQL_PORT,
@@ -158,7 +172,7 @@ cat > "$DATA/profiles.json" <<JSON
 JSON
 
 # AI 데이터 찾기 시나리오는 이 PC 의 Ollama 가 필요하다. 꺼져 있으면 켜고 응답할 때까지 기다린다.
-if [[ ${#SCENARIOS[@]} -eq 0 || " ${SCENARIOS[*]} " == *" dataFinder "* || " ${SCENARIOS[*]} " == *" assistantInterrupt "* ]]; then
+if [[ ${#SCENARIOS[@]} -eq 0 || " ${SCENARIOS[*]} " == *" dataFinder "* || " ${SCENARIOS[*]} " == *" assistantInterrupt"* || " ${SCENARIOS[*]} " == *" tableDescriptionsMore "* ]]; then
   if ! curl -s -m 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
     echo "▶ Ollama 켜기"
     if [[ -d /Applications/Ollama.app ]]; then
@@ -184,7 +198,10 @@ cat > "$WORK/table-descriptions.json" <<'JSON'
                    { "name": "mbr_nm", "values": { "kim": "김", "lee": "이" } } ] },
     { "name": "no_such_table" } ] }
 JSON
-export GODDB_UI_DESC_JSON="$WORK/table-descriptions.json"
+# 깨진 양식 · 다른 DB 용 JSON (tableDescriptionsMore)
+echo '{ "tables": [ { "name": "t", "columns": [ { "name": "c", "values": ["P"] } ] } ] }' > "$WORK/ui-bad.json"
+echo '{ "format": "goddb-table-descriptions", "database": "other_db", "tables": [ { "name": "x" } ] }' > "$WORK/ui-other-db.json"
+export GODDB_UI_WORK="$WORK"
 
 echo "▶ 앱 실행"
 GODDB_UI_TEST=1 GODDB_DATA_DIR="$DATA" GODDB_UI_TEST_PASSWORD=$MYSQL_PASSWORD \
@@ -203,7 +220,7 @@ if [[ $KEEP == 0 ]]; then
   kill $APP_PID 2>/dev/null || true
   docker exec goddb-mysql-test mysql -uroot -p$MYSQL_PASSWORD shop \
     -e "DROP TABLE IF EXISTS ui_orders, ui_customers, ui_students, ui_schools, ui_points, ui_members, tb_mbr_info, tb_stdnt_info; DROP DATABASE IF EXISTS shop_cmp" 2>/dev/null || true
-  echo "DROP SCHEMA IF EXISTS shop_cmp CASCADE; DROP TABLE IF EXISTS ui_orders, ui_customers;" | pg_sql 2>/dev/null || true
+  echo "DROP SCHEMA IF EXISTS shop_cmp CASCADE; DROP TABLE IF EXISTS ui_orders, ui_customers; DROP PROCEDURE IF EXISTS ui_touch(INT); DROP FUNCTION IF EXISTS ui_add(INT, INT);" | pg_sql 2>/dev/null || true
   printf '%s\n' "IF DB_ID('shop_cmp') IS NOT NULL BEGIN ALTER DATABASE shop_cmp SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE shop_cmp; END" \
     "USE shop; DROP TABLE IF EXISTS ui_orders; DROP TABLE IF EXISTS ui_customers;" | mssql_sql 2>/dev/null || true
 fi
