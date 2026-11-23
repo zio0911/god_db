@@ -27,10 +27,17 @@ struct SidebarView: View {
                             Button(tr("접속 정보 가져오기…")) { app.chooseImportFile() }
                             Divider()
                             Button(tr("DataGrip 접속 정보 붙여넣기")) { app.pasteDataGrip() }
+                            Button(tr("DBeaver 접속 정보 가져오기…")) { app.chooseDBeaverFile() }
                         } label: {
-                            Image(systemName: "arrow.up.arrow.down.circle")
+                            // 아이콘만으로는 작아서 잘 안 보여 글자를 함께 쓴다 ("새 접속"과 같은 모양)
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.up.arrow.down")
+                                Text(tr("가져오기 · 내보내기"))
+                            }
                         }
-                        .menuStyle(.borderlessButton)
+                        .menuStyle(.button)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help(tr("접속 정보 내보내기 / 가져오기"))

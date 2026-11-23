@@ -24,7 +24,7 @@ SwiftUI + [mysql-nio](https://github.com/vapor/mysql-nio) + [postgres-nio](https
 | 테이블 수정 | 컬럼/인덱스/코멘트 편집 → ALTER 미리보기 → 확인 후 실행 |
 | ER 다이어그램 · 모델링 | 스키마 / 선택 테이블 ER 다이어그램, 모델에서 DDL 만들기 · 역공학 |
 | Redis | 키 브라우저(SCAN), 타입별 값 편집, 콘솔, Pub/Sub, Streams(소비자 그룹·PEL·실시간), INFO |
-| 접속 공유 | 접속 정보 내보내기/가져오기(비밀번호 암호화 선택), DataGrip ⌘C → ⌘V 붙여넣기 |
+| 접속 공유 | 접속 정보 내보내기/가져오기(비밀번호 암호화 선택), DataGrip ⌘C → ⌘V 붙여넣기, DBeaver `.dbp` · `data-sources.json` 가져오기 |
 | 감사 로그 | 누가 · 언제 · 어느 DB 에 · 무엇을 했는지 `~/Library/Logs/GodDB` 에 날짜별 보관 |
 | 실행 계획 | EXPLAIN + 풀스캔/filesort 등 주의사항, 트리 보기 |
 | 객체 보기 | 인덱스, 뷰, 프로시저, 함수, 트리거 정의 |

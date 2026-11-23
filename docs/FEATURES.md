@@ -531,7 +531,7 @@
 
 ## 24. 접속 정보 내보내기 · 가져오기
 
-- 사이드바 **접속** 목록 아래 ⇅ 메뉴 → "접속 정보 내보내기…" / "접속 정보 가져오기…"
+- 사이드바 **접속** 목록 아래 "⇅ 가져오기 · 내보내기" 메뉴 → "접속 정보 내보내기…" / "접속 정보 가져오기…" / "DataGrip 접속 정보 붙여넣기" / "DBeaver 접속 정보 가져오기…"
 - **내보내기**: 내보낼 접속을 체크 → 저장 위치 선택 → `goddb-connections-YYYYMMDD.json` (권한 600)
   - 기본은 비밀번호를 넣지 않는다. 받는 쪽에서 처음 연결할 때 입력.
   - "비밀번호 포함" 을 켜면 정한 암호(8자 이상)로 잠근다: PBKDF2-SHA256(20만 회) → AES-256-GCM. 암호는 파일에 없으니 따로 전달.
@@ -541,12 +541,20 @@
   - 이름이 다른 접속과 겹치면 ` (2)` 를 붙인다.
   - 비밀번호가 들어 있으면 암호를 넣어 함께 가져온다 (비우면 비밀번호 없이). 접속의 "비밀번호 저장" 설정에 따라 키체인 또는 실행 중에만 보관.
 - 내보내기·가져오기는 상태창과 로그 파일에 남는다.
-- **DataGrip 붙여넣기**: DataGrip 에서 데이터 소스를 고르고 ⌘C → GodDB 사이드바에서 ⌘V (또는 ⇅ 메뉴 > "DataGrip 접속 정보 붙여넣기")
+- **DataGrip 붙여넣기**: DataGrip 에서 데이터 소스를 고르고 ⌘C → GodDB 사이드바에서 ⌘V (또는 가져오기 · 내보내기 메뉴 > "DataGrip 접속 정보 붙여넣기")
   - `jdbc-url` 에서 종류·호스트·포트·DB·TLS 옵션, `user-name`, 이름, uuid(다시 붙여넣으면 같은 접속으로 인식)를 읽는다. 여러 개를 한 번에 붙여넣어도 된다.
   - 지원: MySQL/MariaDB/Aurora, PostgreSQL, SQL Server(`;database=`, `\인스턴스`), Redis. 그 외 DB 는 "지원하지 않음"으로 알려준다.
   - 드라이버 래퍼 주소도 읽는다: `jdbc:aws-wrapper:mysql://`(AWS Advanced JDBC Wrapper), `jdbc:p6spy:`, `jdbc:log4jdbc:`, `jdbc:mysql:replication://`·`loadbalance://`(첫 호스트 사용), jTDS
   - 비밀번호는 DataGrip 이 따로 보관해서 들어 있지 않다 → 처음 연결할 때 입력.
   - SSH 터널을 쓰는 데이터 소스는 SSH 설정 id 만 들어 있다 → SSH 를 켠 상태로 가져오고 바스티온 정보는 접속 편집에서 넣으라고 안내.
+- **DBeaver 가져오기**: 가져오기 · 내보내기 메뉴 > "DBeaver 접속 정보 가져오기…" (또는 "접속 정보 가져오기…" 에서 DBeaver 파일을 골라도 된다)
+  - 받는 파일: DBeaver 파일 > 내보내기 > DBeaver > 프로젝트 로 만든 `.dbp`, 또는 DBeaver 작업 폴더(`~/Library/DBeaverData/workspace6/<프로젝트>/.dbeaver/`)의 `data-sources.json`. 파일 고르기는 작업 폴더가 있으면 거기서 시작한다.
+  - 지원: MySQL · MariaDB · PostgreSQL · SQL Server. 그 외(SQLite 등)는 건너뛰고 "지원하지 않는 접속 N개는 건너뛰었어요" 로 알려준다.
+  - 옮기는 것: 이름, 호스트, 포트, DB, 사용자, 읽기전용, SSL 사용 여부, SSH 터널(호스트 · 포트 · 사용자 · 키 파일), 폴더 → 그룹(`상위/하위`). 주소(URL) 방식 접속은 JDBC 주소에서 읽는다.
+  - 사용자 이름: DBeaver 는 사용자 이름을 비밀번호와 함께 `credentials-config.json` 에 암호화해 둔다 (`.dbp` 안, `data-sources.json` 과 같은 폴더). 이 파일에서 **사용자 이름만** 읽고 비밀번호는 읽자마자 버린다 (저장 · 표시 · 로그 없음). 파일이 없거나 못 읽으면 사용자 이름 없이 가져오고 안내.
+  - 비밀번호는 가져오지 않는다 → 처음 연결할 때 입력.
+  - DBeaver 접속 id 로 GodDB 접속 id 를 정하므로 다시 가져오면 "이미 있음 → 덮어씀" 으로 나온다.
+  - SSH 비밀번호 방식 · 점프 서버 · 프록시는 가져오지 않고 안내만 한다 (GodDB SSH 는 키 파일 / ssh-agent).
 
 ## 25. Redis
 

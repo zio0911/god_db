@@ -10,18 +10,46 @@ struct ImportRequest: Identifiable {
     let bundle: ConnectionBundle
     /// 접속별 안내 (DataGrip 에서 가져올 때)
     var notes: [UUID: [String]] = [:]
+    /// 지원하지 않아 건너뛴 접속 이름 (DBeaver 에서 가져올 때)
+    var skipped: [String] = []
 }
 
 extension AppState {
-    /// 파일을 골라 읽고 가져오기 창을 연다.
+    /// 파일을 골라 읽고 가져오기 창을 연다. GodDB 파일과 DBeaver(.dbp · data-sources.json) 를 모두 받는다.
     func chooseImportFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
+        panel.allowedContentTypes = [.json, UTType(filenameExtension: "dbp") ?? .zip]
         panel.allowsMultipleSelection = false
-        panel.message = tr("GodDB 에서 내보낸 접속 정보 파일(.json)을 고르세요.")
+        panel.message = tr("GodDB 에서 내보낸 접속 정보 파일(.json) 또는 DBeaver 파일(.dbp · data-sources.json)을 고르세요.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        openImportFile(url)
+    }
+
+    /// DBeaver 파일을 골라 가져오기 창을 연다. DBeaver 작업 폴더가 있으면 거기서 시작한다.
+    func chooseDBeaverFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json, UTType(filenameExtension: "dbp") ?? .zip]
+        panel.allowsMultipleSelection = false
+        panel.message = tr("DBeaver 에서 내보낸 프로젝트 파일(.dbp) 또는 작업 폴더의 data-sources.json 을 고르세요.")
+        let workspace = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/DBeaverData/workspace6/General/.dbeaver")
+        if FileManager.default.fileExists(atPath: workspace.path) { panel.directoryURL = workspace }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        openImportFile(url)
+    }
+
+    func openImportFile(_ url: URL) {
         do {
-            let bundle = try ConnectionTransfer.parse(Data(contentsOf: url))
+            let data = try Data(contentsOf: url)
+            if url.pathExtension.lowercased() == "dbp" || DBeaverImport.looksLikeDBeaver(data) {
+                let result = try DBeaverImport.parse(fileAt: url)
+                let bundle = ConnectionBundle(exportedAt: Date(), app: "DBeaver", profiles: result.sources.map(\.profile), passwords: nil)
+                importRequest = ImportRequest(fileName: url.lastPathComponent, bundle: bundle,
+                                              notes: Dictionary(result.sources.map { ($0.profile.id, $0.notes) }, uniquingKeysWith: { a, _ in a }),
+                                              skipped: result.skipped)
+                return
+            }
+            let bundle = try ConnectionTransfer.parse(data)
             importRequest = ImportRequest(fileName: url.lastPathComponent, bundle: bundle)
         } catch {
             logError(error, .app, context: tr("접속 정보 가져오기 실패"))
@@ -203,20 +231,18 @@ struct ImportConnectionsSheet: View {
             Label(tr("접속 정보 가져오기"), systemImage: "square.and.arrow.down").font(.headline)
             Text("\(request.fileName) · \(bundle.app) · \(bundle.exportedAt.formatted(date: .abbreviated, time: .shortened))")
                 .font(.callout).foregroundStyle(.secondary)
+            if !request.skipped.isEmpty {
+                Label(tr("지원하지 않는 접속 %@개는 건너뛰었어요: %@", "\(request.skipped.count)", request.skipped.joined(separator: ", ")),
+                      systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.orange)
+                    .lineLimit(3)
+            }
             List {
                 ForEach(bundle.profiles) { p in
                     Toggle(isOn: Binding(get: { selected.contains(p.id) },
                                          set: { if $0 { selected.insert(p.id) } else { selected.remove(p.id) } })) {
                         HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Text(p.name)
-                                    Text("\(p.kind.title) · \(p.host):\(String(p.port))\(p.database.isEmpty ? "" : " / " + p.database)").foregroundStyle(.secondary)
-                                }
-                                ForEach(request.notes[p.id] ?? [], id: \.self) { n in
-                                    Text(n).font(.caption).foregroundStyle(n.contains("SSH") ? .orange : .secondary)
-                                }
-                            }
+                            ImportRowDetails(profile: p, notes: request.notes[p.id] ?? [])
                             Spacer()
                             switch ConnectionTransfer.action(for: p, existing: app.profiles) {
                             case .add:
@@ -280,5 +306,32 @@ struct ImportConnectionsSheet: View {
         let list = request.bundle.profiles.filter { selected.contains($0.id) }
         app.importProfiles(list, passwords: passwords, fileName: request.fileName)
         app.importRequest = nil
+    }
+}
+
+/// 가져오기 창의 접속 한 줄 (그룹 › 이름 · 주소, SSH, 안내)
+private struct ImportRowDetails: View {
+    let profile: ConnectionProfile
+    let notes: [String]
+
+    var body: some View {
+        let p = profile
+        let address = "\(p.kind.title) · \(p.host):\(String(p.port))" + (p.database.isEmpty ? "" : " / " + p.database)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                if !p.group.isEmpty { Text(p.group + " ›").foregroundStyle(.tertiary) }
+                Text(p.name)
+                Text(address).foregroundStyle(.secondary)
+            }
+            if let ssh = p.ssh, !ssh.host.isEmpty {
+                let user = ssh.username.isEmpty ? "" : ssh.username + "@"
+                Text("SSH " + user + ssh.host + ":" + String(ssh.port))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(notes, id: \.self) { n in
+                let plain = n == tr("비밀번호는 처음 연결할 때 입력해요.")
+                Text(n).font(.caption).foregroundStyle(plain ? Color.secondary : Color.orange)
+            }
+        }
     }
 }
