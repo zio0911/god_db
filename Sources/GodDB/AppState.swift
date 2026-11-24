@@ -31,6 +31,8 @@ struct QueryTab: Identifiable {
     var customTitle: String?
     /// DDL·정의 탭이면 원본 (생성문 새로고침)
     var source: TabSource?
+    /// [데이터 보기] 로 연 테이블 (다시 열면 이 탭으로 간다)
+    var dataTable: String?
     var text: String = ""
     /// 화면에 보이는 결과 (results 중 하나)
     var result: QueryResult?
@@ -656,12 +658,24 @@ final class AppState {
         }
     }
 
-    func openTableQuery(_ table: String) {
+    /// 테이블 데이터 보기. 같은 접속 · DB 에서 이 테이블을 열어 둔 탭이 있으면 그 탭으로 간다.
+    /// newTab 이면 언제나 새 쿼리 탭에서 조회한다.
+    func openTableQuery(_ table: String, newTab: Bool = false) {
+        if !newTab, let id = selectedProfileID {
+            let db = connections[id]?.currentDatabase ?? ""
+            if let open = tabs.last(where: { $0.profileID == id && $0.database == db && $0.dataTable == table }) {
+                selectTab(open.id)
+                return
+            }
+        }
         let sql = dialect.selectAllSQL(table)
-        if let i = selectedTabIndex, tabs[i].profileID == selectedProfileID,
+        if !newTab, let i = selectedTabIndex, tabs[i].profileID == selectedProfileID,
            tabs[i].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             tabs[i].text = sql
-        } else if addTab(text: sql) == nil {
+            tabs[i].dataTable = table
+        } else if let id = addTab(text: sql) {
+            update(id) { $0.dataTable = table }
+        } else {
             return
         }
         mode = .query
@@ -1085,9 +1099,15 @@ final class AppState {
                 tabs[i].source = .table(newName)
                 tabs[i].customTitle = "DDL · \(newName)"
             }
+            for i in tabs.indices where tabs[i].profileID == request.profileID && tabs[i].dataTable == request.table {
+                tabs[i].dataTable = newName
+            }
         case .drop:
             log(.success, .schema, tr("테이블 삭제: %@", request.table), detail: sql,
                 audit: AuditRecord(.ddl, target: dbTarget, result: "테이블 삭제", statement: sql))
+            for i in tabs.indices where tabs[i].profileID == request.profileID && tabs[i].dataTable == request.table {
+                tabs[i].dataTable = nil
+            }
         }
         await refreshSchema(for: request.profileID)
     }

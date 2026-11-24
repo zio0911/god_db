@@ -355,6 +355,7 @@ struct TableNode: View {
                 .simultaneousGesture(TapGesture(count: 1).onEnded { app.clickTable(table.name) })
                 .contextMenu {
                     Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(table.name) }
+                    Button(tr("새 쿼리로 데이터 보기")) { app.openTableQuery(table.name, newTab: true) }
                     Button(tr("테이블 수정 (ALTER)…")) { app.alteringTable = table }
                     Button(tr("CREATE 문 보기")) { Task { await app.openTableDDL(table) } }
                     Button(tr("인덱스 상세 보기")) { app.openIndexes(table.name) }
@@ -404,6 +405,7 @@ struct RoutineRow: View {
                 Button(tr("정의 보기")) { Task { await app.openRoutine(routine) } }
                 if routine.kind == .view {
                     Button(tr("데이터 보기 (SELECT)")) { app.openTableQuery(routine.name) }
+                    Button(tr("새 쿼리로 데이터 보기")) { app.openTableQuery(routine.name, newTab: true) }
                 }
                 if routine.kind == .procedure {
                     Button(tr("CALL 문 만들기")) {
