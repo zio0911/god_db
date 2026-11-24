@@ -841,7 +841,7 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
   - 접속 목록 파일을 나만 읽고 쓰게(0600), 접속 정보 내보내기 암호 키 강화(PBKDF2 60만 회, 예전 파일도 열림)
   - SQL Server 읽기전용 검사에 RECEIVE · SEND · NEXT VALUE FOR 추가, 읽는 도중 연결이 끊기면 일부 행을 정상 결과로 돌려주지 않음
   - 결과 편집: 별칭 열(`email AS id`)을 실제 컬럼으로 보지 않음 (다른 행이 바뀔 수 있던 문제)
-  - 실행 시간 제한 기본 10분, PostgreSQL · MySQL 은 서버 세션에도 같은 제한
+  - 실행 시간 제한 기본 30분, PostgreSQL · MySQL 은 서버 세션에도 같은 제한
   - 전체 내보내기는 한 읽기 스냅샷에서 (PostgreSQL · MySQL) — 내보내는 사이 데이터가 바뀌어도 행이 겹치거나 빠지지 않음
   - SSH 터널로 붙어도 TLS 인증서 이름을 원래 DB 호스트로 확인 (안 맞으면 확인 · 고정 창)
   - 같은 ID 로 가져온 접속의 서버 · 계정이 바뀌면 예전 비밀번호를 지움, SSH 호스트 · 사용자 값 검사, PostgreSQL 백슬래시 문자열, 화면 테스트용 환경변수는 테스트 복사본에서만
@@ -927,7 +927,7 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 
 ### 1.3.0
 - **실수 방지**: WHERE 없는 DELETE / UPDATE, TRUNCATE, DROP 은 한 문장이어도 실행 전 확인 · 접속 삭제 확인 · 적용하지 않은 결과 편집을 버리기 전 확인 · 트랜잭션 중 접속 편집 · 다시 연결 처리
-- **쿼리 취소**: 실행 중 [취소] / ⌘. (MySQL · PostgreSQL · SQL Server), 설정 > 일반 > 쿼리 > 실행 시간 제한 (기본 **10분**, 0 이면 없음 — 1.4.3, #198). PostgreSQL `statement_timeout` · MySQL `max_execution_time`(SELECT 만)으로 서버 세션에도 같은 제한을 건다 (연결할 때). SQL Server 는 앱 쪽만
+- **쿼리 취소**: 실행 중 [취소] / ⌘. (MySQL · PostgreSQL · SQL Server), 설정 > 일반 > 쿼리 > 실행 시간 제한 (기본 **30분**, 0 이면 없음 — 1.4.3, #198). PostgreSQL `statement_timeout` · MySQL `max_execution_time`(SELECT 만)으로 서버 세션에도 같은 제한을 건다 (연결할 때). SQL Server 는 앱 쪽만
 - **쿼리 히스토리** (⌘Y): 실행한 SQL 검색 · 편집기에 다시 넣기, **쿼리 탭 자동 저장** (다시 켜도 남음)
 - **접속 환경**: 개발 · 스테이징 · 운영 색 표시, 운영 접속은 데이터를 바꾸는 문장 실행 전 항상 확인
 - **결과 표**: ⌘C 복사(TSV), CSV · INSERT · JSON · Markdown · IN 목록으로 복사, 빠른 필터
