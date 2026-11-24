@@ -115,7 +115,7 @@ extension L10nEnglish {
         "데이터 찾기 샘플 · 실패 · %@": "Data finder sample · failed · %@",
         "%@ 로 바꾸기": "Switch to %@",
         "설치된 다른 모델을 확인하는 중…": "Checking other installed models…",
-        "답하는 다른 모델이 없어요. 터미널에서 ollama pull qwen3:30b 로 받을 수 있어요.": "No other model responds. You can get one in Terminal with ollama pull qwen3:30b.",
+        "답하는 다른 모델이 없어요. 터미널에서 ollama pull %@ 로 받을 수 있어요.": "No other model responds. You can get one in Terminal with ollama pull %@.",
         "모델 확인": "Check Model",
         "빈 답을 돌려줬어요": "It returned an empty reply",
         "중간": "Medium",

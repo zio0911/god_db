@@ -271,7 +271,11 @@ struct DataFinderRobustTests {
     // MARK: - 추천 모델
 
     @Test func defaultModelPrefersQwen3() {
-        #expect(AISettings.recommendedModels.first == "qwen3:30b")
+        // 기본: qwen3.8:27b-mlx (48GB 이상), 다음 qwen3:14b (24GB), 그다음 예전 추천
+        #expect(AISettings.recommendedModels.first == "qwen3.8:27b-mlx")
+        #expect(AISettings.defaultRecommendedModel == "qwen3.8:27b-mlx")
+        #expect(AISettings.defaultModel(installed: ["qwen3:14b", "qwen3.8:27b", "qwen3.8:27b-mlx"]) == "qwen3.8:27b-mlx")
+        #expect(AISettings.defaultModel(installed: ["qwen3:30b", "qwen3:14b"]) == "qwen3:14b")
         #expect(AISettings.defaultModel(installed: ["laguna-xs-2.1:q8_0", "qwen3:30b"]) == "qwen3:30b")
         #expect(AISettings.defaultModel(installed: ["llama3", "qwen2.5-coder:32b", "qwen2.5-coder:14b"]) == "qwen2.5-coder:14b")
         #expect(AISettings.defaultModel(installed: ["llama3", "mistral"]) == "llama3")

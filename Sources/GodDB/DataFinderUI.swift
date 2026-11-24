@@ -523,7 +523,7 @@ struct DataFinderCardView: View {
                 Text(tr("설치된 다른 모델을 확인하는 중…")).font(.caption).foregroundStyle(.secondary)
             }
         } else if m.alternatives.isEmpty {
-            Text(tr("답하는 다른 모델이 없어요. 터미널에서 ollama pull qwen3:30b 로 받을 수 있어요."))
+            Text(tr("답하는 다른 모델이 없어요. 터미널에서 ollama pull %@ 로 받을 수 있어요.", AISettings.defaultRecommendedModel))
                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
     }

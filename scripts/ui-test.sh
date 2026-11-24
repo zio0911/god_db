@@ -168,10 +168,10 @@ if [[ ${#SCENARIOS[@]} -eq 0 || " ${SCENARIOS[*]} " == *" dataFinder "* || " ${S
     fi
     for i in {1..30}; do curl -s -m 2 http://localhost:11434/api/tags >/dev/null 2>&1 && break; sleep 1; done
   fi
-  if curl -s -m 3 http://localhost:11434/api/tags 2>/dev/null | grep -q '"qwen3:30b"'; then
-    echo "  Ollama 준비됨 (qwen3:30b)"
+  if curl -s -m 3 http://localhost:11434/api/tags 2>/dev/null | grep -q '"qwen3.8:27b-mlx"'; then
+    echo "  Ollama 준비됨 (qwen3.8:27b-mlx)"
   else
-    echo "  ⚠️ Ollama 가 켜지지 않았거나 qwen3:30b 가 없어요 — AI 데이터 찾기 시나리오는 실패할 수 있어요 (ollama pull qwen3:30b)"
+    echo "  ⚠️ Ollama 가 켜지지 않았거나 qwen3.8:27b-mlx 가 없어요 — AI 데이터 찾기 시나리오는 실패할 수 있어요 (ollama pull qwen3.8:27b-mlx)"
   fi
 fi
 
