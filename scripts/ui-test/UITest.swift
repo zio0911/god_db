@@ -1140,7 +1140,18 @@ scenario("tableDescriptions") {
           app.find(5, { $0.modal && $0.text.contains("테이블 2개 · 컬럼 2개 · 코드 값 2개") }) != nil)
     check("DB 와 맞춰 보기: 없는 테이블 표시",
           app.find(2, { $0.modal && $0.text.contains("DB 에 없는 테이블 1개 (no_such_table)") }) != nil)
-    check("목록에 title", app.find(2, { $0.modal && $0.role == "AXStaticText" && $0.value == "회원 정보" }) != nil)
+    check("목록에 title", app.find(2, { $0.modal && $0.role == "AXStaticText" && $0.value.contains("회원 정보") }) != nil)
+    // 상세 (#189): 처음엔 첫 테이블 tb_mbr_info — 찾는 말 칩 · 코드 값 칩 · 컬럼 title
+    check("상세: 컬럼 title '회원 전화번호'", app.find(3, { $0.modal && $0.text.contains("회원 전화번호") }) != nil)
+    check("상세: 찾는 말 칩 '연락처'", app.find(2, { $0.modal && $0.text.contains("연락처") }) != nil)
+    check("상세: 코드 값 칩 'kim = 김'", app.find(2, { $0.modal && $0.text.contains("kim = 김") }) != nil)
+    // 목록에서 DB 에 없는 테이블을 고르면 상세에 안내
+    if let row = app.snapshot().filter({ $0.modal && $0.role == "AXStaticText" && $0.value == "no_such_table" })
+        .min(by: { $0.frame.minX < $1.frame.minX }) {
+        click(row)
+        check("목록에서 no_such_table 고르기 → '지금 DB 에 없는 테이블이에요'",
+              app.find(3, { $0.modal && $0.text.contains("지금 DB 에 없는 테이블이에요") }) != nil)
+    } else { check("목록에 no_such_table", false) }
     if !answer("닫기") { key("escape") }
     check("창 닫힘", app.gone(3, { $0.modal && $0.text.contains("AI 에이전트로 채우기") }))
     check("말풍선 아이콘 (설명 있음 → '테이블 2개')", app.find(3, { !$0.modal && $0.role == "AXPopUpButton" && $0.label.contains("테이블 설명 (AI 참고) — 테이블 2개") }) != nil,
