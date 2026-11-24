@@ -375,6 +375,7 @@ extension L10nEnglish {
         "더 이상 행이 없어요.": "No more rows.",
         "더블클릭하면 정의를 열어요": "Double-click to open the definition",
         "데이터 보기 (SELECT)": "View data (SELECT)",
+        "새 쿼리로 데이터 보기": "View data in a new query",
         "데이터베이스": "Database",
         "두 DB 스키마를 읽는 중…": "Reading both schemas…",
         "두 스키마의 테이블·컬럼·인덱스가 같아요.": "Tables, columns and indexes are the same in both schemas.",
