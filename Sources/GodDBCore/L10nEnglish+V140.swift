@@ -255,7 +255,7 @@ extension L10nEnglish {
         "대기 · %@": "Queued · %@",
         "지금 답을 멈추고 바로 보내기": "Stop the current answer and send now",
         "대기에서 빼기": "Remove from queue",
-        "Enter 보내기 (답하는 중이면 대기) · Shift+Enter 줄바꿈 · ⌘Enter 지금 답을 멈추고 바로 보내기": "Enter to send (queued while answering) · Shift+Enter for a new line · ⌘Enter to stop the current answer and send now",
+        "Enter 보내기 (답하는 중이면 대기, 대기 글의 ↑ 로 바로 보내기) · Shift+Enter 줄바꿈": "Enter to send (queued while answering; ↑ on a queued message sends it now) · Shift+Enter for a new line",
         "멈추기 (대기 글은 입력창으로 돌아와요)": "Stop (queued messages go back to the input)",
     ]
 }

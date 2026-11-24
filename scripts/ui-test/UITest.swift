@@ -1225,7 +1225,7 @@ scenario("assistantInterrupt") {
 }
 
 scenario("assistantInterruptMore") {
-    // #179: 답하는 중 [새 대화] 를 눌러도 앱이 꺼지지 않음 · 답하는 중 데이터 찾기를 ⌘Enter 로 보내면 지금 답은 멈추고 찾기가 먼저 (#203)
+    // #179: 답하는 중 [새 대화] 를 눌러도 앱이 꺼지지 않음 · 답하는 중 데이터 찾기를 보내고 대기 글의 ↑ 를 누르면 지금 답은 멈추고 찾기가 먼저 (#203)
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
     guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
     click(ai)
@@ -1251,7 +1251,11 @@ scenario("assistantInterruptMore") {
     check("데이터 찾기 전: 답하는 중", app.find(15, stop) != nil)
     click(f2)
     paste("회원 전화번호 어디 있어?")
-    key("return", cmd)
+    key("return")
+    check("답하는 중 데이터 찾기 → '대기 · 회원 전화번호'", app.find(5, hasText("대기 · 회원 전화번호")) != nil)
+    if let now = app.find(3, { $0.role == "AXButton" && $0.label.contains("지금 답을 멈추고 바로 보내기") }) {
+        press(now)
+    } else { check("대기 글의 ↑ 버튼", false) }
     check("답하는 중 데이터 찾기 → 첫 답 '(취소했어요)'", app.find(8, hasText("(취소했어요)")) != nil)
     check("답하는 중 데이터 찾기 → 찾기 결과 tb_mbr_info.mbr_tel_no",
           app.find(150, { $0.role == "AXStaticText" && $0.text.contains("tb_mbr_info.mbr_tel_no") }) != nil)

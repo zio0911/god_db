@@ -305,7 +305,7 @@ struct DiagramAIPanel: View {
 /// AI 대화 입력창 (#203)
 /// - Enter: 보내기. 답하는 중이면 입력창 위 대기열에 쌓고, 답이 끝나면 차례로 보낸다
 /// - Shift+Enter: 줄바꿈
-/// - ⌘Enter · 대기 글의 ↑: 지금 답을 멈추고 바로 보내기
+/// - 대기 글의 ↑: 지금 답을 멈추고 바로 보내기 (⌘Enter 는 쿼리 실행 단축키라 쓰지 않는다)
 /// - 멈추기: 답만 멈추고 대기 글은 입력창으로 돌려놓는다
 struct AIChatInput<Leading: View>: View {
     @Bindable var chat: DiagramChat
@@ -365,15 +365,11 @@ struct AIChatInput<Leading: View>: View {
                             NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
                             return .handled
                         }
-                        if press.modifiers.contains(.command) {
-                            sendNowFromInput()
-                            return .handled
-                        }
                         return .ignored
                     }
                     .onSubmit(submit)
                     .disabled(disabled)
-                    .help(tr("Enter 보내기 (답하는 중이면 대기) · Shift+Enter 줄바꿈 · ⌘Enter 지금 답을 멈추고 바로 보내기"))
+                    .help(tr("Enter 보내기 (답하는 중이면 대기, 대기 글의 ↑ 로 바로 보내기) · Shift+Enter 줄바꿈"))
                 if chat.running {
                     Button(action: stop) { Image(systemName: "stop.circle.fill") }
                         .help(tr("멈추기 (대기 글은 입력창으로 돌아와요)"))
@@ -397,16 +393,6 @@ struct AIChatInput<Leading: View>: View {
         } else {
             dispatch(q)
         }
-        focus.wrappedValue = true
-    }
-
-    /// ⌘Enter: 답하는 중이면 멈추고 입력한 글을 바로 보낸다 (아니면 그냥 보내기)
-    private func sendNowFromInput() {
-        let q = text
-        guard !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !disabled else { return }
-        text = ""
-        chat.cancel()
-        dispatch(q)
         focus.wrappedValue = true
     }
 
