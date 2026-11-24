@@ -45,6 +45,15 @@ extension L10nEnglish {
         "테이블 설명을 가져오지 못했어요: %@": "Couldn't import table descriptions: %@",
         "테이블 설명을 가져왔어요: %@ · 테이블 %@개": "Imported table descriptions: %@ · %@ tables",
         "테이블 설명을 지웠어요: %@": "Deleted table descriptions: %@",
+        // #189
+        "규칙": "Rules",
+        "설명 · 코드 값 · 관계": "Description · code values · relation",
+        "왼쪽에서 테이블을 고르세요": "Choose a table on the left",
+        "이 테이블은 이름만 있어요": "This table has only a name",
+        "지금 DB 에 없는 컬럼": "Not in the current database",
+        "지금 DB 에 없는 테이블": "Not in the current database",
+        "지금 DB 에 없는 테이블이에요": "This table isn't in the current database",
+        "테이블 설명을 가져오면 여기에서 내용을 볼 수 있어요": "Import table descriptions to see them here",
         // #185
         "AI 에이전트로 채우기": "Fill in with an AI agent",
         "요청문 샘플을 복사해 AI 에이전트에게 양식 · 소스 저장소와 함께 주기 (같은 내용이 양식 안 instructions 에도 있어요)": "Copy the sample request and give it to an AI agent with the form and your source repository (the same text is in the form's instructions)",

@@ -33,6 +33,8 @@ struct TableDescriptionsView: View {
     /// JSON 의 database 가 지금 DB 와 다를 때 확인
     @State private var pending: PendingImport?
     @State private var copied = false
+    /// 상세로 볼 테이블 (#189)
+    @State private var selected: String?
 
     struct PendingImport: Identifiable {
         let id = UUID()
@@ -73,7 +75,7 @@ struct TableDescriptionsView: View {
             }
         }
         .padding(16)
-        .frame(width: 620, height: 600)
+        .frame(width: 880, height: 700)
         .alert(tr("이 DB 의 테이블 설명을 지울까요?"), isPresented: $confirmClear) {
             Button(tr("지우기"), role: .destructive) { clear() }
             Button(tr("취소"), role: .cancel) {}
@@ -183,27 +185,52 @@ struct TableDescriptionsView: View {
         }
     }
 
+    /// 지금 DB 와 맞춰 본 결과 (연결해 있을 때만)
+    private var liveCheck: TableDescriptionDoc.Check? {
+        guard let doc = entry?.doc, let live = liveTables else { return nil }
+        return doc.check(against: live)
+    }
+
+    /// 왼쪽 목록 + 오른쪽 읽기 전용 상세 (#189)
     private var list: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextField(tr("테이블 · 설명 찾기"), text: $search).textFieldStyle(.roundedBorder)
-            let tables = filtered
-            List(tables, id: \.name) { t in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Text(t.name).font(.body.monospaced())
-                        if let title = t.title, !title.isEmpty { Text(title) }
-                        Spacer()
-                        Text(tr("컬럼 %@", "\(t.columns?.count ?? 0)")).font(.caption).foregroundStyle(.secondary)
+        let tables = filtered
+        let check = liveCheck
+        let missing = Set((check?.missingTables ?? []).map { $0.lowercased() })
+        let current = tables.first { $0.name == selected } ?? tables.first
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField(tr("테이블 · 설명 찾기"), text: $search).textFieldStyle(.roundedBorder)
+                List(tables, id: \.name, selection: Binding(get: { current?.name }, set: { selected = $0 })) { t in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 4) {
+                            Text(t.name).font(.callout.monospaced()).lineLimit(1)
+                            if missing.contains(t.name.lowercased()) {
+                                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                                    .help(tr("지금 DB 에 없는 테이블"))
+                            }
+                        }
+                        Text([t.title ?? "", tr("컬럼 %@", "\(t.columns?.count ?? 0)")].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    if let d = t.description, !d.isEmpty {
-                        Text(d).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    }
+                    .tag(t.name)
+                }
+                .listStyle(.bordered)
+                .overlay {
+                    if entry != nil, tables.isEmpty { Text(tr("맞는 테이블이 없어요")).foregroundStyle(.secondary) }
                 }
             }
-            .listStyle(.bordered)
-            .overlay {
-                if entry != nil, tables.isEmpty { Text(tr("맞는 테이블이 없어요")).foregroundStyle(.secondary) }
+            .frame(width: 220)
+            Group {
+                if let t = current {
+                    TableDescriptionDetail(table: t, missing: missing.contains(t.name.lowercased()),
+                                           unknownColumns: Set((check?.unknownColumns ?? []).map { $0.lowercased() }))
+                } else {
+                    Text(entry == nil ? tr("테이블 설명을 가져오면 여기에서 내용을 볼 수 있어요") : tr("왼쪽에서 테이블을 고르세요"))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -282,5 +309,155 @@ struct TableDescriptionsView: View {
         app.tableDescriptions.remove(profileID: request.profileID, database: request.database)
         app.saveTableDescriptions()
         app.log(.info, .schema, tr("테이블 설명을 지웠어요: %@", "\(profile?.name ?? "")/\(request.database)"))
+    }
+}
+
+/// 테이블 설명 하나를 읽기 전용으로 보기 좋게 (#189): title · 설명 · 찾는 말 · 규칙 · 컬럼 표 (코드 값 · 관계)
+struct TableDescriptionDetail: View {
+    let table: TableDescriptionDoc.Table
+    /// 지금 DB 에 없는 테이블
+    let missing: Bool
+    /// 지금 DB 에 없는 컬럼 (`table.column`, 소문자)
+    let unknownColumns: Set<String>
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(table.name).font(.title3.monospaced().weight(.semibold)).textSelection(.enabled)
+                    if let title = table.title, !title.isEmpty { Text(title).font(.title3) }
+                }
+                if missing {
+                    Label(tr("지금 DB 에 없는 테이블이에요"), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+                if let d = table.description, !d.isEmpty {
+                    Text(d).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                if let terms = table.terms, !terms.isEmpty {
+                    row(tr("찾는 말")) { chips(terms, color: .purple) }
+                }
+                if let notes = table.notes, !notes.isEmpty {
+                    row(tr("규칙")) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(notes.enumerated()), id: \.offset) { _, n in Text("• " + n).textSelection(.enabled) }
+                        }
+                    }
+                }
+                columns
+                if (table.columns ?? []).isEmpty, (table.description ?? "").isEmpty, (table.terms ?? []).isEmpty {
+                    Text(tr("이 테이블은 이름만 있어요")).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+        }
+    }
+
+    @ViewBuilder
+    private var columns: some View {
+        let cols = table.columns ?? []
+        if !cols.isEmpty {
+            Text(tr("컬럼 %@", "\(cols.count)")).font(.subheadline.weight(.semibold)).padding(.top, 4)
+            Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 6) {
+                GridRow {
+                    Text(tr("컬럼")); Text(tr("이름")); Text(tr("설명 · 코드 값 · 관계"))
+                }
+                .font(.caption).foregroundStyle(.secondary)
+                Divider().gridCellUnsizedAxes(.horizontal)
+                ForEach(cols, id: \.name) { c in
+                    GridRow {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 3) {
+                                Text(c.name).font(.callout.monospaced()).textSelection(.enabled)
+                                if unknownColumns.contains("\(table.name).\(c.name)".lowercased()) {
+                                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                                        .help(tr("지금 DB 에 없는 컬럼"))
+                                }
+                            }
+                            if let terms = c.terms, !terms.isEmpty { chips(terms, color: .purple) }
+                        }
+                        .frame(width: 150, alignment: .leading)
+                        Text(c.title ?? "").frame(width: 110, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let d = c.description, !d.isEmpty { Text(d).textSelection(.enabled) }
+                            if let v = c.values, !v.isEmpty {
+                                chips(v.sorted { $0.key < $1.key }.map { "\($0.key) = \($0.value)" }, color: .gray)
+                            }
+                            if let r = c.references, !r.isEmpty {
+                                Text("→ " + r).font(.callout.monospaced()).textSelection(.enabled)
+                            }
+                            if unknownColumns.contains("\(table.name).\(c.name)".lowercased()) {
+                                Text(tr("지금 DB 에 없는 컬럼")).font(.caption).foregroundStyle(.orange)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.callout)
+                    Divider().gridCellUnsizedAxes(.horizontal)
+                }
+            }
+        }
+    }
+
+    private func row<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title).font(.caption).foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
+            content()
+        }
+    }
+
+    private func chips(_ items: [String], color: Color) -> some View {
+        WrapLayout(spacing: 4) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                Text(item)
+                    .font(.caption)
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(color.opacity(0.14), in: Capsule())
+                    .accessibilityLabel(item)
+            }
+        }
+    }
+}
+
+/// 칩을 가로로 늘어놓다 넘치면 다음 줄로
+struct WrapLayout: SwiftUI.Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let w = rows.map { $0.width }.max() ?? 0
+        let h = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width.map { min($0, w) } ?? w, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for i in row.items {
+                let size = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var items: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for (i, sub) in subviews.enumerated() {
+            let size = sub.sizeThatFits(.unspecified)
+            let extra = rows[rows.count - 1].items.isEmpty ? size.width : size.width + spacing
+            if rows[rows.count - 1].width + extra > width, !rows[rows.count - 1].items.isEmpty {
+                rows.append(Row())
+            }
+            let last = rows.count - 1
+            rows[last].width += rows[last].items.isEmpty ? size.width : size.width + spacing
+            rows[last].height = max(rows[last].height, size.height)
+            rows[last].items.append(i)
+        }
+        return rows
     }
 }
