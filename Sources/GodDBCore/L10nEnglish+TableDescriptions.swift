@@ -45,5 +45,16 @@ extension L10nEnglish {
         "테이블 설명을 가져오지 못했어요: %@": "Couldn't import table descriptions: %@",
         "테이블 설명을 가져왔어요: %@ · 테이블 %@개": "Imported table descriptions: %@ · %@ tables",
         "테이블 설명을 지웠어요: %@": "Deleted table descriptions: %@",
+        // #185
+        "AI 에이전트로 채우기": "Fill in with an AI agent",
+        "요청문 샘플을 복사해 AI 에이전트에게 양식 · 소스 저장소와 함께 주기 (같은 내용이 양식 안 instructions 에도 있어요)": "Copy the sample request and give it to an AI agent with the form and your source repository (the same text is in the form's instructions)",
+        "요청문 샘플 복사": "Copy Sample Request",
+        "빈 양식 내려받기 — 지금 테이블 · 컬럼 이름과 코멘트가 들어 있어요 (데이터 값은 없어요)": "Download a blank form with the current table and column names and comments (no data values)",
+        "빈 양식 내려받기…": "Download Blank Form…",
+        "빈 양식을 Claude · Codex 같은 AI 에이전트에게 소스 저장소와 함께 주면, 소스와 테이블 구조를 분석해 채워 줘요. 채운 설명이 있으면 AI 어시스턴트가 질문을 더 정확히 이해해요.": "Give the blank form to an AI agent such as Claude or Codex along with your source repository, and it fills it in by analyzing the code and table structure. With these descriptions, the AI assistant understands your questions better.",
+        "아직 테이블 설명이 없어요. 아래 순서대로 AI 에이전트에게 맡겨 채운 JSON 을 가져오세요.": "No table descriptions yet. Follow the steps below to have an AI agent fill in the form, then import the JSON.",
+        "채워 온 JSON 가져오기 (양식이 어긋나면 어디가 틀렸는지 알려 줘요)": "Import the filled JSON (if the format is off, you'll see where)",
+        "테이블 설명 (AI 참고) — 아직 없어요": "Table descriptions (for AI): none yet",
+        "테이블 설명 (AI 참고) — 테이블 %@개": "Table descriptions (for AI): %@ tables",
     ]
 }
