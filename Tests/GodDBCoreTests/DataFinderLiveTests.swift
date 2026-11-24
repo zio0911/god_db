@@ -4,13 +4,13 @@ import Testing
 
 /// AI 데이터 찾기 실제 확인 (#151): 약 150개 테이블의 약어 스키마를 임시 DB 에 만들고 로컬 Ollama 로 찾는다.
 /// - `GODDB_DATAFINDER_LIVE=1` 일 때만. SQL Server(GODDB_MSSQL_PORT) · MySQL(GODDB_IT_PORT) 중 있는 것으로.
-/// - 모델: `GODDB_DATAFINDER_MODEL` (기본 qwen3:30b), 고장 난 모델: `GODDB_DATAFINDER_BROKEN_MODEL` (기본 laguna-xs-2.1:q8_0).
+/// - 모델: `GODDB_DATAFINDER_MODEL` (기본 qwen3.8:27b-mlx), 고장 난 모델: `GODDB_DATAFINDER_BROKEN_MODEL` (기본 laguna-xs-2.1:q8_0).
 /// - 임시 DB `goddb_finder_seed` 는 끝나면 지운다. 사용자의 AI 설정은 건드리지 않는다.
 enum FinderSeed {
     static let env = ProcessInfo.processInfo.environment
     static let database = "goddb_finder_seed"
     static var live: Bool { env["GODDB_DATAFINDER_LIVE"] == "1" }
-    static var model: String { env["GODDB_DATAFINDER_MODEL"] ?? "qwen3:30b" }
+    static var model: String { env["GODDB_DATAFINDER_MODEL"] ?? AISettings.defaultRecommendedModel }
     static var brokenModel: String { env["GODDB_DATAFINDER_BROKEN_MODEL"] ?? "laguna-xs-2.1:q8_0" }
 
     static func profile(_ kind: DatabaseKind, database: String) -> (ConnectionProfile, String)? {

@@ -230,8 +230,15 @@ public enum AISettings {
         return parts.count == 4 && parts[0] == "127" && parts.allSatisfy { p in Int(p).map { (0...255).contains($0) } ?? false }
     }
 
-    /// 추천 모델 (앞이 먼저). qwen3:30b 는 한국어 질문 · 데이터 찾기에 잘 맞는다.
-    public static let recommendedModels = ["qwen3:30b", "qwen2.5-coder:14b", "qwen2.5-coder:32b"]
+    /// 추천 모델 (앞이 먼저, "자동" 이면 설치된 것 중 앞의 것).
+    /// 메모리 48GB 이상(M5 Pro 등) qwen3.8:27b-mlx, 24GB qwen3:14b. 예전 추천(qwen3:30b · qwen2.5-coder)은 뒤에 남긴다.
+    public static let recommendedModels = ["qwen3.8:27b-mlx", "qwen3:14b", "qwen3:30b", "qwen2.5-coder:14b", "qwen2.5-coder:32b"]
+
+    /// 기본 추천 모델 (받기 안내에 쓴다)
+    public static var defaultRecommendedModel: String { recommendedModels[0] }
+
+    /// 메모리 24GB 에 맞는 추천 모델
+    public static let smallMemoryModel = "qwen3:14b"
 
     /// 모델을 고르지 않았을 때 쓸 모델: 설치된 추천 모델(앞 순서) → 설치된 첫 모델
     public static func defaultModel(installed: [String]) -> String? {

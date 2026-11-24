@@ -381,7 +381,7 @@ struct AISettingsView: View {
             }
             Section {
                 Picker(tr("모델"), selection: $settings.tuningModel) {
-                    Text(tr("자동 (첫 번째 모델)")).tag("")
+                    Text(tr("자동 (추천 모델 먼저)")).tag("")
                     ForEach(models) { m in
                         Text("\(m.name)  ·  \(m.parameterSize)  ·  \(String(format: "%.1f", m.sizeGB))GB").tag(m.name)
                     }
@@ -403,12 +403,14 @@ struct AISettingsView: View {
                     }
                 }
                 .font(.callout)
-                Text(tr("추천: %@ (한국어 질문 · 데이터 찾기에 잘 맞아요). 메모리가 넉넉하면 큰 모델일수록 정확해요.",
-                        AISettings.recommendedModels.joined(separator: ", ")))
+                Text(tr("추천: M5 Pro 메모리 48GB 이상이면 %@, 24GB 면 %@ 를 추천해요. 모델을 \"자동\"으로 두면 설치된 추천 모델을 먼저 써요.",
+                        AISettings.defaultRecommendedModel, AISettings.smallMemoryModel))
                     .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Text("ollama pull qwen3:30b").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    Button(tr("복사")) { Pasteboard.copy("ollama pull qwen3:30b") }.controlSize(.small)
+                ForEach([AISettings.defaultRecommendedModel, AISettings.smallMemoryModel], id: \.self) { m in
+                    HStack {
+                        Text("ollama pull " + m).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                        Button(tr("복사")) { Pasteboard.copy("ollama pull " + m) }.controlSize(.small)
+                    }
                 }
             } header: {
                 Text(tr("모델"))
