@@ -286,6 +286,16 @@ extension SQLDialect {
         }
     }
 
+    /// 전체 내보내기용: 모든 페이지를 같은 시점(스냅샷)으로 읽는 읽기 전용 트랜잭션 (#199).
+    /// SQL Server 는 스냅샷 격리가 DB 설정에 달려 있고, Redshift 는 기본이 직렬화라 nil (지금처럼)
+    public var snapshotBeginSQL: String? {
+        switch kind {
+        case .mysql: return "START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY"
+        case .postgres: return isRedshift ? nil : "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
+        case .mssql, .redis: return nil
+        }
+    }
+
     public var commitSQL: String { kind == .mssql ? "COMMIT TRANSACTION" : "COMMIT" }
     public var rollbackSQL: String { kind == .mssql ? "ROLLBACK TRANSACTION" : "ROLLBACK" }
 }

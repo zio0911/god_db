@@ -101,8 +101,8 @@ struct TLSVerifyTests {
         #expect(TLSPolicy.of(p).pin == nil)
         p.tlsPinSHA256 = "AA:BB"
         p.ssh = SSHConfig(host: "bastion")
-        // 터널이면 이름 확인 없음, 고정 지문만
-        #expect(TLSPolicy.of(p) == TLSPolicy(verify: true, hostname: nil, pin: "AA:BB"))
+        // 터널이어도 원래 DB 호스트 이름으로 확인 (#197) — 고정 지문은 함께
+        #expect(TLSPolicy.of(p) == TLSPolicy(verify: true, hostname: "db.example.com", pin: "AA:BB"))
         p.tlsVerify = false
         #expect(!TLSPolicy.of(p).verify)
     }
@@ -246,5 +246,16 @@ struct TLSIntegrationTests {
         let off = try await RedisSession.connect(profile: profile(verify: false), password: "goddbtest")
         #expect(await off.tlsStatus == .unchecked)
         await off.close()
+    }
+
+    /// SSH 터널로 붙어도 인증서 이름을 원래 DB 호스트로 확인한다 — 고정 안 한 터널 접속이 아무 인증서나 받지 않게 (#197)
+    @Test func tunnelStillChecksHostName() {
+        var p = ConnectionProfile(kind: .postgres, name: "t", host: "db.example.test", port: 5432)
+        p.ssh = SSHConfig(host: "bastion.example.test")
+        let policy = TLSPolicy.of(p)
+        #expect(policy.hostname == "db.example.test")
+        // 체인을 확인하므로, 고정 없이 확인 안 된 인증서는 "확인 안 함" 으로 통과하지 않고 거부(확인 창)
+        #expect(TLSVerify.decide(checkChain: policy.hostname != nil, chainOK: false, reasons: [.nameMismatch],
+                                 leafSHA256: "AA", pin: policy.pin) == .untrusted([.nameMismatch]))
     }
 }

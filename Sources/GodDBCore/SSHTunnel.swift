@@ -4,12 +4,15 @@ public enum SSHTunnelError: LocalizedError {
     case noFreePort
     case exited(String)
     case timeout
+    /// 호스트 · 사용자 이름이 '-' 로 시작하거나 공백이 들어 있음 (ssh 옵션으로 읽힐 수 있어 거절, #197)
+    case invalidValue(String)
 
     public var errorDescription: String? {
         switch self {
         case .noFreePort: return tr("로컬 포트를 확보하지 못했어요.")
         case .exited(let msg): return tr("SSH 터널 연결에 실패했어요.\n%@", "\(msg)")
         case .timeout: return tr("SSH 터널이 15초 안에 열리지 않았어요.")
+        case .invalidValue(let v): return tr("SSH 호스트 · 사용자 이름에 쓸 수 없는 값이에요: %@ ('-' 로 시작하거나 공백 포함)", v)
         }
     }
 }
@@ -22,7 +25,17 @@ public final class SSHTunnel: @unchecked Sendable {
     private let stderrPipe = Pipe()
     private let config: SSHConfig
 
+    /// ssh 에 넘기는 값 검사: '-' 로 시작하면 옵션으로 읽히고, 공백 · 줄바꿈은 정상 호스트에 없다
+    public static func validate(_ config: SSHConfig, remoteHost: String) throws {
+        for v in [config.host, config.username, remoteHost] where !v.isEmpty {
+            if v.hasPrefix("-") || v.contains(where: { $0.isWhitespace || $0.isNewline }) {
+                throw SSHTunnelError.invalidValue(v)
+            }
+        }
+    }
+
     public init(config: SSHConfig, remoteHost: String, remotePort: Int) throws {
+        try Self.validate(config, remoteHost: remoteHost)
         guard let port = SSHTunnel.findFreePort() else { throw SSHTunnelError.noFreePort }
         localPort = port
         self.config = config
@@ -54,6 +67,8 @@ public final class SSHTunnel: @unchecked Sendable {
         if !key.isEmpty {
             args += ["-i", key, "-o", "IdentitiesOnly=yes"]
         }
+        // 옵션 끝 표시 — 호스트가 옵션으로 읽히지 않게 (#197)
+        args.append("--")
         args.append(config.username.isEmpty ? config.host : "\(config.username)@\(config.host)")
         return args
     }

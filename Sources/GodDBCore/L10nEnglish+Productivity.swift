@@ -9,7 +9,7 @@ extension L10nEnglish {
         "30분": "30 min",
         "30초": "30 sec",
         "5분": "5 min",
-        "시간을 넘기면 쿼리를 자동으로 취소해요. 실행 중에는 언제든 [취소] 또는 ⌘. 로 멈출 수 있어요.": "Queries that run longer are cancelled automatically. You can always stop a running query with [Cancel] or ⌘.",
+        "시간을 넘기면 쿼리를 자동으로 취소해요. 실행 중에는 언제든 [취소] 또는 ⌘. 로 멈출 수 있어요. PostgreSQL · MySQL 은 서버에도 같은 제한을 걸어요 (다음 연결부터, MySQL 은 SELECT 만).": "Queries over the limit are cancelled automatically. You can always stop a running query with [Cancel] or ⌘. PostgreSQL and MySQL also get the same limit on the server (from the next connection; MySQL applies it to SELECT only).",
         "실행 시간 제한": "Time Limit",
         "실행 시간 제한 %@초를 넘어 취소해요.": "Cancelling: the %@ second time limit was exceeded.",
         "실행 중… %@초": "Running… %@ s",

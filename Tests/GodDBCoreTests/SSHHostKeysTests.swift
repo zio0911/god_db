@@ -171,6 +171,24 @@ struct SSHHostKeysTests {
     }
 }
 
+/// ssh 인자: 호스트 앞 "--", '-' 로 시작 · 공백 값 거절 (#197)
+@Suite("SSH arguments")
+struct SSHArgumentTests {
+    @Test func destinationAfterDoubleDash() {
+        let args = SSHTunnel.arguments(config: SSHConfig(host: "bastion.example.test", port: 22, username: "ec2-user"),
+                                       localPort: 5000, remoteHost: "db.internal", remotePort: 3306)
+        #expect(Array(args.suffix(2)) == ["--", "ec2-user@bastion.example.test"])
+    }
+
+    @Test func rejectsOptionLikeValues() {
+        for (host, user) in [("-oProxyCommand=x", "u"), ("h.example.test", "-l"), ("h example", "u"), ("h.example.test", "a\nb")] {
+            #expect(throws: SSHTunnelError.self) { try SSHTunnel.validate(SSHConfig(host: host, username: user), remoteHost: "db") }
+        }
+        #expect(throws: SSHTunnelError.self) { try SSHTunnel.validate(SSHConfig(host: "h", username: "u"), remoteHost: "-x") }
+        #expect(throws: Never.self) { try SSHTunnel.validate(SSHConfig(host: "bastion.example.test", username: "ec2-user"), remoteHost: "db.internal") }
+    }
+}
+
 /// 실제 sshd 로 확인 (호스트 키가 다른 sshd 두 개를 이 PC 에 띄운다. 인증은 하지 않고 호스트 키 단계만 본다)
 ///   /usr/sbin/sshd -f cfg   (ListenAddress 127.0.0.1, Port A, HostKey k1)
 ///   /usr/sbin/sshd -f cfg2  (Port B, HostKey k2)
@@ -220,5 +238,17 @@ struct SSHHostKeysIntegrationTests {
                 try SSHHostKeys.check(SSHConfig(host: "127.0.0.1", port: other, username: "u"), godDBFile: file, userFile: noUser)
             }
         }
+    }
+}
+
+/// 화면 테스트 환경변수는 테스트 복사본 번들 ID 에서만 (#197)
+@Suite("UI test hooks")
+struct UITestHookTests {
+    @Test func onlyForTestBundle() {
+        let env = ["GODDB_UI_TEST": "1"]
+        #expect(AppPaths.isUITest(env: env, bundleID: "local.goddb.app.uitest"))
+        #expect(!AppPaths.isUITest(env: env, bundleID: "local.goddb.app"))
+        #expect(!AppPaths.isUITest(env: env, bundleID: nil))
+        #expect(!AppPaths.isUITest(env: [:], bundleID: "local.goddb.app.uitest"))
     }
 }

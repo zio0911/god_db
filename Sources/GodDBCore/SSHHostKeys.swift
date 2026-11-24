@@ -163,7 +163,7 @@ public enum SSHHostKeys {
     public static func resolve(_ config: SSHConfig) -> Resolved {
         var args = ["-G", "-p", String(config.port)]
         if !config.username.isEmpty { args += ["-l", config.username] }
-        args.append(config.host)
+        args += ["--", config.host]
         let out = run("/usr/bin/ssh", args, timeout: 5)
         return parseConfig(out.status == 0 ? out.stdout : "", fallbackHost: config.host, fallbackPort: config.port)
     }
@@ -182,7 +182,7 @@ public enum SSHHostKeys {
     /// 서버 키를 받아 지문을 계산한다
     public static func scan(host: String, port: Int, pattern: String, displayHost: String, displayPort: Int,
                             timeout: Int = 5) throws -> SSHHostScan {
-        let r = run("/usr/bin/ssh-keyscan", ["-T", String(timeout), "-p", String(port), host], timeout: TimeInterval(timeout + 5))
+        let r = run("/usr/bin/ssh-keyscan", ["-T", String(timeout), "-p", String(port), "--", host], timeout: TimeInterval(timeout + 5))
         let lines = keyLines(fromScan: r.stdout, pattern: pattern)
         guard !lines.isEmpty else {
             let msg = r.stderr.split(whereSeparator: \.isNewline).filter { !$0.hasPrefix("#") }.joined(separator: "\n")
@@ -195,6 +195,7 @@ public enum SSHHostKeys {
 
     /// 연결 전 확인: 알려진 서버면 그냥 지나가고, 모르면 키를 받아 `.unknown` 을 던진다.
     public static func check(_ config: SSHConfig, godDBFile: URL = godDBFile, userFile: URL = userFile) throws {
+        try SSHTunnel.validate(config, remoteHost: "")
         let resolved = resolve(config)
         if isKnown(pattern: resolved.pattern, files: [userFile, godDBFile]) { return }
         let scan = try scan(host: resolved.hostname, port: resolved.port, pattern: resolved.pattern,
