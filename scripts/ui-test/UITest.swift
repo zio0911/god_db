@@ -1174,39 +1174,63 @@ scenario("tableDescriptions") {
 }
 
 scenario("assistantInterrupt") {
-    // #177 (로컬 Ollama 필요): 답하는 중에 새 글을 보내면 지금 답은 멈추고 새 글이 먼저 들어간다
+    // #203 (로컬 Ollama 필요): Shift+Enter 줄바꿈 · 답하는 중 Enter 는 대기열 · 대기 글 ↑ 는 지금 답을 멈추고 바로 보내기
+    //                         · 멈추기는 대기 글을 입력칸으로 돌려놓음
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
     guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
     click(ai)
     defer { click(ai) }
     if let newChat = app.find(2, { $0.role == "AXButton" && $0.label.contains("새 대화") }) { press(newChat) }
-    guard let field = app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role) && $0.label.contains("질문을 입력") }) else {
-        check("입력칸", false); return
-    }
+    let isField = { (n: Node) in ["AXTextField", "AXTextArea"].contains(n.role) && n.label.contains("질문을 입력") }
+    guard let field = app.find(3, isField) else { check("입력칸", false); return }
+    func inputValue() -> String { app.find(2, isField)?.value ?? "?" }
+    let stop = { (n: Node) in n.role == "AXButton" && n.label.contains("멈추기") && !n.modal }
+
     click(field)
+    paste("줄 하나")
+    key("return", shift)
+    paste("줄 둘")
+    let typed = inputValue()
+    check("Shift+Enter → 줄바꿈 (보내지 않음)", typed.contains("줄 하나\n줄 둘") && app.find(1, stop) == nil, typed)
+    key("a", cmd); key("delete")
+
     paste("이 DB 의 테이블을 하나씩 아주 자세히 설명하고, 각 테이블마다 예시 SQL 을 세 개씩 써 줘")
     key("return")
-    let stop = { (n: Node) in n.role == "AXButton" && n.label.components(separatedBy: " | ").contains("취소") && !n.modal }
     check("첫 질문: 답하는 중 (멈춤 버튼)", app.find(15, stop) != nil)
     click(field)
-    paste("두 번째 질문: 1 더하기 1 은?")
+    paste("두 번째 질문: 각 테이블의 인덱스와 쓰임을 아주 자세히 설명해 줘")
     key("return")
-    check("답하는 중에 보낸 글이 대화에 들어감",
-          app.find(5, { $0.role == "AXStaticText" && $0.value.contains("두 번째 질문: 1 더하기 1") }) != nil)
-    check("첫 답은 '(취소했어요)'", app.find(8, hasText("(취소했어요)")) != nil)
-    check("입력칸이 비워짐", (app.find(2, { ["AXTextField", "AXTextArea"].contains($0.role) && $0.label.contains("질문을 입력") })?.value ?? "x").isEmpty)
-    check("새 글에 대한 답이 시작됨 (멈춤 버튼 그대로)", app.find(5, stop) != nil)
-    // 두 번째 답이 끝나기를 기다리지 않고 멈춘다
+    check("답하는 중 Enter → '대기 · 두 번째 질문' 칩", app.find(5, hasText("대기 · 두 번째 질문")) != nil)
+    check("대기만 하고 첫 답은 계속 (취소 없음)", app.find(1, hasText("(취소했어요)")) == nil && app.find(1, stop) != nil)
+    check("입력칸이 비워짐", inputValue().isEmpty, inputValue())
+    if let now = app.find(3, { $0.role == "AXButton" && $0.label.contains("지금 답을 멈추고 바로 보내기") }) {
+        press(now)
+    } else { check("대기 글의 ↑ 버튼", false) }
+    check("↑ → 첫 답은 '(취소했어요)'", app.find(8, hasText("(취소했어요)")) != nil)
+    check("↑ → 대기 글이 대화로 들어가고 대기열은 빔",
+          app.find(5, { $0.role == "AXStaticText" && $0.value.hasPrefix("두 번째 질문: 각 테이블의 인덱스") }) != nil
+            && app.find(1, hasText("대기 · 두 번째")) == nil)
+    check("↑ → 새 글 답하는 중 (멈춤 버튼)", app.find(5, stop) != nil)
+
+    click(field)
+    paste("세 번째 질문")
+    key("return")
+    check("답하는 중 Enter → '대기 · 세 번째 질문'", app.find(5, hasText("대기 · 세 번째 질문")) != nil)
     if let s = app.find(2, stop) { press(s) }
+    check("멈추기 → 대기 글은 입력칸으로 돌아옴", inputValue().contains("세 번째 질문"), inputValue())
+    check("멈추기 → 대기열 빔 · 자동으로 보내지 않음",
+          app.find(1, hasText("대기 · 세 번째")) == nil && app.find(3, stop) == nil)
+    click(field)
+    key("a", cmd); key("delete")
 }
 
 scenario("assistantInterruptMore") {
-    // #179: 답하는 중 [새 대화] 를 눌러도 앱이 꺼지지 않음 · 답하는 중 데이터 찾기를 보내면 지금 답은 멈추고 찾기가 먼저
+    // #179: 답하는 중 [새 대화] 를 눌러도 앱이 꺼지지 않음 · 답하는 중 데이터 찾기를 보내고 대기 글의 ↑ 를 누르면 지금 답은 멈추고 찾기가 먼저 (#203)
     if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
     guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
     click(ai)
     defer { click(ai) }
-    let stop = { (n: Node) in n.role == "AXButton" && n.label.components(separatedBy: " | ").contains("취소") && !n.modal }
+    let stop = { (n: Node) in n.role == "AXButton" && n.label.contains("멈추기") && !n.modal }
     func field() -> Node? { app.find(3, { ["AXTextField", "AXTextArea"].contains($0.role) && $0.label.contains("질문을 입력") }) }
     func newChat() { if let b = app.find(2, { $0.role == "AXButton" && $0.label.contains("새 대화") }) { press(b) } }
     newChat()
@@ -1228,6 +1252,10 @@ scenario("assistantInterruptMore") {
     click(f2)
     paste("회원 전화번호 어디 있어?")
     key("return")
+    check("답하는 중 데이터 찾기 → '대기 · 회원 전화번호'", app.find(5, hasText("대기 · 회원 전화번호")) != nil)
+    if let now = app.find(3, { $0.role == "AXButton" && $0.label.contains("지금 답을 멈추고 바로 보내기") }) {
+        press(now)
+    } else { check("대기 글의 ↑ 버튼", false) }
     check("답하는 중 데이터 찾기 → 첫 답 '(취소했어요)'", app.find(8, hasText("(취소했어요)")) != nil)
     check("답하는 중 데이터 찾기 → 찾기 결과 tb_mbr_info.mbr_tel_no",
           app.find(150, { $0.role == "AXStaticText" && $0.text.contains("tb_mbr_info.mbr_tel_no") }) != nil)

@@ -17,6 +17,13 @@ final class DiagramChat {
     var running = false
     var thinkingChars = 0
     var task: Task<Void, Never>?
+    /// 답하는 중에 보낸 글. 답이 끝나면 차례로 보낸다 (#203)
+    struct Queued: Identifiable {
+        let id = UUID()
+        let text: String
+        let send: @MainActor (String) -> Void
+    }
+    var queued: [Queued] = []
     /// 지금 작업 번호: 멈춘 작업이 늦게 끝나면서 새 작업 상태를 건드리지 않게
     private(set) var generation = 0
 
@@ -62,6 +69,11 @@ final class DiagramChat {
         running = false
         task = nil
         persist()
+        // 멈춘 답이 끝난 거면 대기 글을 보내지 않는다 (멈추기는 대기 글을 입력창으로 돌려놓는다)
+        if !Task.isCancelled, !queued.isEmpty {
+            let next = queued.removeFirst()
+            next.send(next.text)
+        }
     }
 
     private func show(_ c: DiagramConversation) {
@@ -82,6 +94,7 @@ final class DiagramChat {
 
     /// 새 대화 시작 (이전 대화는 기록에 남는다)
     func startNew() {
+        queued.removeAll()
         cancel()
         persist()
         messages = []
@@ -91,13 +104,14 @@ final class DiagramChat {
 
     func open(_ c: DiagramConversation) {
         guard c.id != conversationID else { return }
+        queued.removeAll()
         cancel()
         persist()
         show(c)
     }
 
     func delete(_ id: UUID) {
-        if id == conversationID { cancel() }
+        if id == conversationID { queued.removeAll(); cancel() }
         store.delete(id, scope: scope)
         history = store.load(scope)
         if id == conversationID {
@@ -244,24 +258,9 @@ struct DiagramAIPanel: View {
                 if let unavailable {
                     Text(unavailable).font(.caption).foregroundStyle(.orange)
                 }
-                HStack(alignment: .bottom, spacing: 6) {
-                    TextField(tr("질문을 입력하고 Enter"), text: $input, axis: .vertical)
-                        .lineLimit(1...5)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($inputFocused)
-                        .onSubmit(send)
-                        .disabled(unavailable != nil)
-                    if chat.running {
-                        Button { chat.cancel() } label: { Image(systemName: "stop.circle.fill") }
-                            .help(tr("취소"))
-                    } else {
-                        Button(action: send) { Image(systemName: "arrow.up.circle.fill") }
-                            .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || unavailable != nil)
-                            .help(tr("보내기"))
-                    }
-                }
-                .buttonStyle(.hover)
-                .font(.title3)
+                AIChatInput(chat: chat, text: $input, focus: $inputFocused, placeholder: tr("질문을 입력하고 Enter"),
+                            maxLines: 5, disabled: unavailable != nil,
+                            dispatch: { [doc, app] q in chat.ask(q, doc: doc, app: app) })
                 Text(tr("테이블 구조와 관계만 로컬 Ollama 에 보내요. 데이터 행은 보내지 않아요."))
                     .font(.caption2).foregroundStyle(.secondary)
             }
@@ -301,14 +300,117 @@ struct DiagramAIPanel: View {
          tr("인덱스가 더 필요한 컬럼이 있어?")]
     }
 
-    private func send() {
-        let q = input
-        guard !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        input = ""
-        chat.ask(q, doc: doc, app: app)
-        inputFocused = true
+}
+
+/// AI 대화 입력창 (#203)
+/// - Enter: 보내기. 답하는 중이면 입력창 위 대기열에 쌓고, 답이 끝나면 차례로 보낸다
+/// - Shift+Enter: 줄바꿈
+/// - 대기 글의 ↑: 지금 답을 멈추고 바로 보내기 (⌘Enter 는 쿼리 실행 단축키라 쓰지 않는다)
+/// - 멈추기: 답만 멈추고 대기 글은 입력창으로 돌려놓는다
+struct AIChatInput<Leading: View>: View {
+    @Bindable var chat: DiagramChat
+    @Binding var text: String
+    var focus: FocusState<Bool>.Binding
+    let placeholder: String
+    var maxLines = 6
+    var disabled = false
+    let dispatch: @MainActor (String) -> Void
+    @ViewBuilder var leading: () -> Leading
+
+    init(chat: DiagramChat, text: Binding<String>, focus: FocusState<Bool>.Binding, placeholder: String,
+         maxLines: Int = 6, disabled: Bool = false,
+         dispatch: @escaping @MainActor (String) -> Void,
+         @ViewBuilder leading: @escaping () -> Leading = { EmptyView() }) {
+        self.chat = chat
+        _text = text
+        self.focus = focus
+        self.placeholder = placeholder
+        self.maxLines = maxLines
+        self.disabled = disabled
+        self.dispatch = dispatch
+        self.leading = leading
     }
 
+    private var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(chat.queued) { item in
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                    Text(tr("대기 · %@", item.text.replacingOccurrences(of: "\n", with: " ")))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
+                    Button { sendNow(item) } label: { Image(systemName: "arrow.up.circle") }
+                        .help(tr("지금 답을 멈추고 바로 보내기"))
+                    Button { chat.queued.removeAll { $0.id == item.id } } label: { Image(systemName: "xmark.circle") }
+                        .help(tr("대기에서 빼기"))
+                }
+                .font(.caption)
+                .foregroundStyle(Color.accentColor)
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                leading()
+                TextField(placeholder, text: $text, axis: .vertical)
+                    .lineLimit(1...maxLines)
+                    .textFieldStyle(.roundedBorder)
+                    .focused(focus)
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.shift) {
+                            // 커서 자리에 줄바꿈 (⌥↩ 와 같은 동작)
+                            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+                            return .handled
+                        }
+                        return .ignored
+                    }
+                    .onSubmit(submit)
+                    .disabled(disabled)
+                    .help(tr("Enter 보내기 (답하는 중이면 대기, 대기 글의 ↑ 로 바로 보내기) · Shift+Enter 줄바꿈"))
+                if chat.running {
+                    Button(action: stop) { Image(systemName: "stop.circle.fill") }
+                        .help(tr("멈추기 (대기 글은 입력창으로 돌아와요)"))
+                } else {
+                    Button(action: submit) { Image(systemName: "arrow.up.circle.fill") }
+                        .disabled(isEmpty || disabled)
+                        .help(tr("보내기"))
+                }
+            }
+            .buttonStyle(.hover)
+            .font(.title3)
+        }
+    }
+
+    private func submit() {
+        let q = text
+        guard !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !disabled else { return }
+        text = ""
+        if chat.running {
+            chat.queued.append(.init(text: q, send: dispatch))
+        } else {
+            dispatch(q)
+        }
+        focus.wrappedValue = true
+    }
+
+    private func sendNow(_ item: DiagramChat.Queued) {
+        chat.queued.removeAll { $0.id == item.id }
+        chat.cancel()
+        dispatch(item.text)
+    }
+
+    private func stop() {
+        let waiting = chat.queued.map(\.text)
+        chat.queued.removeAll()
+        if !waiting.isEmpty {
+            text = (waiting + (isEmpty ? [] : [text])).joined(separator: "\n\n")
+        }
+        chat.cancel()
+        focus.wrappedValue = true
+    }
 }
 
 /// AI 대화 내용 (말풍선 + 진행 표시). 비어 있으면 intro 를 보여준다.
