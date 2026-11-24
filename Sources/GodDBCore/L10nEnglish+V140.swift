@@ -251,5 +251,11 @@ extension L10nEnglish {
         "내보내기 — 모델링 파일(.goddbmodel), 테이블 명세서(엑셀), 다이어그램 PNG 로 저장해요": "Export — save as a model file (.goddbmodel), a table specification (Excel) or a diagram PNG",
         "SQL 추출 — 모델을 CREATE TABLE · FK SQL 로 뽑아 복사하거나 저장해요": "Export SQL — generates CREATE TABLE and FK SQL from the model to copy or save",
         "대상 DB — SQL 추출 문법과 자주 쓰는 타입 목록에 써요": "Target DB — used for the SQL export dialect and the common type list",
+        // AI 입력창 (#203)
+        "대기 · %@": "Queued · %@",
+        "지금 답을 멈추고 바로 보내기": "Stop the current answer and send now",
+        "대기에서 빼기": "Remove from queue",
+        "Enter 보내기 (답하는 중이면 대기) · Shift+Enter 줄바꿈 · ⌘Enter 지금 답을 멈추고 바로 보내기": "Enter to send (queued while answering) · Shift+Enter for a new line · ⌘Enter to stop the current answer and send now",
+        "멈추기 (대기 글은 입력창으로 돌아와요)": "Stop (queued messages go back to the input)",
     ]
 }

@@ -389,7 +389,17 @@ struct AssistantPanel: View {
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(Color.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
             }
-            HStack(alignment: .bottom, spacing: 6) {
+            AIChatInput(chat: chat, text: $input, focus: $inputFocused,
+                        placeholder: finderOn ? tr("찾을 데이터 (예: 학년 정보)") : tr("질문을 입력하고 Enter"),
+                        maxLines: 6, disabled: unavailable != nil,
+                        dispatch: { [finderOn, canFind, app] q in
+                            // 데이터 찾기 모드이거나 "…어디 있어?" 꼴이면 데이터 찾기 (SQL 접속만, 애매하면 일반 질문)
+                            if canFind, finderOn || DataFinder.isFindQuestion(q) {
+                                app.findData(q)
+                            } else {
+                                app.askAssistant(q)
+                            }
+                        }) {
                 Menu {
                     if canFind { Button(tr("🔎 데이터 위치 찾기"), action: startFinder) }
                     ForEach(quickActions, id: \.self) { q in Button(q) { app.askAssistant(expand(q)) } }
@@ -397,23 +407,9 @@ struct AssistantPanel: View {
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help(tr("자주 쓰는 질문"))
                 .disabled(unavailable != nil || chat.running)
-                TextField(finderOn ? tr("찾을 데이터 (예: 학년 정보)") : tr("질문을 입력하고 Enter"), text: $input, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($inputFocused)
-                    .onSubmit(send)
-                    .disabled(unavailable != nil)
-                if chat.running {
-                    Button { chat.cancel() } label: { Image(systemName: "stop.circle.fill") }
-                        .help(tr("취소"))
-                } else {
-                    Button(action: send) { Image(systemName: "arrow.up.circle.fill") }
-                        .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || unavailable != nil)
-                        .help(tr("보내기"))
-                }
+                .buttonStyle(.hover)
+                .font(.title3)
             }
-            .buttonStyle(.hover)
-            .font(.title3)
             Text(tr("구조 · 코멘트 · 통계 · SQL 을 로컬 Ollama 에 보내요. 데이터 찾기에서는 후보 컬럼의 값 몇 개(최대 20개)도 로컬 Ollama 에 보내요. 이 PC 밖으로는 나가지 않아요."))
                 .font(.caption2).foregroundStyle(.secondary)
         }
@@ -429,18 +425,6 @@ struct AssistantPanel: View {
         inputFocused = true
     }
 
-    private func send() {
-        let q = input
-        guard !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        input = ""
-        // 데이터 찾기 모드이거나 "…어디 있어?" 꼴이면 데이터 찾기 (SQL 접속만, 애매하면 일반 질문)
-        if canFind, finderOn || DataFinder.isFindQuestion(q) {
-            app.findData(q)
-        } else {
-            app.askAssistant(q)
-        }
-        inputFocused = true
-    }
 }
 
 /// 작은 정보 칩 (줄바꿈되며 나열)
