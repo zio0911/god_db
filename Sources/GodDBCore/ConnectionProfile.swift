@@ -233,6 +233,8 @@ public struct ProfileStore: Sendable {
 
     public func load() -> [ConnectionProfile] {
         guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        // 예전 버전이 만든 파일(0644)도 나만 읽게 맞춘다
+        Self.restrict(fileURL)
         return (try? JSONDecoder().decode([ConnectionProfile].self, from: data)) ?? []
     }
 
@@ -242,5 +244,11 @@ public struct ProfileStore: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(profiles).write(to: fileURL, options: .atomic)
+        Self.restrict(fileURL)
+    }
+
+    /// 접속 목록(호스트 · 계정 · SSH 키 경로)은 나만 읽고 쓰게 (0600). 비밀번호는 키체인에 따로 있다
+    static func restrict(_ url: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }

@@ -326,6 +326,19 @@ extension SQLText {
                 let u = tok.text.uppercased()
                 if u.hasPrefix("SP_") || u.hasPrefix("XP_") { return .function(tok.text.lowercased()) }
             }
+            // SQL Server 상태를 바꾸는 문장 · 식 (#193). send · receive 는 열 이름일 수 있어 문장 자리에서만 막는다
+            if kind == .mssql, tok.kind == .word || tok.isIdentifier {
+                let u = tok.text.uppercased()
+                let statementStart = prev == nil || prev!.isSymbol(";")
+                let n1 = word(idx + 1)?.uppercased() ?? (idx + 1 < t.count ? t[idx + 1].text.uppercased() : nil)
+                // Service Broker: 큐에서 메시지를 꺼내 지움 / 메시지 보내기
+                if u == "RECEIVE", statementStart { return .keyword("RECEIVE") }
+                if u == "SEND", n1 == "ON" { return .keyword("SEND") }
+                // 시퀀스 값 늘리기: NEXT VALUE FOR seq
+                if u == "NEXT", n1 == "VALUE", (word(idx + 2)?.uppercased() ?? (idx + 2 < t.count ? t[idx + 2].text.uppercased() : nil)) == "FOR" {
+                    return .keyword("NEXT VALUE FOR")
+                }
+            }
             guard tok.kind == .word, readOnlyBlockedWords.contains(tok.text) else { continue }
             // 예외: 열 이름 · 별칭으로 쓴 경우 (t.comment, AS lock)
             if let prev, prev.isSymbol("."), idx >= 2, t[idx - 2].isIdentifier { continue }

@@ -309,4 +309,22 @@ struct ReadOnlyGuardIntegrationTests {
         _ = try? await admin.raw("DROP TABLE IF EXISTS \(Self.table)")
         await admin.close()
     }
+
+    /// SQL Server: Service Broker RECEIVE · SEND, 시퀀스 NEXT VALUE FOR 도 막는다 (#193). 같은 이름의 열은 그대로
+    @Test func mssqlBrokerAndSequence() {
+        let blocked: [(String, SQLText.ReadOnlyViolation)] = [
+            ("RECEIVE TOP (1) * FROM dbo.q", .leading("RECEIVE")),
+            ("SELECT 1; RECEIVE TOP (1) * FROM dbo.q", .keyword("RECEIVE")),
+            ("SELECT 1; SEND ON CONVERSATION @h MESSAGE TYPE m (N'x')", .keyword("SEND")),
+            ("SELECT NEXT VALUE FOR dbo.order_seq", .keyword("NEXT VALUE FOR")),
+            ("select next value for order_seq as n", .keyword("NEXT VALUE FOR")),
+        ]
+        for (sql, want) in blocked {
+            #expect(SQLText.readOnlyViolation(sql, kind: .mssql) == want, "\(sql)")
+        }
+        for sql in ["SELECT send, receive, next, value FROM t", "SELECT t.send FROM t WHERE receive = 1",
+                    "SELECT [next] FROM t ORDER BY value"] {
+            #expect(SQLText.readOnlyViolation(sql, kind: .mssql) == nil, "\(sql)")
+        }
+    }
 }

@@ -50,7 +50,10 @@ public enum ConnectionTransferError: LocalizedError, Equatable {
 }
 
 public enum ConnectionTransfer {
-    static let rounds = 200_000
+    /// PBKDF2-SHA256 반복 횟수 (OWASP 권장 60만 회). 1.4.2 까지는 20만 회 — 가져오기는 파일에 적힌 횟수를 쓴다
+    static let rounds = 600_000
+    /// 가져올 때 받아 주는 횟수 범위 (터무니없이 큰 값으로 앱을 오래 붙잡는 파일 거절)
+    static let acceptedRounds = 10_000...5_000_000
 
     /// 내보내기 파일 내용을 만든다.
     /// - Parameters:
@@ -144,7 +147,7 @@ public enum ConnectionTransfer {
         return SymmetricKey(data: out)
     }
 
-    static func encrypt(_ plain: Data, passphrase: String) throws -> ConnectionBundle.EncryptedPasswords {
+    static func encrypt(_ plain: Data, passphrase: String, rounds: Int = rounds) throws -> ConnectionBundle.EncryptedPasswords {
         var salt = Data(count: 16)
         _ = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
         let sealed = try AES.GCM.seal(plain, using: key(passphrase, salt: salt, rounds: rounds))
@@ -152,7 +155,8 @@ public enum ConnectionTransfer {
     }
 
     static func decrypt(_ enc: ConnectionBundle.EncryptedPasswords, passphrase: String) throws -> Data {
-        guard let salt = Data(base64Encoded: enc.salt), let data = Data(base64Encoded: enc.data),
+        guard acceptedRounds.contains(enc.rounds),
+              let salt = Data(base64Encoded: enc.salt), let data = Data(base64Encoded: enc.data),
               let box = try? AES.GCM.SealedBox(combined: data) else {
             throw ConnectionTransferError.notGodDBFile
         }

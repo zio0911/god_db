@@ -1,3 +1,4 @@
+import CommonCrypto
 import Foundation
 import Testing
 @testable import GodDBCore
@@ -147,7 +148,7 @@ struct DBeaverImportTests {
         #expect(r2.sources.first { $0.profile.name == "GodDB MSSQL-SSH" }?.notes.contains(tr("SSH 사용자 이름이 없어요. 접속 편집에서 넣어 주세요.")) == true)
     }
 
-    @Test func credentialsGiveOnlyUserNames() {
+    @Test func credentialsGiveUserNames() {
         let files = try? ZipReader.read(Self.dbp) { $0.hasSuffix("credentials-config.json") }
         let users = DBeaverImport.users(inCredentials: files?.values.first ?? Data())
         #expect(users["microsoft-1a20679c385-79cdf5e1b628e617"] == .init(database: "sa", ssh: "tunnel"))
@@ -222,6 +223,30 @@ struct DBeaverImportTests {
 
         let jdbc = try #require(DataGripImport.profile(fromJDBC: "jdbc:redshift://c.example.test/dev"))
         #expect(jdbc.kind == .postgres && jdbc.port == 5439 && jdbc.useTLS && jdbc.redshift)
+    }
+
+    /// DBeaver 에 저장된 DB 비밀번호도 가져온다 (#195). 비밀번호가 없는 접속은 지금처럼 처음 연결할 때 입력
+    @Test func savedPasswordsAreImported() throws {
+        let creds = ##"{"pg-1":{"#connection":{"user":"app","password":"s3cret"}},"my-1":{"#connection":{"user":"root"}}}"##
+        let iv = [UInt8](repeating: 7, count: 16)
+        var out = [UInt8](repeating: 0, count: creds.utf8.count + 32)
+        var n = 0
+        let st = CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
+                         DBeaverImport.credentialsKey, DBeaverImport.credentialsKey.count, iv,
+                         Array(creds.utf8), creds.utf8.count, &out, out.count, &n)
+        #expect(st == kCCSuccess)
+        let file = Data(iv + out.prefix(n))
+        let users = DBeaverImport.users(inCredentials: file)
+        #expect(users["pg-1"] == .init(database: "app", ssh: nil, password: "s3cret"))
+        #expect(users["my-1"]?.password == nil)
+
+        let ds = #"{"connections":{"pg-1":{"provider":"postgresql","driver":"postgres-jdbc","name":"pg","configuration":{"host":"h.example.test","port":"5432","database":"d"}},"my-1":{"provider":"mysql","driver":"mysql8","name":"my","configuration":{"host":"m.example.test","port":"3306"}}}}"#
+        let r = try DBeaverImport.parse(Data(ds.utf8), credentials: file)
+        let pg = try #require(r.sources.first { $0.profile.name == "pg" })
+        #expect(pg.password == "s3cret" && pg.profile.username == "app")
+        #expect(pg.notes.contains(tr("DBeaver 에 저장된 비밀번호도 가져와 키체인에 넣어요.")))
+        let my = try #require(r.sources.first { $0.profile.name == "my" })
+        #expect(my.password == nil && my.notes.contains(tr("비밀번호는 처음 연결할 때 입력해요.")))
     }
 
     @Test func errors() {

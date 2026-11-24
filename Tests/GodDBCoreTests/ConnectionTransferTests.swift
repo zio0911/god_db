@@ -31,6 +31,35 @@ struct ConnectionTransferTests {
         }
     }
 
+    /// 새로 내보내면 60만 회, 1.4.2 까지의 20만 회 파일도 그대로 열림, 터무니없는 횟수는 거절 (#191)
+    @Test func keyStrengthAndOldFiles() throws {
+        let data = try ConnectionTransfer.export([a], passwords: [a.id: "pw"], passphrase: "team-pass")
+        #expect(try ConnectionTransfer.parse(data).passwords?.rounds == 600_000)
+
+        let plain = try JSONEncoder().encode([a.id.uuidString: "old-pw"])
+        let old = try ConnectionTransfer.encrypt(plain, passphrase: "team-pass", rounds: 200_000)
+        #expect(old.rounds == 200_000)
+        #expect(try ConnectionTransfer.decrypt(old, passphrase: "team-pass") == plain)
+
+        var huge = old
+        huge.rounds = 2_000_000_000
+        #expect(throws: ConnectionTransferError.notGodDBFile) { try ConnectionTransfer.decrypt(huge, passphrase: "team-pass") }
+    }
+
+    /// 접속 목록 파일은 나만 읽고 쓰게 (0600), 예전 0644 파일도 읽을 때 맞춤 (#191)
+    @Test func profileFileIsPrivate() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goddb-perm-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("profiles.json")
+        let store = ProfileStore(fileURL: url)
+        try store.save([a])
+        func mode() throws -> Int { (try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int) ?? -1 }
+        #expect(try mode() == 0o600)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+        #expect(store.load().count == 1)
+        #expect(try mode() == 0o600)
+    }
+
     @Test func passwordsNeedPassphrase() {
         #expect(throws: ConnectionTransferError.emptyPassphrase) {
             try ConnectionTransfer.export([a], passwords: [a.id: "x"], passphrase: "")
