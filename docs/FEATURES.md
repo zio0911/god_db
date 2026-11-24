@@ -1,6 +1,6 @@
 # GodDB 기능 명세
 
-> 버전 1.4.2 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, Amazon Redshift, SQL Server 2016+, Redis 6+
+> 버전 1.4.3 · 대상 DB: MySQL 5.7 / 8.x (AWS RDS 포함), PostgreSQL 12+, Amazon Redshift, SQL Server 2016+, Redis 6+
 > 이 문서는 기능이 추가·변경될 때마다 함께 갱신한다.
 
 ## 목차
@@ -832,6 +832,19 @@ SSH 터널의 바스티온 서버 키를 처음 접속할 때 확인받는다 (�
 - 화면 자동 테스트(`scripts/ui-test.sh`)는 MySQL 화면 흐름 전체와, PostgreSQL · SQL Server 의 핵심 흐름(연결 · 실행 · 결과 복사 · 빨간 밑줄 · 위험 문장 확인 · 외래 키 따라가기 · 칸 편집 · 스키마 비교), 모델링(만들기 · 수정 · 관계 · 이동 · 되돌리기 · 삭제)을 확인한다. Redis 화면은 수동 확인.
 
 ## 18. 변경 이력
+
+### 1.4.3
+- **테이블 설명 (AI 참고)**: 테이블 · 컬럼 · 코드 값 · 관계 · 규칙을 JSON 으로 넣어 두면 AI 어시스턴트와 데이터 찾기가 참고. 사이드바 말풍선 아이콘으로 열고, 빈 양식을 내려받아 AI 에이전트에게 채워 오게 할 수 있음 (앱은 아무것도 클라우드로 보내지 않음). 왼쪽 목록 · 오른쪽 읽기 전용 상세로 무엇이 들어 있는지 확인. 예전 테이블 메모는 테이블 설명으로 합침
+- **AI 추천 모델**: 설정 > AI 에 "M5 Pro 메모리 48GB 이상이면 qwen3.8:27b-mlx, 24GB 면 qwen3:14b" 안내, 기본(자동) 모델 qwen3.8:27b-mlx
+- AI 어시스턴트가 답하는 중에 새 글을 보내면 그 답을 멈추고 새 글부터 답함 (보낸 글이 사라지던 문제)
+- **보안 · 안정성**
+  - 접속 목록 파일을 나만 읽고 쓰게(0600), 접속 정보 내보내기 암호 키 강화(PBKDF2 60만 회, 예전 파일도 열림)
+  - SQL Server 읽기전용 검사에 RECEIVE · SEND · NEXT VALUE FOR 추가, 읽는 도중 연결이 끊기면 일부 행을 정상 결과로 돌려주지 않음
+  - 결과 편집: 별칭 열(`email AS id`)을 실제 컬럼으로 보지 않음 (다른 행이 바뀔 수 있던 문제)
+- DBeaver 가져오기: DBeaver 에 저장된 비밀번호도 키체인으로 가져옴
+- 모델링에서 테이블을 삭제하면 앱이 꺼지던 문제 수정
+- PostgreSQL 프로시저 정의가 본문만 나오던 문제 수정, 빌드 경고 정리
+- 화면 자동 테스트에 PostgreSQL · SQL Server · 모델링 추가
 
 ### 1.4.2
 - **Amazon Redshift 지원**: 새 접속 DB 종류에 Redshift (포트 5439 · TLS 켬, PostgreSQL 방식으로 연결). 테이블 · 컬럼 · 기본 키 · 외래 키 · 함수 조회를 Redshift 에 맞추고, 컬럼에 DISTKEY · SORTKEY 표시, CREATE TABLE 에 DISTKEY · SORTKEY. 사이드바 · 탭에 Redshift 아이콘
