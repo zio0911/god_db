@@ -1099,16 +1099,17 @@ func fileText(_ path: String, wait: Double = 4) -> String {
 
 let uiWork = ProcessInfo.processInfo.environment["GODDB_UI_WORK"] ?? NSTemporaryDirectory()
 
-/// 사이드바 머리 줄의 테이블 설명 말풍선 아이콘 (#185)
+/// 사이드바 머리 줄 (DB 글자 · DB 고르기 · 테이블 수 · 말풍선 · 다이어그램 · 새로고침) — 접근성에는 팝업 버튼 하나로 뭉쳐 보이고,
+/// 라벨에 말풍선 도움말("테이블 설명 (AI 참고) — …")이 들어 있다 (#185)
 func descriptionsIcon() -> Node? {
-    app.find(10, { !$0.modal && $0.role == "AXButton" && $0.label.hasPrefix("테이블 설명 (AI 참고)") })
+    app.find(10, { !$0.modal && $0.role == "AXPopUpButton" && $0.label.contains("테이블 설명 (AI 참고)") })
 }
 
-/// 말풍선 아이콘 → 테이블 설명 창
+/// 말풍선 아이콘 → 테이블 설명 창. 아이콘은 머리 줄 오른쪽 끝에서 50pt 왼쪽 (새로고침 · 다이어그램 앞)
 @discardableResult
 func openDescriptions() -> Bool {
-    guard let icon = descriptionsIcon() else { return false }
-    press(icon)
+    guard let header = descriptionsIcon() else { return false }
+    clickAt(CGPoint(x: header.frame.maxX - 50, y: header.frame.midY))
     return app.find(4, { $0.modal && $0.text.contains("AI 에이전트로 채우기") }) != nil
 }
 
@@ -1142,7 +1143,7 @@ scenario("tableDescriptions") {
     check("목록에 title", app.find(2, { $0.modal && $0.role == "AXStaticText" && $0.value == "회원 정보" }) != nil)
     if !answer("닫기") { key("escape") }
     check("창 닫힘", app.gone(3, { $0.modal && $0.text.contains("AI 에이전트로 채우기") }))
-    check("말풍선 아이콘 (설명 있음 → '테이블 2개')", app.find(3, { !$0.modal && $0.role == "AXButton" && $0.label.contains("테이블 설명 (AI 참고) — 테이블 2개") }) != nil,
+    check("말풍선 아이콘 (설명 있음 → '테이블 2개')", app.find(3, { !$0.modal && $0.role == "AXPopUpButton" && $0.label.contains("테이블 설명 (AI 참고) — 테이블 2개") }) != nil,
           descriptionsIcon()?.label ?? "")
 
     guard let ai = app.find(3, { $0.role == "AXButton" && $0.label.contains("AI 어시스턴트") }) else { throw Abort(message: "AI 버튼 없음") }
