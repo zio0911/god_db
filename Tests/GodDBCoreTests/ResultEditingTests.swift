@@ -21,6 +21,32 @@ struct ResultEditingTests {
         #expect(ResultEditing.singleTable(in: "UPDATE a SET x = 1") == nil)
     }
 
+    /// 별칭 · 식 열은 실제 컬럼으로 보지 않는다 — SELECT status AS member_id 의 'member_id' 를 기본 키로 쓰면 다른 행이 바뀐다 (#194)
+    @Test func aliasedColumnsAreNotKeys() throws {
+        // 다른 컬럼에 기본 키 이름 별칭 → 기본 키가 없음
+        #expect(throws: ResultEditingError.primaryKeyNotSelected("member_id")) {
+            try ResultEditing.target(sql: "SELECT status AS member_id, email FROM tb_member", columns: ["member_id", "email"], tables: [table])
+        }
+        // 이름을 서로 바꿔 부름 → 둘 다 고칠 수 없는 열
+        let swapped = try ResultEditing.target(sql: "SELECT member_id, email AS status, status AS email FROM tb_member",
+                                               columns: ["member_id", "status", "email"], tables: [table])
+        #expect(swapped.columnMap == [0: "member_id"])
+        // 식 · 상수는 고치지 않는다, 같은 이름 별칭 · 따옴표 · 테이블 이름 붙임 · TOP 은 그대로
+        let t = try ResultEditing.target(sql: "SELECT TOP (10) m.[member_id], `email` AS email, UPPER(status) AS status FROM tb_member m",
+                                         columns: ["member_id", "email", "status"], tables: [table])
+        #expect(t.columnMap == [0: "member_id", 1: "email"])
+        // * 와 섞어 쓰기
+        let s = try ResultEditing.target(sql: "SELECT m.*, 1 AS one FROM tb_member m", columns: ["member_id", "email", "status", "one"], tables: [table])
+        #expect(s.columnMap == [0: "member_id", 1: "email", 2: "status"])
+        // 결과 열 수가 SELECT 목록과 안 맞으면 고치지 않음
+        #expect(throws: ResultEditingError.columnsUnclear) {
+            try ResultEditing.target(sql: "SELECT * FROM tb_member", columns: ["member_id", "email"], tables: [table])
+        }
+        // 문자열 · 함수 안의 쉼표 · FROM 은 목록을 나누지 않는다
+        #expect(ResultEditing.selectItems("SELECT member_id, CONCAT(email, ', from') AS x FROM tb_member")
+                == ["member_id", "CONCAT(email, ', from') AS x"])
+    }
+
     @Test func targetNeedsPrimaryKey() throws {
         let t = try ResultEditing.target(sql: "SELECT member_id, email FROM tb_member", columns: ["member_id", "email"], tables: [table])
         #expect(t.primaryKeyIndexes == [0])

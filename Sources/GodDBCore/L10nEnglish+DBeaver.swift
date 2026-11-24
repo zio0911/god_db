@@ -15,5 +15,6 @@ extension L10nEnglish {
         "사용자 이름이 없어요. 접속 편집에서 넣어 주세요.": "No user name. Enter it in the connection editor.",
         "지원하지 않는 접속 %@개는 건너뛰었어요: %@": "Skipped %@ unsupported connections: %@",
         "프록시 설정은 가져오지 않았어요.": "Proxy settings were not imported.",
-    ]
+            "DBeaver 에 저장된 비밀번호도 가져와 키체인에 넣어요.": "The password saved in DBeaver is imported into the Keychain too.",
+]
 }

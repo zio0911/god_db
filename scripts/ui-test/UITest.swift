@@ -969,7 +969,8 @@ scenario("jsonView") {
 func openInlineEditor(_ value: String) -> Node? {
     // 고르지 않은 행을 바로 더블클릭 (실제로 쓰는 방식 — 첫 클릭에 행 편집 패널이 열리며 표가 다시 배치된다)
     // 적용 직후 표를 다시 그리는 중이면 더블클릭이 빗나갈 수 있어 한 번 더 (칸 위치를 다시 찾는다)
-    for _ in 0..<2 {
+    for attempt in 0..<3 {
+        if attempt > 0 { Thread.sleep(forTimeInterval: 0.7) }  // 다시 그리기가 끝나길 기다린다
         guard let c = app.find(5, cell(value)) else { return nil }
         click(c, double: true)
         if let f = app.find(3, { $0.role == "AXTextField" && $0.label.contains("칸 편집") }) { return f }
@@ -1685,6 +1686,50 @@ scenario("modeling") {
             check("모델 삭제 → '모델이 없어요'", app.find(4, hasText("모델이 없어요")) != nil)
         } else { check("모델 우클릭 '삭제…'", false); key("escape") }
     } else { check("모델 목록 줄", false, app.snapshot().filter { $0.value.hasPrefix("새 모델") }.map { "\($0.role) \($0.frame.origin)" }.joined(separator: ", ")) }
+}
+
+scenario("editAlias") {
+    // 결과 편집: 다른 컬럼에 기본 키 이름 별칭(customer AS id)이면 편집 불가, 별칭 없는 조회는 그대로 편집 (#194)
+    if let dev = app.find(3, { $0.role == "AXStaticText" && $0.value == "UI MySQL" }) { click(dev) }
+    clearFilter()
+    try setEditor("SELECT customer AS id, amount FROM ui_orders ORDER BY amount")
+    guard runAndWait(8, cell("jung")) != nil else { throw Abort(message: "결과가 없어요") }
+    check("별칭 기본 키 → '편집 불가' 표시", app.find(4, { $0.text.contains("편집 불가") && $0.text.contains("기본 키") }) != nil)
+    if let c = app.find(3, cell("jung")) { click(c, double: true) }
+    check("별칭 결과는 칸 더블클릭해도 그 자리 입력란이 안 열림",
+          app.gone(2, { $0.role == "AXTextField" && $0.label.contains("칸 편집") }))
+    key("escape")
+    try setEditor("SELECT id, customer AS customer, amount FROM ui_orders ORDER BY id")
+    guard runAndWait(8, cell("jung")) != nil else { throw Abort(message: "결과가 없어요") }
+    check("같은 이름 별칭은 그대로 편집 가능 (편집 불가 없음)", app.gone(3, hasText("편집 불가")))
+}
+
+scenario("dbeaverPasswords") {
+    // DBeaver 가져오기: 저장된 비밀번호가 있는 접속 / 없는 접속의 안내 (#195). 키체인에 쓰지 않게 [취소] 로 닫는다
+    guard let dir = ProcessInfo.processInfo.environment["GODDB_UI_DBEAVER_DIR"] else { throw Abort(message: "DBeaver 테스트 파일 없음") }
+    guard let menu = app.find(3, { $0.role == "AXMenuButton" && $0.label.contains("가져오기 · 내보내기") }) else {
+        throw Abort(message: "가져오기 · 내보내기 메뉴 없음")
+    }
+    press(menu)
+    guard let item = app.find(3, { $0.role == "AXMenuItem" && $0.label.hasPrefix("DBeaver 접속 정보 가져오기") }) else {
+        key("escape"); throw Abort(message: "DBeaver 가져오기 메뉴 항목 없음")
+    }
+    press(item)
+    Thread.sleep(forTimeInterval: 1.2)
+    // 파일 고르기 창: ⇧⌘G → 경로 → ↩ → 열기
+    key("g", [cmd, shift])
+    Thread.sleep(forTimeInterval: 0.6)
+    paste(dir + "/data-sources.json")
+    key("return")
+    Thread.sleep(forTimeInterval: 0.8)
+    key("return")
+    let opened = app.find(8, hasText("UI DBeaver 비밀번호 있음")) != nil
+    check("DBeaver 파일 → 가져오기 창에 접속 2개", opened && app.find(2, hasText("UI DBeaver 비밀번호 없음")) != nil)
+    check("비밀번호 저장된 접속: '비밀번호도 가져와 키체인에' 안내",
+          app.find(3, hasText("DBeaver 에 저장된 비밀번호도 가져와 키체인에 넣어요.")) != nil)
+    check("비밀번호 없는 접속: '처음 연결할 때 입력' 안내", app.find(2, hasText("비밀번호는 처음 연결할 때 입력해요.")) != nil)
+    check("가져오기 창에 비밀번호 글자가 보이지 않음", !app.snapshot().contains { $0.text.contains("ui-secret") })
+    if !answer("취소", timeout: 2) { key("escape") }
 }
 
 // 디버그: uitest <pid> --dump  → 지금 화면 요소 목록

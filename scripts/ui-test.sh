@@ -154,6 +154,23 @@ cat > "$DATA/table-notes.json" <<'JSON'
    "table": "ui_students", "columns": [], "terms": ["학생"], "memo": "", "source": "ai", "confirmed": false,
    "createdAt": "2026-11-01T00:00:00Z", "updatedAt": "2026-11-01T00:00:00Z" } ] }
 JSON
+# DBeaver 가져오기 (비밀번호): 가짜 주소 접속 2개, 하나만 비밀번호 저장. credentials-config.json 은 DBeaver 와 같은 방식으로 암호화
+DBV="$WORK/dbeaver"
+mkdir -p "$DBV"
+cat > "$DBV/data-sources.json" <<'JSON'
+{"connections": {
+  "ui-pg-pw": {"provider": "postgresql", "driver": "postgres-jdbc", "name": "UI DBeaver 비밀번호 있음",
+    "configuration": {"host": "pw.example.test", "port": "5432", "database": "shop"}},
+  "ui-my-nopw": {"provider": "mysql", "driver": "mysql8", "name": "UI DBeaver 비밀번호 없음",
+    "configuration": {"host": "nopw.example.test", "port": "3306", "database": "shop"}}
+}}
+JSON
+DBV_IV=07070707070707070707070707070707
+{ printf '%s' "$DBV_IV" | xxd -r -p
+  printf '%s' '{"ui-pg-pw":{"#connection":{"user":"app","password":"ui-secret"}},"ui-my-nopw":{"#connection":{"user":"root"}}}' \
+    | openssl enc -aes-128-cbc -K babb4a9f774ab853c96c2d653dfe544a -iv "$DBV_IV"
+} > "$DBV/credentials-config.json"
+
 cat > "$DATA/profiles.json" <<JSON
 [
  {"id":"00000000-0000-4000-8000-0000000000A1","kind":"mysql","name":"UI MySQL","host":"127.0.0.1","port":$MYSQL_PORT,
@@ -212,7 +229,7 @@ sleep 4
 echo "▶ 시나리오 실행"
 swiftc -O -o "$WORK/uitest" scripts/ui-test/UITest.swift
 set +e
-"$WORK/uitest" $APP_PID "${SCENARIOS[@]}" | tee "$WORK/report.txt"
+GODDB_UI_DBEAVER_DIR="$DBV" "$WORK/uitest" $APP_PID "${SCENARIOS[@]}" | tee "$WORK/report.txt"
 RESULT=${pipestatus[1]}
 set -e
 

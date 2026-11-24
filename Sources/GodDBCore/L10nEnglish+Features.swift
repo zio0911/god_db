@@ -21,6 +21,7 @@ extension L10nEnglish {
         "개선 SQL 과 인덱스는 자동으로 실행하지 않아요.": "Improved SQL and indexes are never run automatically.",
         "개선 SQL 과 인덱스는 자동으로 실행하지 않아요. 확인 후 직접 실행하세요.": "Improved SQL and indexes are never run automatically. Review them and run them yourself.",
         "개선 SQL 의 실행 계획을 확인하는 중…": "Checking the execution plan of the improved SQL…",
+        "결과 열이 테이블의 어느 컬럼인지 확실하지 않아 고치지 않아요. 별칭 · 식 없이 컬럼 이름이나 * 로 조회해 주세요.": "GodDB can't tell which table column each result column is, so it won't edit this result. Query plain column names or * without aliases or expressions.",
         "결과에 기본 키 컬럼(%@)이 있어야 고칠 수 있어요. SELECT 에 넣어 주세요.": "The result must include the primary key column (%@) to edit. Add it to the SELECT.",
         "다시 확인": "Check again",
         "답변을 쓰는 중…": "Writing the answer…",

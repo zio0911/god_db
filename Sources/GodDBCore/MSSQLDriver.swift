@@ -178,14 +178,24 @@ final class MSSQLDriver: DBDriver, @unchecked Sendable {
                 let status = dbnextrow(p)
                 if status == NO_MORE_ROWS { break }
                 if status == FAIL { throw fail() }
+                // 일반 행만 담는다 (COMPUTE 행 등은 번호가 양수로 와서 건너뜀)
+                guard status == REG_ROW else { continue }
                 rows.append((1...n).map { value(p, Int32($0)) })
             }
             captured = true
         }
         // 실행 중 서버 오류(심각도 > 10)가 있었으면 실패로 본다.
         if let error = MessageBox.errors.first(where: { $0.number < 20000 }) { throw error }
+        // 읽는 도중 연결이 끊기거나 시간이 넘으면 FreeTDS 가 "행 없음" 으로 끝낼 수 있다 (#192).
+        // 그때까지 받은 행을 정상 결과처럼 돌려주지 않도록 연결 상태와 DB-Library 오류(20000번대)를 본다.
+        // (값 변환 경고 같은 다른 DB-Library 오류는 칸을 비우고 계속한다 — 예전과 같게)
+        if dbdead(p) != 0 || MessageBox.errors.contains(where: { Self.connectionErrors.contains($0.number) }) { throw fail() }
         return (columns, rows)
     }
+
+    /// 읽는 도중 연결 문제를 뜻하는 DB-Library 오류: 시간 초과(20003), 읽기 · 쓰기 실패(20004 · 20006),
+    /// 예기치 않은 끝(20017), 연결 끊김(20047)
+    static let connectionErrors: Set<Int> = [20003, 20004, 20006, 20017, 20047]
 
     private func value(_ p: OpaquePointer, _ col: Int32) -> String? {
         guard let data = dbdata(p, col) else { return nil }

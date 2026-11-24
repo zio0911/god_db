@@ -12,6 +12,8 @@ struct ImportRequest: Identifiable {
     var notes: [UUID: [String]] = [:]
     /// 지원하지 않아 건너뛴 접속 이름 (DBeaver 에서 가져올 때)
     var skipped: [String] = []
+    /// DBeaver 에 저장돼 있던 비밀번호 (접속 id → 비밀번호). 가져오기를 누르면 키체인에 넣는다
+    var plainPasswords: [UUID: String] = [:]
 }
 
 extension AppState {
@@ -46,7 +48,9 @@ extension AppState {
                 let bundle = ConnectionBundle(exportedAt: Date(), app: "DBeaver", profiles: result.sources.map(\.profile), passwords: nil)
                 importRequest = ImportRequest(fileName: url.lastPathComponent, bundle: bundle,
                                               notes: Dictionary(result.sources.map { ($0.profile.id, $0.notes) }, uniquingKeysWith: { a, _ in a }),
-                                              skipped: result.skipped)
+                                              skipped: result.skipped,
+                                              plainPasswords: Dictionary(result.sources.compactMap { s in s.password.map { (s.profile.id, $0) } },
+                                                                         uniquingKeysWith: { a, _ in a }))
                 return
             }
             let bundle = try ConnectionTransfer.parse(data)
@@ -294,7 +298,7 @@ struct ImportConnectionsSheet: View {
     }
 
     private func runImport() {
-        var passwords: [UUID: String] = [:]
+        var passwords: [UUID: String] = request.plainPasswords
         if request.bundle.hasPasswords, !passphrase.isEmpty {
             do {
                 passwords = try ConnectionTransfer.passwords(in: request.bundle, passphrase: passphrase)

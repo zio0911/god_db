@@ -6,12 +6,14 @@ import Foundation
 ///   - 프로젝트 내보내기 파일 (.dbp, ZIP: projects/<프로젝트>/.dbeaver/data-sources*.json)
 ///   - 작업 폴더의 data-sources.json (같은 폴더의 credentials-config.json 도 함께)
 /// DBeaver 는 사용자 이름을 비밀번호와 함께 credentials-config.json 에 암호화해 둔다.
-/// 여기서는 그 파일에서 **사용자 이름만** 꺼내고 비밀번호는 버린다 (돌려주지도, 남기지도 않는다).
+/// 사용자 이름과 저장된 DB 비밀번호를 꺼낸다 (#195). 비밀번호는 가져오기를 누르면 키체인에 넣고, 화면 · 로그에는 남기지 않는다.
 public enum DBeaverImport {
     public struct Source: Equatable, Sendable {
         public var profile: ConnectionProfile
         /// 사용자에게 알려줄 점 (사용자 이름 없음, SSH 방식 등)
         public var notes: [String]
+        /// DBeaver 에 저장돼 있던 DB 비밀번호 (없으면 nil — 처음 연결할 때 입력)
+        public var password: String? = nil
     }
 
     public struct Result: Equatable, Sendable {
@@ -115,6 +117,8 @@ public enum DBeaverImport {
     struct Users: Equatable {
         var database: String?
         var ssh: String?
+        /// DB 비밀번호 (DBeaver 에 저장한 경우)
+        var password: String? = nil
     }
 
     static func dataSources(_ data: Data) -> DataSources? {
@@ -270,8 +274,9 @@ public enum DBeaverImport {
             notes.append(tr("프록시 설정은 가져오지 않았어요."))
         }
         if p.username.isEmpty { notes.append(tr("사용자 이름이 없어요. 접속 편집에서 넣어 주세요.")) }
-        notes.append(tr("비밀번호는 처음 연결할 때 입력해요."))
-        return Source(profile: p, notes: notes)
+        let password = users?.password.flatMap { $0.isEmpty ? nil : $0 }
+        notes.append(password == nil ? tr("비밀번호는 처음 연결할 때 입력해요.") : tr("DBeaver 에 저장된 비밀번호도 가져와 키체인에 넣어요."))
+        return Source(profile: p, notes: notes, password: password)
     }
 
     /// DBeaver 접속 id → 늘 같은 UUID (다시 가져오면 같은 접속으로 인식)
@@ -288,8 +293,8 @@ public enum DBeaverImport {
     static let credentialsKey: [UInt8] = [0xBA, 0xBB, 0x4A, 0x9F, 0x77, 0x4A, 0xB8, 0x53,
                                           0xC9, 0x6C, 0x2D, 0x65, 0x3D, 0xFE, 0x54, 0x4A]
 
-    /// 접속 id → 사용자 이름. 비밀번호 등 다른 값은 꺼내지 않고, 푼 내용은 바로 지운다.
-    /// 풀 수 없으면 빈 결과 (사용자 이름 없이 가져온다).
+    /// 접속 id → 사용자 이름 · DB 비밀번호. 푼 원문 버퍼는 바로 지운다.
+    /// 풀 수 없으면 빈 결과 (사용자 이름 · 비밀번호 없이 가져온다).
     static func users(inCredentials data: Data) -> [String: Users] {
         guard data.count > 16, (data.count - 16) % 16 == 0 else { return [:] }
         let iv = [UInt8](data.prefix(16))
@@ -300,8 +305,8 @@ public enum DBeaverImport {
         let status = CCCrypt(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
                              credentialsKey, credentialsKey.count, iv, cipher, cipher.count, &plain, plain.count, &n)
         guard status == kCCSuccess else { return [:] }
-        // 사용자 이름만 읽는 모양으로 디코딩 (password 등 다른 필드는 무시)
-        struct Section: Decodable { var user: String? }
+        // 사용자 이름 · 비밀번호만 읽는 모양으로 디코딩 (다른 필드는 무시)
+        struct Section: Decodable { var user: String?; var password: String? }
         struct Loose: Decodable {
             var section: Section?
             init(from decoder: any Decoder) throws { section = try? Section(from: decoder) }
@@ -316,7 +321,8 @@ public enum DBeaverImport {
         for (id, sections) in obj {
             let db = sections["#connection"]?.section?.user
             let ssh = sections["network/ssh_tunnel"]?.section?.user
-            if db != nil || ssh != nil { out[id] = Users(database: db, ssh: ssh) }
+            let password = sections["#connection"]?.section?.password
+            if db != nil || ssh != nil || password != nil { out[id] = Users(database: db, ssh: ssh, password: password) }
         }
         return out
     }

@@ -65,6 +65,8 @@ public enum ResultEditingError: LocalizedError, Equatable {
     case valuesTruncated
     /// Redshift: 기본 키가 정보용이라 행을 하나로 고를 수 없다
     case keysNotEnforced
+    /// 결과 열이 어느 컬럼인지 SELECT 목록으로 확실히 알 수 없다
+    case columnsUnclear
 
     public var errorDescription: String? {
         switch self {
@@ -78,6 +80,8 @@ public enum ResultEditingError: LocalizedError, Equatable {
             return tr("결과에 기본 키 컬럼(%@)이 있어야 고칠 수 있어요. SELECT 에 넣어 주세요.", cols)
         case .valuesTruncated:
             return tr("값이 너무 커서 앞부분만 불러온 칸이 있어 이 결과는 표에서 고칠 수 없어요. UPDATE 문으로 수정하세요.")
+        case .columnsUnclear:
+            return tr("결과 열이 테이블의 어느 컬럼인지 확실하지 않아 고치지 않아요. 별칭 · 식 없이 컬럼 이름이나 * 로 조회해 주세요.")
         case .keysNotEnforced:
             return tr("Redshift 는 기본 키를 강제하지 않아 같은 키의 행이 여러 개일 수 있어서, 결과 표에서 고치지 않아요. UPDATE 문으로 수정하세요.")
         }
@@ -112,6 +116,80 @@ public enum ResultEditing {
             ?? tables.first(where: { $0.name.lowercased() == "dbo." + last })
     }
 
+    /// SELECT 목록의 항목 (맨 위 수준 쉼표로 나눔). TOP · ALL 같은 앞부분은 뺀다. 읽을 수 없으면 nil
+    static func selectItems(_ sql: String) -> [String]? {
+        let s = Array(SQLText.stripComments(sql))
+        var i = 0, depth = 0
+        var items: [String] = []
+        var cur = ""
+        var start: Int?
+        func word(at k: Int) -> String {
+            var j = k, w = ""
+            while j < s.count, s[j].isLetter || s[j] == "_" { w.append(s[j]); j += 1 }
+            return w.uppercased()
+        }
+        func boundary(_ k: Int) -> Bool { k < 0 || !(s[k].isLetter || s[k].isNumber || s[k] == "_") }
+        while i < s.count {
+            let ch = s[i]
+            if ch == "'" || ch == "\"" || ch == "`" || ch == "[" {
+                let close: Character = ch == "[" ? "]" : ch
+                var j = i + 1
+                while j < s.count, s[j] != close { j += 1 }
+                if start != nil { cur += String(s[i...min(j, s.count - 1)]) }
+                i = j + 1
+                continue
+            }
+            if ch == "(" { depth += 1 } else if ch == ")" { depth -= 1 }
+            if depth == 0, boundary(i - 1) {
+                let w = word(at: i)
+                if start == nil, w == "SELECT" { start = i + 6; i += 6; continue }
+                if start != nil, w == "FROM" {
+                    items.append(cur)
+                    break
+                }
+            }
+            if start != nil {
+                if depth == 0, ch == "," { items.append(cur); cur = "" } else { cur.append(ch) }
+            }
+            i += 1
+        }
+        guard start != nil, !items.isEmpty else { return nil }
+        var list = items.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        // SQL Server TOP (n) [PERCENT] [WITH TIES], ALL
+        if let first = list.first {
+            let stripped = first.replacingOccurrences(
+                of: #"^(?i)(ALL\s+)?(TOP\s*(\(\s*\d+\s*\)|\d+)(\s+PERCENT)?(\s+WITH\s+TIES)?\s+)?"#,
+                with: "", options: .regularExpression)
+            list[0] = stripped
+        }
+        return list.contains(where: \.isEmpty) ? nil : list
+    }
+
+    /// 결과 열마다 실제 컬럼 이름 (식 · 다른 이름의 별칭이면 nil). SELECT 목록과 결과 열 수가 맞지 않으면 nil
+    static func columnSources(sql: String, columns: [String], table: TableMeta) -> [String?]? {
+        guard let items = selectItems(sql) else { return nil }
+        let ident = #"(?:`[^`]+`|"[^"]+"|\[[^\]]+\]|[A-Za-z0-9_$#@]+)"#
+        let star = try! NSRegularExpression(pattern: "^(?:\(ident)\\.)*\\*$")
+        let ref = try! NSRegularExpression(
+            pattern: "^((?:\(ident)\\.)*)(\(ident))(?:\\s+(?:(?i:AS)\\s+)?(\(ident)))?$")
+        func unquote(_ s: String) -> String { s.trimmingCharacters(in: CharacterSet(charactersIn: "`\"[]")) }
+        var out: [String?] = []
+        for item in items {
+            let ns = item as NSString
+            let all = NSRange(location: 0, length: ns.length)
+            if star.firstMatch(in: item, range: all) != nil {
+                out += table.columns.map { Optional($0.name) }
+            } else if let m = ref.firstMatch(in: item, range: all) {
+                let col = unquote(ns.substring(with: m.range(at: 2)))
+                let alias = m.range(at: 3).location == NSNotFound ? col : unquote(ns.substring(with: m.range(at: 3)))
+                out.append(alias.lowercased() == col.lowercased() ? col : nil)
+            } else {
+                out.append(nil)  // 식 · 함수 · 상수
+            }
+        }
+        return out.count == columns.count ? out : nil
+    }
+
     /// 편집할 수 있는지 확인하고 대상 정보를 만든다.
     public static func target(sql: String, columns: [String], tables: [TableMeta]) throws -> EditTarget {
         guard let name = singleTable(in: sql) else { throw ResultEditingError.notSingleTable }
@@ -121,10 +199,16 @@ public enum ResultEditing {
         guard let pk = table.indexes.first(where: \.isPrimary), !pk.columns.isEmpty else {
             throw ResultEditingError.noPrimaryKey(table.name)
         }
+        // 결과 열이 실제로 어느 컬럼인지: SELECT 목록을 보고, 별칭이 다른 이름이거나 식인 열은 고치지 않는다 (#194).
+        // (이름만 맞춰 보면 SELECT name AS id 의 'id' 를 기본 키로 보고 다른 행을 바꿀 수 있다)
+        guard let sources = columnSources(sql: sql, columns: columns, table: table) else {
+            throw ResultEditingError.columnsUnclear
+        }
         var map: [Int: String] = [:]
         var used = Set<String>()
         for (i, col) in columns.enumerated() {
-            if let c = table.columns.first(where: { $0.name.lowercased() == col.lowercased() }),
+            guard let source = sources[i], source.lowercased() == col.lowercased() else { continue }
+            if let c = table.columns.first(where: { $0.name.lowercased() == source.lowercased() }),
                used.insert(c.name.lowercased()).inserted {
                 map[i] = c.name
             }
