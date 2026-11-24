@@ -377,10 +377,25 @@ public enum ResultExportPlan {
 
 extension DBSession {
     /// 쿼리 전체 결과를 chunk 행씩 나눠 조회하며 writer 에 바로 쓴다. 메모리에는 한 페이지만 둔다.
+    /// PostgreSQL · MySQL 은 모든 페이지를 한 읽기 스냅샷 안에서 읽어, 그사이 다른 곳에서 데이터가 바뀌어도
+    /// 페이지 경계에서 행이 겹치거나 빠지지 않는다 (#199).
     /// - Returns: 형식의 최대 행 수에 걸려 잘랐는지
     @discardableResult
     public func exportAll(_ sql: String, sort: ResultSort?, chunk: Int = 5_000, to writer: ResultExportWriter,
                           progress: @Sendable (Int) async -> Void = { _ in }) async throws -> Bool {
+        let snapshot = await beginSnapshot()
+        do {
+            let r = try await exportPages(sql, sort: sort, chunk: chunk, to: writer, progress: progress)
+            if snapshot { await endSnapshot() }
+            return r
+        } catch {
+            if snapshot { await endSnapshot() }
+            throw error
+        }
+    }
+
+    private func exportPages(_ sql: String, sort: ResultSort?, chunk: Int, to writer: ResultExportWriter,
+                             progress: @Sendable (Int) async -> Void) async throws -> Bool {
         var page = 0
         while true {
             try Task.checkCancellation()

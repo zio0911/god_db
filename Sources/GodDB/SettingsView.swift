@@ -69,7 +69,7 @@ struct GeneralSettingsView: View {
     @State private var showDotZero = false
     @State private var auditToolUnlocked = false
     @State private var tapWork: DispatchWorkItem?
-    @AppStorage(AppState.queryTimeoutKey) private var queryTimeout = 0
+    @AppStorage(AppState.queryTimeoutKey) private var queryTimeout = QueryTimeLimit.defaultSeconds
 
     var body: some View {
         @Bindable var settings = settings
@@ -99,7 +99,7 @@ struct GeneralSettingsView: View {
                     Text(tr("10분")).tag(600)
                     Text(tr("30분")).tag(1800)
                 }
-                Text(tr("시간을 넘기면 쿼리를 자동으로 취소해요. 실행 중에는 언제든 [취소] 또는 ⌘. 로 멈출 수 있어요."))
+                Text(tr("시간을 넘기면 쿼리를 자동으로 취소해요. 실행 중에는 언제든 [취소] 또는 ⌘. 로 멈출 수 있어요. PostgreSQL · MySQL 은 서버에도 같은 제한을 걸어요 (다음 연결부터, MySQL 은 SELECT 만)."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

@@ -83,6 +83,14 @@ extension AppState {
 
     /// 고른 접속을 합친다. 비밀번호가 있으면 키체인에 넣는다.
     func importProfiles(_ incoming: [ConnectionProfile], passwords: [UUID: String], fileName: String) {
+        // 같은 ID 인데 서버 · 계정이 바뀐 접속은 예전 비밀번호를 지운다 (새 비밀번호가 함께 오면 아래에서 다시 넣음)
+        for p in incoming {
+            if let old = profiles.first(where: { $0.id == p.id }),
+               !ConnectionTransfer.savedPasswordStillApplies(old: old, new: p) {
+                Keychain.deletePassword(for: p.id)
+                sessionPasswords[p.id] = nil
+            }
+        }
         profiles = ConnectionTransfer.merge(incoming, into: profiles)
         var saved = 0
         for p in incoming {

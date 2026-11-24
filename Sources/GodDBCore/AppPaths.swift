@@ -4,8 +4,17 @@ import Foundation
 public enum AppPaths {
     private static let env = ProcessInfo.processInfo.environment
 
-    /// scripts/ui-test.sh 로 띄운 화면 자동 테스트 실행인지
-    public static let uiTest = env["GODDB_UI_TEST"] == "1"
+    /// 화면 자동 테스트 복사본의 번들 ID (scripts/ui-test.sh 가 바꿔서 서명한다)
+    public static let uiTestBundleID = "local.goddb.app.uitest"
+
+    /// scripts/ui-test.sh 로 띄운 화면 자동 테스트 실행인지.
+    /// 환경변수만으로는 켜지지 않는다 — 정식 앱을 GODDB_UI_TEST=1 로 띄워 감사 로그를 끄거나
+    /// 데이터 폴더 · 비밀번호를 바꾸지 못하게, 테스트 복사본 번들 ID 일 때만 (#197)
+    public static let uiTest = isUITest(env: env, bundleID: Bundle.main.bundleIdentifier)
+
+    static func isUITest(env: [String: String], bundleID: String?) -> Bool {
+        env["GODDB_UI_TEST"] == "1" && bundleID == uiTestBundleID
+    }
 
     /// ~/Library/Application Support/GodDB (테스트면 GODDB_DATA_DIR)
     public static let dataDirectory: URL = {

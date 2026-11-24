@@ -44,6 +44,8 @@ public actor DBSession {
     public private(set) var autoCommit = true
     /// 열린 트랜잭션이 있는지
     public private(set) var inTransaction = false
+    /// 전체 내보내기가 연 읽기 스냅샷 트랜잭션 안인지 (사용자 트랜잭션과 따로, #199)
+    private var inSnapshot = false
     /// 마지막으로 이 접속을 쓴 시각 (쿼리 · 페이지 · 내보내기 · 스키마 읽기 모두 raw 를 거친다) — 운영 접속 자동 끊기에 쓴다
     public private(set) var lastActivity = Date()
     /// 열린 트랜잭션 안에서 실행한 쓰기 문장 수
@@ -169,6 +171,9 @@ public actor DBSession {
         }
         do {
             if let sql = dialect.sessionSetupSQL { _ = try? await d.query(sql) }
+            // 실행 시간 제한을 서버 세션에도 (#198). 지원하지 않는 서버(MariaDB 등)면 무시
+            let limit = QueryTimeLimit.seconds
+            if limit > 0, let sql = dialect.statementTimeoutSQL(milliseconds: limit * 1000) { _ = try? await d.query(sql) }
             if readOnly, let sql = dialect.readOnlySessionSQL {
                 // 서버 측에서도 변경을 거부하도록 세션을 읽기전용으로 설정
                 _ = try await d.query(sql)
@@ -293,7 +298,7 @@ public actor DBSession {
     /// 세션의 READ ONLY 는 set_config · SET 으로 끌 수 있지만, BEGIN READ ONLY 로 연 트랜잭션은 안에서 쓰기로 바꿀 수 없다.
     /// 롤백하므로 문장 안에서 바꾼 세션 설정(set_config(…, false) 등)도 남지 않는다. 앱 쪽 검사는 그대로 먼저 한다.
     func readOnlyGuardedRaw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
-        guard profile.readOnly, dialect.kind == .postgres, !inTransaction else { return try await raw(sql) }
+        guard profile.readOnly, dialect.kind == .postgres, !inTransaction, !inSnapshot else { return try await raw(sql) }
         _ = try await raw("BEGIN READ ONLY")
         do {
             let r = try await raw(sql)
@@ -305,9 +310,24 @@ public actor DBSession {
         }
     }
 
+    /// 읽기 스냅샷 시작 (#199). 사용자가 연 트랜잭션이 있거나 지원하지 않는 DB 면 열지 않고 false
+    func beginSnapshot() async -> Bool {
+        guard !inTransaction, !inSnapshot, let sql = dialect.snapshotBeginSQL else { return false }
+        do { _ = try await raw(sql) } catch { return false }
+        inSnapshot = true
+        return true
+    }
+
+    /// 읽기 스냅샷 끝 (읽기 전용이라 COMMIT 과 ROLLBACK 이 같다)
+    func endSnapshot() async {
+        guard inSnapshot else { return }
+        inSnapshot = false
+        _ = try? await raw(dialect.rollbackSQL)
+    }
+
     /// 수동 커밋 모드에서 쓰기 문장이면 먼저 트랜잭션을 연다
     private func beginIfNeeded(for sql: String) async throws {
-        guard !autoCommit, !inTransaction else { return }
+        guard !autoCommit, !inTransaction, !inSnapshot else { return }
         let kw = SQLText.firstKeyword(SQLText.stripComments(sql))
         guard !SQLText.isReadOnly(sql, kind: dialect.kind), !Self.transactionControl.contains(kw) else { return }
         // MySQL 의 DDL 은 어차피 자동 커밋되므로 트랜잭션을 열지 않는다

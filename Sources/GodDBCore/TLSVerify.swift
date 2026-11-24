@@ -23,10 +23,12 @@ public struct TLSPolicy: Sendable, Equatable {
         self.pin = pin
     }
 
-    /// 접속 정보로 정한다. 터널이면 hostname 없음.
+    /// 접속 정보로 정한다. SSH 터널로 붙어도 인증서 이름은 원래 DB 호스트로 확인한다 (#197).
+    /// (예전에는 터널이면 이름을 보지 않아, 고정하지 않은 접속은 어떤 인증서든 받았다.)
+    /// 이름이 안 맞으면 "처음 보는 인증서" 확인 창이 뜨고, 고정하면 지문으로 붙는다.
     public static func of(_ profile: ConnectionProfile, host: String? = nil) -> TLSPolicy {
         let pin = profile.tlsPinSHA256.flatMap { $0.isEmpty ? nil : $0 }
-        return TLSPolicy(verify: profile.tlsVerify, hostname: profile.ssh == nil ? (host ?? profile.host) : nil, pin: pin)
+        return TLSPolicy(verify: profile.tlsVerify, hostname: host ?? profile.host, pin: pin)
     }
 }
 

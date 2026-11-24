@@ -30,6 +30,8 @@ public protocol SQLDialect: Sendable {
     var readOnlySessionSQL: String? { get }
     /// 연결 직후 항상 실행할 세션 설정 (실패해도 접속은 계속)
     var sessionSetupSQL: String? { get }
+    /// 서버 세션의 실행 시간 제한 (밀리초). 지원하지 않으면 nil
+    func statementTimeoutSQL(milliseconds: Int) -> String?
     /// 이 연결의 서버 쪽 세션 번호 (실행 중인 쿼리 취소에 쓴다)
     var sessionIDSQL: String { get }
     /// 다른 연결에서 실행해 그 세션의 쿼리를 멈추는 SQL (id 는 숫자만)
@@ -100,6 +102,8 @@ public struct MySQLDialect: SQLDialect {
     public func quoteIdent(_ name: String) -> String { SQLText.quoteIdent(name) }
 
     public var readOnlySessionSQL: String? { "SET SESSION TRANSACTION READ ONLY" }
+    /// MySQL 5.7.8+: SELECT 에만 적용된다 (MariaDB 는 이 변수가 없어 실패 → 무시)
+    public func statementTimeoutSQL(milliseconds: Int) -> String? { "SET SESSION max_execution_time = \(milliseconds)" }
     public var sessionIDSQL: String { "SELECT CONNECTION_ID()" }
     public func cancelSQL(sessionID: Int) -> String { "KILL QUERY \(sessionID)" }
 
@@ -299,6 +303,7 @@ public struct PagedSQL: Sendable, Equatable {
 
 extension SQLDialect {
     public var sessionSetupSQL: String? { nil }
+    public func statementTimeoutSQL(milliseconds: Int) -> String? { nil }
 
     /// SELECT 를 페이지 단위로 가져오는 SQL. 다음 페이지가 있는지 알기 위해 limit + 1 행을 요청한다.
     /// 이미 LIMIT/TOP/OFFSET/INTO/FOR UPDATE 가 있거나 SELECT 가 아니면 nil (그대로 실행).

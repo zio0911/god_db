@@ -81,6 +81,7 @@ extension L10nEnglish {
         "SSH 키 파일 또는 SSH 사용자 이름이 맞는지 확인해 주세요. 키 파일 권한은 600 이어야 해요 (chmod 600 키파일).": "Check the SSH key file and SSH user name. The key file permission must be 600 (chmod 600 keyfile).",
         "SSH 터널": "SSH tunnel",
         "SSH 터널 연결에 실패했어요.\n%@": "Couldn't open the SSH tunnel.\n%@",
+        "SSH 호스트 · 사용자 이름에 쓸 수 없는 값이에요: %@ ('-' 로 시작하거나 공백 포함)": "This value can't be used as an SSH host or user name: %@ (starts with '-' or contains spaces)",
         "SSH 터널이 15초 안에 열리지 않았어요.": "The SSH tunnel didn't open within 15 seconds.",
         "SSH 포트": "SSH port",
         "TLS 사용": "Use TLS",

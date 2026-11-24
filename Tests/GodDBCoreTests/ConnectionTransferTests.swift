@@ -60,6 +60,26 @@ struct ConnectionTransferTests {
         #expect(try mode() == 0o600)
     }
 
+    /// 같은 ID 로 가져올 때 서버 · 계정이 바뀌면 예전 비밀번호를 쓰지 않는다 (#197)
+    @Test func savedPasswordOnlyForSameServer() {
+        var old = ConnectionProfile(kind: .mysql, name: "a", host: "db.example.test", port: 3306, username: "app")
+        var same = old
+        same.name = "이름만 바뀜"
+        same.host = "DB.example.test"
+        #expect(ConnectionTransfer.savedPasswordStillApplies(old: old, new: same))
+        for change in [{ (p: inout ConnectionProfile) in p.host = "other.example.test" },
+                       { p in p.port = 3307 }, { p in p.username = "root" }, { p in p.kind = .postgres },
+                       { p in p.ssh = SSHConfig(host: "bastion.example.test") }] {
+            var n = old
+            change(&n)
+            #expect(!ConnectionTransfer.savedPasswordStillApplies(old: old, new: n))
+        }
+        old.ssh = SSHConfig(host: "b.example.test", username: "u")
+        var viaOther = old
+        viaOther.ssh = SSHConfig(host: "b.example.test", username: "v")
+        #expect(!ConnectionTransfer.savedPasswordStillApplies(old: old, new: viaOther))
+    }
+
     @Test func passwordsNeedPassphrase() {
         #expect(throws: ConnectionTransferError.emptyPassphrase) {
             try ConnectionTransfer.export([a], passwords: [a.id: "x"], passphrase: "")

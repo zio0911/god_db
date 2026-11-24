@@ -113,6 +113,14 @@ public enum ConnectionTransfer {
 
     /// 가져온 접속을 기존 목록에 합친다. 같은 id 는 덮어쓰고, 새 접속은 뒤에 붙인다.
     /// 이름이 다른 접속과 겹치면 " (2)" 를 붙인다.
+    /// 같은 ID 로 가져올 때 예전에 저장한 비밀번호를 계속 써도 되는지: 종류 · 호스트 · 포트 · 사용자 · SSH 경유가 같을 때만 (#197).
+    /// 다른 서버나 계정으로 바뀌었는데 옛 비밀번호를 보내지 않게, 아니면 지우고 처음 연결할 때 묻는다
+    public static func savedPasswordStillApplies(old: ConnectionProfile, new: ConnectionProfile) -> Bool {
+        old.kind == new.kind && old.host.lowercased() == new.host.lowercased() && old.port == new.port
+            && old.username == new.username
+            && old.ssh?.host.lowercased() == new.ssh?.host.lowercased() && old.ssh?.username == new.ssh?.username
+    }
+
     public static func merge(_ incoming: [ConnectionProfile], into existing: [ConnectionProfile]) -> [ConnectionProfile] {
         var result = existing
         for var p in incoming {
