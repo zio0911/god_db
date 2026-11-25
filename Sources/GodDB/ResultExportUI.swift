@@ -277,11 +277,13 @@ extension AppState {
                 }
                 // 전체 행 수 먼저 (실패해도 내보내기는 계속)
                 total = result.totalCount
-                if total == nil { total = try? await session.count(sql) }
+                if total == nil { total = try? await QueryAudit.labeled("내보내기") { try await session.count(sql) } }
                 update(tabID) { $0.exportProgress?.total = total }
                 // AppState 는 MainActor 객체라 Sendable — weak 대신 그대로 잡는다 (내보내기 동안만 살아 있음)
-                truncated = try await session.exportAll(sql, sort: sort, to: w) { [self] written in
-                    await MainActor.run { self.update(tabID) { $0.exportProgress?.written = written } }
+                truncated = try await QueryAudit.labeled("내보내기") {
+                    try await session.exportAll(sql, sort: sort, to: w) { [self] written in
+                        await MainActor.run { self.update(tabID) { $0.exportProgress?.written = written } }
+                    }
                 }
             } else {
                 var rows = result.rows.map(\.values)

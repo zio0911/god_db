@@ -198,7 +198,7 @@ struct CompareView: View {
 
     /// 접속 하나를 연다. 서버가 응답하지 않으면 DBSession 의 연결 시간 제한(15초)에 걸려 실패한다.
     private static func open(_ p: ConnectionProfile, password: String?) async -> Result<DBSession, any Error> {
-        do { return .success(try await DBSession.connect(profile: p, password: password)) } catch { return .failure(error) }
+        do { return .success(try await QueryAudit.labeled("스키마 비교") { try await DBSession.connect(profile: p, password: password) }) } catch { return .failure(error) }
     }
 
     private func compare() async {
@@ -245,7 +245,7 @@ struct CompareView: View {
             if s.kind != t.kind {
                 app.log(.warning, .compare, tr("기준(%@)과 대상(%@) DB 종류가 달라요. 타입 이름 차이로 '다름'이 많이 나올 수 있어요.", "\(s.kind.title)", "\(t.kind.title)"))
             }
-            let result = try await SchemaDiff.compare(source: ss, sourceContainer: sdb, target: ts, targetContainer: tdb)
+            let result = try await QueryAudit.labeled("스키마 비교") { try await SchemaDiff.compare(source: ss, sourceContainer: sdb, target: ts, targetContainer: tdb) }
             report = result
             selection = []
             app.log(.success, .compare,

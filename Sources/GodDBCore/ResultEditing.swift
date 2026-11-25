@@ -310,12 +310,12 @@ extension DBSession {
             for s in statements { _ = try await execute(s, limit: 0) }
             return
         }
-        _ = try await raw(dialect.beginSQL)
+        _ = try await QueryAudit.labeled("트랜잭션") { try await raw(dialect.beginSQL) }
         do {
-            for s in statements { _ = try await raw(s) }
-            _ = try await raw(dialect.commitSQL)
+            for s in statements { _ = try await raw(s, primary: true) }
+            _ = try await QueryAudit.labeled("트랜잭션") { try await raw(dialect.commitSQL) }
         } catch {
-            _ = try? await raw(dialect.rollbackSQL)
+            _ = try? await QueryAudit.labeled("트랜잭션") { try await raw(dialect.rollbackSQL) }
             throw error
         }
     }

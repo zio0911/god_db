@@ -758,9 +758,9 @@ final class AppState {
             let result: QueryResult
             var tree: String? = nil
             if explain {
-                (result, tree) = try await session.explain(trimmed)
+                (result, tree) = try await QueryAudit.audited { try await session.explain(trimmed) }
             } else {
-                result = try await session.execute(finalSQL, limit: limit)
+                result = try await QueryAudit.audited { try await session.execute(finalSQL, limit: limit) }
             }
             var shown = result
             shown.sql = trimmed
@@ -853,7 +853,7 @@ final class AppState {
 
         for (n, statement) in list.enumerated() {
             do {
-                var r = try await session.execute(statement, limit: limit)
+                var r = try await QueryAudit.audited { try await session.execute(statement, limit: limit) }
                 r.sql = statement
                 if streaming && r.isPaged { r.appendMode = true }
                 results.append(r)
@@ -915,7 +915,7 @@ final class AppState {
         do {
             guard let session = try await session(for: t) else { return }
             let next = current.page + 1
-            let r = try await session.execute(sql, limit: current.pageSize, page: next, sort: current.serverSort)
+            let r = try await QueryAudit.labeled("더 불러오기") { try await session.execute(sql, limit: current.pageSize, page: next, sort: current.serverSort) }
             update(tabID) {
                 guard var res = $0.result, res.id == current.id else { return }
                 let base = res.rows.count
@@ -942,7 +942,7 @@ final class AppState {
                 update(tabID) { $0.error = notConnectedMessage(t); $0.pageLoading = false }
                 return
             }
-            var r = try await session.execute(sql, limit: current.pageSize, page: page, sort: current.serverSort)
+            var r = try await QueryAudit.labeled("페이지 이동") { try await session.execute(sql, limit: current.pageSize, page: page, sort: current.serverSort) }
             r.sql = sql
             r.totalCount = current.totalCount
             // 마지막 페이지를 넘어가면 (데이터가 줄어든 경우) 빈 페이지 대신 그대로 둔다.
@@ -995,7 +995,7 @@ final class AppState {
                 return
             }
             let size = current.pageSize > 0 ? current.pageSize : rowLimit
-            var r = try await session.execute(sql, limit: size, page: 0, sort: sort)
+            var r = try await QueryAudit.labeled("서버 정렬") { try await session.execute(sql, limit: size, page: 0, sort: sort) }
             r.sql = sql
             r.appendMode = current.appendMode && r.isPaged
             r.totalCount = current.totalCount
@@ -1019,7 +1019,7 @@ final class AppState {
         update(tabID) { $0.pageLoading = true }
         defer { update(tabID) { $0.pageLoading = false } }
         do {
-            guard let session = try await session(for: t), let total = try await session.count(sql) else { return }
+            guard let session = try await session(for: t), let total = try await QueryAudit.labeled("행 수 세기", { try await session.count(sql) }) else { return }
             update(tabID) {
                 $0.result?.totalCount = total
                 if $0.results.indices.contains(index) { $0.results[index].totalCount = total }
@@ -1083,7 +1083,7 @@ final class AppState {
         case .drop: sql = session.dialect.dropTableSQL(request.table)
         }
         do {
-            _ = try await session.execute(sql, limit: 0)
+            _ = try await QueryAudit.audited { try await session.execute(sql, limit: 0) }
         } catch {
             let dbTarget = (profiles.first { $0.id == request.profileID }?.name ?? "?") + (db.isEmpty ? "" : "/\(db)")
             logError(error, .schema, context: request.kind == .rename ? tr("테이블 이름 변경 실패") : tr("테이블 삭제 실패"), sql: sql,
@@ -1141,7 +1141,7 @@ final class AppState {
             if !currentDatabase.isEmpty, await session.current != currentDatabase {
                 try await session.use(currentDatabase)
             }
-            _ = try await session.execute(sql, limit: 0)
+            _ = try await QueryAudit.audited { try await session.execute(sql, limit: 0) }
             log(.success, .schema, tr("%@ 테이블 수정 완료", "\(table)"), detail: sql,
                 audit: AuditRecord(.ddl, target: alterTarget, result: "테이블 수정", statement: sql))
             await refreshSchema()

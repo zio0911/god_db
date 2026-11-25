@@ -29,6 +29,8 @@ public struct DriverEndpoint: Sendable {
     public var useTLS: Bool
     /// 서버 인증서 확인 방법 (F9-3)
     public var tls: TLSPolicy = TLSPolicy(verify: false, hostname: nil, pin: nil)
+    /// 감사 로그 대상 칸에 쓸 접속 이름 (#205)
+    public var auditName: String = ""
 }
 
 enum HostResolver {

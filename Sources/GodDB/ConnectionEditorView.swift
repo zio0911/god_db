@@ -268,7 +268,7 @@ struct ConnectionEditorView: View {
         defer { testing = false }
         do {
             if draft.kind == .redis {
-                let session = try await RedisSession.connect(profile: draft, password: password)
+                let session = try await QueryAudit.labeled("접속 테스트") { try await RedisSession.connect(profile: draft, password: password) }
                 var version = (try? await session.info("server").first?.1.first { $0.0 == "redis_version" }?.1).map { "Redis \($0)" } ?? "Redis"
                 version += " · " + (await session.tlsStatus).text
                 await session.close()
@@ -276,7 +276,7 @@ struct ConnectionEditorView: View {
                 app.log(.success, .connection, tr("%@ 연결 테스트 성공 · %@", "\(draft.name)", "\(version)"))
                 return
             }
-            let session = try await DBSession.connect(profile: draft, password: password)
+            let session = try await QueryAudit.labeled("접속 테스트") { try await DBSession.connect(profile: draft, password: password) }
             // 연결은 이미 성공. 버전 조회가 안 되더라도(권한 등) 실패로 보지 않는다.
             let version = ((try? await session.serverVersion()) ?? draft.typeTitle) + " · " + (await session.tlsStatus).text
             await session.close()

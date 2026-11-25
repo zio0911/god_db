@@ -24,6 +24,18 @@ public final class RedisConnection: @unchecked Sendable {
         self.handler = handler
     }
 
+    /// 감사 로그 대상 칸 (#205): "접속 이름 dbN"
+    private let auditLock = NSLock()
+    private var auditName = ""
+    private var auditDB = 0
+    var auditTarget: String {
+        auditLock.lock(); defer { auditLock.unlock() }
+        return "\(auditName) db\(auditDB)"
+    }
+    private func setAudit(name: String? = nil, db: Int) {
+        auditLock.lock(); if let name { auditName = name }; auditDB = db; auditLock.unlock()
+    }
+
     public var isOpen: Bool { channel.isActive }
 
     struct Options: Sendable {
@@ -37,6 +49,8 @@ public final class RedisConnection: @unchecked Sendable {
         var password: String?
         var database: Int
         var clientName = "GodDB"
+        /// 감사 로그 대상 칸에 쓸 접속 이름 (#205)
+        var auditName = ""
         /// 연결 과정 명령(AUTH · SELECT 등)의 응답 제한
         var timeout: TimeAmount = .seconds(10)
     }
@@ -68,7 +82,8 @@ public final class RedisConnection: @unchecked Sendable {
                 .connect(to: try SocketAddress(ipAddress: ip, port: o.port)).get()
             return RedisConnection(channel: channel, handler: handler)
         } }
-        do {
+        conn.setAudit(name: o.auditName, db: 0)
+        do { try await QueryAudit.labeled(QueryAudit.origin.map { $0.hasSuffix("세션 설정") ? $0 : "\($0) · 세션 설정" } ?? "세션 설정") {
             if let pw = o.password, !pw.isEmpty {
                 if o.username.isEmpty {
                     _ = try await conn.send(["AUTH", pw], timeout: o.timeout)
@@ -82,7 +97,7 @@ public final class RedisConnection: @unchecked Sendable {
             } catch let e as RedisServerError {
                 _ = e  // 이름 붙이기를 막은 서버(권한 등)는 무시. 시간 초과 · 연결 끊김은 실패로 본다
             }
-        } catch {
+        } } catch {
             await conn.close()
             // TLS 핸드셰이크는 첫 명령을 보낼 때 끝난다 → 인증서 확인에서 거부했으면 그 오류로
             throw verifier?.map(error) ?? error
@@ -108,6 +123,44 @@ public final class RedisConnection: @unchecked Sendable {
 
     /// 오류 응답도 값으로 돌려준다 (콘솔용)
     public func raw(_ args: [[UInt8]], timeout: TimeAmount? = nil) async throws -> RESPValue {
+        // #205: 보내는 명령마다 감사 기록 (호출한 쪽이 직접 기록하면 건너뜀)
+        let started = Date()
+        let target = auditTarget
+        let words = args.map { String(decoding: $0, as: UTF8.self) }
+        do {
+            let v = try await rawUnaudited(args, timeout: timeout)
+            if case .error(let m) = v {
+                Self.audit(words, target: target, started: started, value: nil, error: RedisServerError(message: m))
+            } else {
+                Self.audit(words, target: target, started: started, value: v, error: nil)
+                if words.first?.uppercased() == "SELECT", words.count > 1, let n = Int(words[1]) { setAudit(db: n) }
+            }
+            return v
+        } catch {
+            Self.audit(words, target: target, started: started, value: nil, error: error)
+            throw error
+        }
+    }
+
+    private static func audit(_ words: [String], target: String, started: Date, value: RESPValue?, error: (any Error)?) {
+        guard !QueryAudit.callerAudits else { return }
+        // 실시간 스트림처럼 계속 묻는 명령은 받은 게 있을 때만 남긴다
+        if QueryAudit.quietWhenEmpty, error == nil, value.map(Self.isEmptyReply) ?? true { return }
+        var rows: Int? = nil
+        if case .array(let a)? = value { rows = a?.count ?? 0 }
+        QueryAudit.record(statement: QueryAudit.redisStatement(words), action: AuditRecord.classify(redis: words),
+                          target: target, started: started, rows: rows, error: error)
+    }
+
+    private static func isEmptyReply(_ v: RESPValue) -> Bool {
+        switch v {
+        case .bulk(nil), .array(nil): return true
+        case .array(let a?): return a.isEmpty
+        default: return false
+        }
+    }
+
+    private func rawUnaudited(_ args: [[UInt8]], timeout: TimeAmount?) async throws -> RESPValue {
         guard channel.isActive else { throw DBError.notConnected }
         let promise = channel.eventLoop.makePromise(of: RESPValue.self)
         if let timeout {
@@ -133,6 +186,11 @@ public final class RedisConnection: @unchecked Sendable {
 
     /// 응답을 기다리지 않고 보낸다 (구독 모드)
     func fire(_ args: [String]) {
+        // 응답을 기다리지 않는 명령 (구독) — 보낸 것만 기록
+        if !QueryAudit.callerAudits {
+            QueryAudit.record(statement: QueryAudit.redisStatement(args), action: AuditRecord.classify(redis: args),
+                              target: auditTarget, started: Date(), rows: nil, error: nil)
+        }
         channel.writeAndFlush(RedisHandler.Request(args: args.map { Array($0.utf8) }, promise: nil), promise: nil)
     }
 

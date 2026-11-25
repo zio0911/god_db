@@ -83,7 +83,7 @@ actor FinderSampler {
         // (SQL Server 는 취소하면 세션이 끊기므로 DBSession 이 다시 연결하고 보던 DB 로 돌아간다)
         let session = session
         do {
-            let r = try await ConnectDeadline.run(seconds: DataFinder.sampleTimeout) { try await session.raw(sql) }
+            let r = try await ConnectDeadline.run(seconds: DataFinder.sampleTimeout) { try await session.raw(sql, primary: true) }
             return (r.rows, .main)
         } catch is DBConnectTimeoutError {
             _ = try? await session.cancelRunning()
@@ -310,7 +310,7 @@ extension AppState {
     private func runSample(_ sql: String, sampler: FinderSampler, profileName: String, target: String) async -> DataFinder.SampleOutcome {
         let started = Date()
         do {
-            let r = try await sampler.run(sql)
+            let r = try await QueryAudit.audited { try await sampler.run(sql) }
             let ms = Int(Date().timeIntervalSince(started) * 1000)
             let values = DataFinder.cleanSamples(r.rows.map { $0.first ?? nil })
             log(.info, .query, "[\(profileName)] " + tr("데이터 찾기 샘플 · %@행 · %@ms · %@", "\(r.rows.count)", "\(ms)", Self.oneLine(sql)),
