@@ -148,7 +148,7 @@ extension AppState {
         guard let id = selectedProfileID, let session = connections[id]?.session else { throw DBError.notConnected }
         let target = (profile(id)?.name ?? "?") + (currentDatabase.isEmpty ? "" : "/\(currentDatabase)")
         do {
-            try await session.executeInTransaction(statements)
+            try await QueryAudit.labeled("CSV 가져오기") { try await session.executeInTransaction(statements) }
         } catch {
             logError(error, .query, context: tr("CSV 가져오기 실패 (모두 되돌림)"),
                      audit: AuditRecord(.insert, target: target, statement: "CSV → \(table)"))

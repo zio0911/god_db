@@ -136,7 +136,7 @@ extension AppState {
               let session = connections[tab.profileID]?.session else { throw DBError.notConnected }
         if !tab.database.isEmpty, await session.current != tab.database { try await session.use(tab.database) }
         do {
-            try await session.executeInTransaction(request.statements)
+            try await QueryAudit.audited { try await session.executeInTransaction(request.statements) }
         } catch {
             logError(error, .query, context: tr("데이터 변경 실패 (모두 되돌림)"), sql: request.statements.joined(separator: "\n"),
                      audit: AuditRecord(AuditRecord.classify(sql: request.statements[0]), target: auditTarget(tab),

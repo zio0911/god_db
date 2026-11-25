@@ -40,7 +40,8 @@ public actor SideConnection {
         let opened = try await ConnectDeadline.run(seconds: connectTimeout, late: { await $0.driver.close() }) {
             let o = try await DBSession.prepareDriver(kind, endpoint, dialect: dialect, readOnly: readOnly)
             if !container.isEmpty {
-                do { _ = try await o.driver.query(dialect.useSQL(container)) } catch {
+                (o.driver as? AuditingDriver)?.setDatabase(container)
+                do { _ = try await QueryAudit.labeled("세션 설정") { try await o.driver.query(dialect.useSQL(container)) } } catch {
                     await o.driver.close()
                     throw error
                 }
@@ -56,7 +57,7 @@ public actor SideConnection {
     public func query(_ sql: String, timeout: Double) async throws -> (columns: [String], rows: [[String?]]) {
         let d = try await open()
         do {
-            return try await ConnectDeadline.run(seconds: timeout) { try await d.query(sql) }
+            return try await ConnectDeadline.run(seconds: timeout) { try await QueryAudit.primary(true) { try await d.query(sql) } }
         } catch is DBConnectTimeoutError {
             abandon()
             throw TimedOut(seconds: Int(timeout.rounded()))
@@ -78,7 +79,7 @@ public actor SideConnection {
                 if let other = try? await ConnectDeadline.run(seconds: 10, late: { await $0.close() }, {
                     try await DBSession.makeDriver(kind, endpoint)
                 }) {
-                    _ = try? await other.query(dialect.cancelSQL(sessionID: id))
+                    _ = try? await QueryAudit.labeled("쿼리 취소") { try await other.query(dialect.cancelSQL(sessionID: id)) }
                     await other.close()
                 }
             }

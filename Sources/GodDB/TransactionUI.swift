@@ -47,7 +47,7 @@ extension AppState {
     func commitTx(_ id: UUID) async {
         guard let s = connections[id]?.session else { return }
         do {
-            let n = try await s.commit()
+            let n = try await QueryAudit.audited { try await s.commit() }
             await refreshTx(id)
             log(.success, .query, tr("[%@] 커밋 · 변경 %@건", txTarget(id), "\(n)"),
                 audit: AuditRecord(.execute, target: txTarget(id), result: "커밋 · 변경 \(n)건", statement: s.dialect.commitSQL))
@@ -61,7 +61,7 @@ extension AppState {
     func rollbackTx(_ id: UUID) async {
         guard let s = connections[id]?.session else { return }
         do {
-            let n = try await s.rollback()
+            let n = try await QueryAudit.audited { try await s.rollback() }
             await refreshTx(id)
             log(.success, .query, tr("[%@] 롤백 · 변경 %@건 되돌림", txTarget(id), "\(n)"),
                 audit: AuditRecord(.execute, target: txTarget(id), result: "롤백 · 변경 \(n)건 되돌림", statement: s.dialect.rollbackSQL))

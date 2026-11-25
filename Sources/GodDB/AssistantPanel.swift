@@ -85,7 +85,7 @@ extension AppState {
         if let s = assistant.stats[key] { return s }
         guard let sql = AssistantAI.statsSQL(p.kind, schema: currentDatabase) else { return [:] }
         do {
-            let r = try await session.raw(sql)
+            let r = try await QueryAudit.labeled("AI 어시스턴트 통계") { try await session.raw(sql) }
             let s = AssistantAI.parseStats(r.rows)
             assistant.stats[key] = s
             return s

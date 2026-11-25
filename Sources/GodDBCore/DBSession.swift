@@ -35,7 +35,9 @@ public actor DBSession {
     private var running = 0
     private var cancelRequested = false
     /// 현재 선택된 DB(MySQL/SQL Server) 또는 스키마(PostgreSQL)
-    public private(set) var current: String = ""
+    public private(set) var current: String = "" {
+        didSet { (driver as? AuditingDriver)?.setDatabase(current) }
+    }
     /// 연결의 TLS 상태 (상태창 한 줄 — F9-3)
     public private(set) var tlsStatus: TLSStatus = .off
 
@@ -114,7 +116,7 @@ public actor DBSession {
             serverName: (profile.ssh == nil && !HostResolver.isIPAddress(profile.host)) ? profile.host : nil,
             username: profile.username, password: password,
             database: profile.database, useTLS: profile.useTLS,
-            tls: TLSPolicy.of(profile))
+            tls: TLSPolicy.of(profile), auditName: profile.name)
         self.endpoint = endpoint
         do {
             try await openDriver(endpoint)
@@ -129,13 +131,24 @@ public actor DBSession {
         }
     }
 
+    /// 드라이버를 열고 감사 기록 드라이버로 감싼다 (#205: 이 뒤로 보내는 모든 문장이 감사 로그에 남는다)
     static func makeDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint) async throws -> any DBDriver {
-        switch kind {
+        let inner: any DBDriver = switch kind {
         case .mysql: try await MySQLDriver.connect(endpoint)
         case .postgres: try await PostgresDriver.connect(endpoint)
         case .mssql: try await MSSQLDriver.connect(endpoint)
         case .redis: throw DBError.notConnected  // Redis 는 RedisSession 을 쓴다
         }
+        let d = AuditingDriver(inner, name: endpoint.auditName, database: endpoint.database)
+        if kind == .mssql {
+            do {
+                _ = try await QueryAudit.labeled(QueryAudit.origin ?? "세션 설정") { try await d.query(MSSQLDriver.sessionDefaultsSQL) }
+            } catch {
+                await d.close()
+                throw error
+            }
+        }
+        return d
     }
 
     /// 드라이버 연결 + 세션 설정. 드라이버들은 서버가 응답하지 않으면 끝없이 기다리므로 시간 제한을 둔다.
@@ -147,6 +160,7 @@ public actor DBSession {
             try await Self.prepareDriver(kind, endpoint, dialect: dialect, readOnly: readOnly)
         }
         driver = opened.driver
+        if !current.isEmpty { (opened.driver as? AuditingDriver)?.setDatabase(current) }
         tlsStatus = opened.driver.tlsStatus
         serverSessionID = opened.sessionID
         if opened.redshift, !dialect.isRedshift { dialectBox.value = PostgresDialect(redshift: true) }
@@ -160,6 +174,13 @@ public actor DBSession {
 
     static func prepareDriver(_ kind: DatabaseKind, _ endpoint: DriverEndpoint,
                                       dialect: any SQLDialect, readOnly: Bool) async throws -> OpenedDriver {
+        try await QueryAudit.labeled(QueryAudit.origin.map { "\($0) · 세션 설정" } ?? "세션 설정") {
+            try await prepareDriverBody(kind, endpoint, dialect: dialect, readOnly: readOnly)
+        }
+    }
+
+    private static func prepareDriverBody(_ kind: DatabaseKind, _ endpoint: DriverEndpoint,
+                                          dialect: any SQLDialect, readOnly: Bool) async throws -> OpenedDriver {
         let d = try await makeDriver(kind, endpoint)
         var dialect = dialect
         var redshift = false
@@ -195,9 +216,12 @@ public actor DBSession {
     public func cancelRunning() async throws -> Bool {
         guard running > 0, let endpoint = liveEndpoint(), let id = serverSessionID else { return false }
         cancelRequested = true
-        let other = try await Self.makeDriver(profile.kind, endpoint)
-        defer { Task { await other.close() } }
-        _ = try await other.query(dialect.cancelSQL(sessionID: id))
+        let sql = dialect.cancelSQL(sessionID: id)
+        try await QueryAudit.labeled("쿼리 취소") {
+            let other = try await Self.makeDriver(profile.kind, endpoint)
+            defer { Task { await other.close() } }
+            _ = try await other.query(sql)
+        }
         return true
     }
 
@@ -219,7 +243,10 @@ public actor DBSession {
         guard let endpoint = liveEndpoint() else { return }
         do {
             try await openDriver(endpoint)
-            if !current.isEmpty { _ = try? await driver?.query(dialect.useSQL(current)) }
+            if !current.isEmpty {
+                let sql = dialect.useSQL(current)
+                _ = try? await QueryAudit.labeled("세션 설정") { try await driver?.query(sql) }
+            }
         } catch {
             driver = nil
         }
@@ -251,7 +278,7 @@ public actor DBSession {
         let source = sort.flatMap { dialect.sortedSQL(sql, sort: $0) } ?? sql
         let paged = dialect.pagedSQL(source, limit: limit, offset: max(0, page) * limit)
         let started = Date()
-        var (columns, rows) = try await readOnlyGuardedRaw(paged?.sql ?? source)
+        var (columns, rows) = try await readOnlyGuardedRaw(paged?.sql ?? source, primary: true)
         let elapsed = Date().timeIntervalSince(started)
         var hasMore = false
         if let paged {
@@ -297,15 +324,15 @@ public actor DBSession {
     /// 읽기전용 PostgreSQL: 문장마다 READ ONLY 트랜잭션 안에서 실행하고 끝나면 롤백한다.
     /// 세션의 READ ONLY 는 set_config · SET 으로 끌 수 있지만, BEGIN READ ONLY 로 연 트랜잭션은 안에서 쓰기로 바꿀 수 없다.
     /// 롤백하므로 문장 안에서 바꾼 세션 설정(set_config(…, false) 등)도 남지 않는다. 앱 쪽 검사는 그대로 먼저 한다.
-    func readOnlyGuardedRaw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
-        guard profile.readOnly, dialect.kind == .postgres, !inTransaction, !inSnapshot else { return try await raw(sql) }
-        _ = try await raw("BEGIN READ ONLY")
+    func readOnlyGuardedRaw(_ sql: String, primary: Bool = false) async throws -> (columns: [String], rows: [[String?]]) {
+        guard profile.readOnly, dialect.kind == .postgres, !inTransaction, !inSnapshot else { return try await raw(sql, primary: primary) }
+        _ = try await QueryAudit.labeled("읽기전용 보호") { try await raw("BEGIN READ ONLY") }
         do {
-            let r = try await raw(sql)
-            _ = try? await raw("ROLLBACK")
+            let r = try await raw(sql, primary: primary)
+            _ = try? await QueryAudit.labeled("읽기전용 보호") { try await raw("ROLLBACK") }
             return r
         } catch {
-            _ = try? await raw("ROLLBACK")
+            _ = try? await QueryAudit.labeled("읽기전용 보호") { try await raw("ROLLBACK") }
             throw error
         }
     }
@@ -313,7 +340,7 @@ public actor DBSession {
     /// 읽기 스냅샷 시작 (#199). 사용자가 연 트랜잭션이 있거나 지원하지 않는 DB 면 열지 않고 false
     func beginSnapshot() async -> Bool {
         guard !inTransaction, !inSnapshot, let sql = dialect.snapshotBeginSQL else { return false }
-        do { _ = try await raw(sql) } catch { return false }
+        do { _ = try await QueryAudit.labeled("읽기 스냅샷") { try await raw(sql) } } catch { return false }
         inSnapshot = true
         return true
     }
@@ -322,7 +349,7 @@ public actor DBSession {
     func endSnapshot() async {
         guard inSnapshot else { return }
         inSnapshot = false
-        _ = try? await raw(dialect.rollbackSQL)
+        _ = try? await QueryAudit.labeled("읽기 스냅샷") { try await raw(dialect.rollbackSQL) }
     }
 
     /// 수동 커밋 모드에서 쓰기 문장이면 먼저 트랜잭션을 연다
@@ -332,7 +359,7 @@ public actor DBSession {
         guard !SQLText.isReadOnly(sql, kind: dialect.kind), !Self.transactionControl.contains(kw) else { return }
         // MySQL 의 DDL 은 어차피 자동 커밋되므로 트랜잭션을 열지 않는다
         if dialect.kind == .mysql, Self.ddl.contains(kw) { return }
-        _ = try await raw(dialect.beginSQL)
+        _ = try await QueryAudit.labeled("자동 트랜잭션 시작") { try await raw(dialect.beginSQL) }
         inTransaction = true
         pendingChanges = 0
     }
@@ -367,7 +394,7 @@ public actor DBSession {
     @discardableResult
     public func commit() async throws -> Int {
         let n = pendingChanges
-        _ = try await raw(dialect.commitSQL)
+        _ = try await raw(dialect.commitSQL, primary: true)
         inTransaction = false
         pendingChanges = 0
         return n
@@ -377,7 +404,7 @@ public actor DBSession {
     @discardableResult
     public func rollback() async throws -> Int {
         let n = pendingChanges
-        _ = try await raw(dialect.rollbackSQL)
+        _ = try await raw(dialect.rollbackSQL, primary: true)
         inTransaction = false
         pendingChanges = 0
         return n
@@ -387,7 +414,7 @@ public actor DBSession {
     public func count(_ sql: String) async throws -> Int? {
         try checkReadOnly(sql)
         guard let countSQL = dialect.countSQL(sql) else { return nil }
-        return try await readOnlyGuardedRaw(countSQL).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
+        return try await readOnlyGuardedRaw(countSQL, primary: true).rows.first?.first.flatMap { $0.flatMap { Int($0) } }
     }
 
     /// 실행 계획. 트리 형태 텍스트가 있으면 함께 돌려준다.
@@ -396,19 +423,19 @@ public actor DBSession {
         try checkReadOnly(sql)
         let steps = dialect.explain(sql)
         let started = Date()
-        for s in steps.before { _ = try await raw(s) }
+        for s in steps.before { _ = try await QueryAudit.labeled("실행 계획 준비") { try await raw(s) } }
         let main: (columns: [String], rows: [[String?]])
         do {
-            main = try await readOnlyGuardedRaw(steps.main)
+            main = try await readOnlyGuardedRaw(steps.main, primary: true)
         } catch {
-            for s in steps.after { _ = try? await raw(s) }
+            for s in steps.after { _ = try? await QueryAudit.labeled("실행 계획 정리") { try await raw(s) } }
             throw error
         }
-        for s in steps.after { _ = try await raw(s) }
+        for s in steps.after { _ = try await QueryAudit.labeled("실행 계획 정리") { try await raw(s) } }
         let result = QueryResult(columns: main.columns, rows: main.rows, elapsed: Date().timeIntervalSince(started))
         var tree: String? = nil
         if let treeSQL = steps.treeSQL {
-            tree = try? await raw(treeSQL).rows.first?.first ?? nil
+            tree = try? await QueryAudit.labeled("실행 계획 트리") { try await raw(treeSQL) }.rows.first?.first ?? nil
         } else if let col = steps.treeColumn, let i = main.columns.firstIndex(of: col) {
             tree = main.rows.compactMap { $0[i] }.joined(separator: "\n")
         }
@@ -421,26 +448,29 @@ public actor DBSession {
         guard let driver, driver.isOpen else { return nil }
         let (check, cleanup) = SQLServerCheck.commands(for: sql, kind: profile.kind)
         var failure: SQLServerCheck.Failure? = nil
-        for command in check {
-            do {
-                _ = try await driver.query(command)
-            } catch {
-                failure = SQLServerCheck.failure(from: error, sql: sql, kind: profile.kind)
-                break
+        await QueryAudit.labeled("편집기 검사") {
+            for command in check {
+                do {
+                    _ = try await driver.query(command)
+                } catch {
+                    failure = SQLServerCheck.failure(from: error, sql: sql, kind: profile.kind)
+                    break
+                }
             }
+            for command in cleanup { _ = try? await driver.query(command) }
         }
-        for command in cleanup { _ = try? await driver.query(command) }
         return failure
     }
 
     /// 모든 값을 문자열로 받는다.
-    public func raw(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
+    /// - primary: 이 작업의 주 문장 (호출한 쪽이 `QueryAudit.audited` 로 직접 감사 기록하면 드라이버 쪽은 건너뛴다)
+    public func raw(_ sql: String, primary: Bool = false) async throws -> (columns: [String], rows: [[String?]]) {
         guard let driver, driver.isOpen else { throw DBError.notConnected }
         running += 1
         lastActivity = Date()
         defer { running -= 1; lastActivity = Date() }
         do {
-            let r = try await driver.query(sql)
+            let r = try await QueryAudit.primary(primary) { try await driver.query(sql) }
             // MySQL 은 KILL QUERY 로 멈춘 SLEEP 등이 오류 없이 끝나기도 한다 → 취소를 요청했으면 취소로 본다
             if cancelRequested {
                 cancelRequested = false
@@ -459,32 +489,37 @@ public actor DBSession {
 
     // MARK: - 메타데이터
 
+    /// 메타데이터 조회 (감사 로그 출처 "메타데이터"). 다른 출처가 붙어 있으면 그대로 둔다.
+    private func meta(_ sql: String) async throws -> (columns: [String], rows: [[String?]]) {
+        try await QueryAudit.labeled(QueryAudit.origin ?? "메타데이터") { try await raw(sql) }
+    }
+
     /// 서버 버전 (예: MySQL 8.0.36, PostgreSQL 16.4, SQL Server 16.0.4315.2 Developer Edition)
     public func serverVersion() async throws -> String {
         if dialect.isRedshift {
             // SHOW server_version 은 슈퍼유저만 → version() 에서 "Redshift 1.0.x"
-            let v = try await raw("SELECT version()").rows.first?.first ?? nil
+            let v = try await meta("SELECT version()").rows.first?.first ?? nil
             return "Amazon " + (v.flatMap(PostgresDialect.redshiftVersion) ?? "Redshift")
         }
-        let v = try await raw(dialect.versionSQL).rows.first?.first ?? nil
+        let v = try await meta(dialect.versionSQL).rows.first?.first ?? nil
         return "\(profile.kind.title) \(v ?? "")".trimmingCharacters(in: .whitespaces)
     }
 
     /// 빠른 찾기용 모든 스키마의 테이블 · 뷰 (지원하지 않으면 빈 배열)
     public func allTables() async throws -> [(schema: String, name: String, isView: Bool)] {
         guard let sql = dialect.allTablesSQL else { return [] }
-        return try await raw(sql).rows.compactMap { r in
+        return try await meta(sql).rows.compactMap { r in
             guard r.count >= 3, let s = r[0], let n = r[1] else { return nil }
             return (s, n, (r[2] ?? "").uppercased().contains("VIEW"))
         }
     }
 
     public func databases() async throws -> [String] {
-        try await raw(dialect.databasesSQL).rows.compactMap { $0.first ?? nil }
+        try await meta(dialect.databasesSQL).rows.compactMap { $0.first ?? nil }
     }
 
     public func use(_ name: String) async throws {
-        _ = try await raw(dialect.useSQL(name))
+        _ = try await QueryAudit.labeled("DB 전환") { try await raw(dialect.useSQL(name)) }
         current = name
     }
 
@@ -495,17 +530,17 @@ public actor DBSession {
         case .postgres: sql = "SELECT current_schema()"
         case .mssql: sql = "SELECT DB_NAME()"
         }
-        return try await raw(sql).rows.first?.first ?? nil
+        return try await meta(sql).rows.first?.first ?? nil
     }
 
     public func loadSchema(_ schema: String) async throws -> [TableMeta] {
         if dialect.metadataNeedsUse && current != schema { try await use(schema) }
-        let tableRows = try await raw(dialect.tablesSQL(schema)).rows
-        let columnRows = try await raw(dialect.columnsSQL(schema)).rows
-        let indexRows = try await raw(dialect.indexesSQL(schema)).rows
+        let tableRows = try await meta(dialect.tablesSQL(schema)).rows
+        let columnRows = try await meta(dialect.columnsSQL(schema)).rows
+        let indexRows = try await meta(dialect.indexesSQL(schema)).rows
         var tables = SchemaBuilder.build(tableRows: tableRows, columnRows: columnRows, indexRows: indexRows)
         // 외래 키는 권한 등으로 못 읽어도 스키마 자체는 보여준다
-        if let fkRows = try? await raw(dialect.foreignKeysSQL(schema)).rows {
+        if let fkRows = try? await meta(dialect.foreignKeysSQL(schema)).rows {
             tables = SchemaBuilder.attachForeignKeys(tables, rows: fkRows)
         }
         return tables
@@ -513,7 +548,7 @@ public actor DBSession {
 
     public func loadRoutines(_ schema: String) async throws -> [RoutineMeta] {
         if dialect.metadataNeedsUse && current != schema { try await use(schema) }
-        return try await raw(dialect.routinesSQL(schema)).rows.compactMap { r in
+        return try await meta(dialect.routinesSQL(schema)).rows.compactMap { r in
             guard let type = r[0], let name = r[1], let kind = RoutineMeta.Kind(rawValue: type) else { return nil }
             return RoutineMeta(kind: kind, name: name, comment: r.count > 2 ? (r[2] ?? "") : "")
         }
@@ -521,7 +556,7 @@ public actor DBSession {
 
     /// 뷰/프로시저/함수/트리거 정의 전체
     public func definition(of routine: RoutineMeta) async throws -> String? {
-        let (columns, rows) = try await raw(dialect.definitionSQL(routine, schema: current))
+        let (columns, rows) = try await meta(dialect.definitionSQL(routine, schema: current))
         guard let row = rows.first else { return nil }
         let wanted = ["Create View", "Create Procedure", "Create Function", "SQL Original Statement"]
         let body: String?
@@ -536,7 +571,7 @@ public actor DBSession {
     /// 테이블 CREATE 문. MySQL 은 서버가 주는 DDL, 나머지는 메타데이터로 만든다.
     public func tableDDL(_ table: TableMeta) async throws -> String {
         if let sql = dialect.showCreateTableSQL(table.name),
-           let ddl = try await raw(sql).rows.first.flatMap({ $0.count > 1 ? $0[1] : nil }) {
+           let ddl = try await meta(sql).rows.first.flatMap({ $0.count > 1 ? $0[1] : nil }) {
             return ddl + ";"
         }
         return dialect.createTableSQL(table)
@@ -545,7 +580,7 @@ public actor DBSession {
     /// MySQL 의 SHOW CREATE TABLE (스키마 비교에서 누락 테이블 생성용). 다른 DB 는 nil.
     public func showCreateTable(_ table: String) async throws -> String? {
         guard let sql = dialect.showCreateTableSQL(table) else { return nil }
-        return try await raw(sql).rows.first.flatMap { $0.count > 1 ? $0[1] : nil }
+        return try await meta(sql).rows.first.flatMap { $0.count > 1 ? $0[1] : nil }
     }
 }
 

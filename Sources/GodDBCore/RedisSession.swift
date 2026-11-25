@@ -98,7 +98,9 @@ public actor RedisSession {
         let s = RedisSession(profile: profile)
         await s.setTimeout(timeout)
         do {
-            try await s.open(password: password)
+            try await QueryAudit.labeled(QueryAudit.origin.map { "\($0) · 세션 설정" } ?? "세션 설정") {
+                try await s.open(password: password)
+            }
             await s.dropStoredPassword(ifProvider: passwordProvider)
         } catch {
             await s.close()
@@ -233,7 +235,7 @@ public actor RedisSession {
             host: h, port: p,
             serverName: (profile.ssh == nil && !HostResolver.isIPAddress(host)) ? host : nil,
             useTLS: profile.useTLS, username: profile.username, password: password, database: database,
-            timeout: timeout)
+            auditName: profile.name, timeout: timeout)
         o.tls = TLSPolicy.of(profile, host: Self.certificateHost(node: host, configured: profile.host))
         return o
     }
@@ -677,7 +679,11 @@ public actor RedisSession {
                 var last = id
                 do {
                     while !Task.isCancelled {
-                        let v = try await tailConn.send(["XREAD", "COUNT", "100", "BLOCK", "2000", "STREAMS", key, last])
+                        let v = try await QueryAudit.$quietWhenEmpty.withValue(true) {
+                            try await QueryAudit.labeled("스트림 실시간") {
+                                try await tailConn.send(["XREAD", "COUNT", "100", "BLOCK", "2000", "STREAMS", key, last])
+                            }
+                        }
                         guard let streams = v.array else { continue }
                         for s in streams {
                             guard let parts = s.array, parts.count == 2 else { continue }

@@ -281,7 +281,7 @@ final class RedisWorkspace {
     func write(_ args: [String], label: String) async -> String? {
         do {
             let start = Date()
-            try await session.command(args)
+            try await QueryAudit.audited { try await session.command(args) }
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             app?.log(.success, .query, "[\(name) db\(db)] \(label) · \(ms)ms", detail: Self.display(args),
                      audit: AuditRecord(AuditRecord.classify(redis: args), target: auditTarget, result: "\(label) · \(ms)ms",
@@ -485,7 +485,7 @@ final class RedisWorkspace {
         let start = Date()
         let usedDB = db
         do {
-            let v = try await session.console(args)
+            let v = try await QueryAudit.audited { try await session.console(args) }
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             var isError = false
             if case .error = v { isError = true }
